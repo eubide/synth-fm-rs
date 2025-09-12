@@ -1,17 +1,17 @@
 use eframe::egui;
 use std::sync::{Arc, Mutex};
 
-mod fm_synth;
+mod algorithms;
 mod audio_engine;
+mod envelope;
+mod fm_synth;
 mod gui;
 mod midi_handler;
 mod operator;
-mod envelope;
-mod algorithms;
 mod presets;
 
-use fm_synth::FmSynthesizer;
 use audio_engine::AudioEngine;
+use fm_synth::FmSynthesizer;
 use gui::Dx7App;
 use midi_handler::MidiHandler;
 
@@ -25,19 +25,19 @@ fn main() -> Result<(), eframe::Error> {
 
     let synth = Arc::new(Mutex::new(FmSynthesizer::new()));
     let audio_engine = AudioEngine::new(synth.clone());
-    
+
     let _midi_handler = match MidiHandler::new(synth.clone()) {
         Ok(handler) => {
             println!("MIDI input initialized successfully");
             Some(handler)
-        },
+        }
         Err(e) => {
             println!("Failed to initialize MIDI input: {}", e);
             println!("Continuing without MIDI support...");
             None
         }
     };
-    
+
     eframe::run_native(
         "Yamaha DX7 Emulator",
         options,
