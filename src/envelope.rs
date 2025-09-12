@@ -4,12 +4,12 @@ pub struct Envelope {
     pub rate2: f32,
     pub rate3: f32,
     pub rate4: f32,
-    
+
     pub level1: f32,
     pub level2: f32,
     pub level3: f32,
     pub level4: f32,
-    
+
     current_level: f32,
     target_level: f32,
     rate: f32,
@@ -35,12 +35,12 @@ impl Envelope {
             rate2: 50.0,
             rate3: 35.0,
             rate4: 50.0,
-            
+
             level1: 99.0,
             level2: 75.0,
             level3: 50.0,
             level4: 0.0,
-            
+
             current_level: 0.0,
             target_level: 0.0,
             rate: 0.0,
@@ -50,21 +50,21 @@ impl Envelope {
             key_scale_factor: 1.0,
         }
     }
-    
+
     pub fn trigger(&mut self, velocity: f32) {
         self.trigger_with_key_scale(velocity, 1.0);
     }
-    
+
     pub fn trigger_with_key_scale(&mut self, velocity: f32, key_scale_factor: f32) {
         self.velocity = velocity;
         self.key_scale_factor = key_scale_factor;
         self.stage = EnvelopeStage::Stage1;
         self.target_level = self.level1 / 99.0;
         self.rate = self.calculate_rate(self.rate1) * self.key_scale_factor;
-        // Debug: println!("Envelope triggered: velocity {:.2}, target {:.2}, rate {:.4}", 
+        // Debug: println!("Envelope triggered: velocity {:.2}, target {:.2}, rate {:.4}",
         //          velocity, self.target_level, self.rate);
     }
-    
+
     pub fn release(&mut self) {
         if self.stage != EnvelopeStage::Idle {
             self.stage = EnvelopeStage::Stage4;
@@ -72,13 +72,13 @@ impl Envelope {
             self.rate = self.calculate_rate(self.rate4) * self.key_scale_factor;
         }
     }
-    
+
     pub fn process(&mut self) -> f32 {
         match self.stage {
             EnvelopeStage::Idle => return 0.0,
             _ => {}
         }
-        
+
         if self.current_level < self.target_level {
             self.current_level += self.rate;
             if self.current_level >= self.target_level {
@@ -92,10 +92,10 @@ impl Envelope {
                 self.advance_stage();
             }
         }
-        
+
         self.current_level * self.velocity
     }
-    
+
     fn advance_stage(&mut self) {
         match self.stage {
             EnvelopeStage::Stage1 => {
@@ -118,20 +118,20 @@ impl Envelope {
             EnvelopeStage::Idle => {}
         }
     }
-    
+
     fn calculate_rate(&self, rate_value: f32) -> f32 {
         if rate_value == 0.0 {
             return 0.0;
         }
-        
+
         let time_seconds = (100.0 - rate_value) / 25.0 + 0.001;
         1.0 / (time_seconds * self.sample_rate)
     }
-    
+
     pub fn is_active(&self) -> bool {
         self.stage != EnvelopeStage::Idle
     }
-    
+
     pub fn reset(&mut self) {
         self.current_level = 0.0;
         self.stage = EnvelopeStage::Idle;
