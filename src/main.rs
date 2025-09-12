@@ -8,6 +8,7 @@ mod fm_synth;
 mod gui;
 mod midi_handler;
 mod operator;
+mod optimization;
 mod presets;
 
 use audio_engine::AudioEngine;

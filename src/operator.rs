@@ -1,5 +1,27 @@
 use crate::envelope::Envelope;
+use crate::optimization::OPTIMIZATION_TABLES;
 use std::f32::consts::PI;
+
+#[derive(Debug, Clone)]
+struct CachedValues {
+    level_amplitude: f32,
+    velocity_factor: f32,
+    key_scale_level_factor: f32,
+    key_scale_rate_factor: f32,
+    params_dirty: bool,
+}
+
+impl CachedValues {
+    fn new() -> Self {
+        CachedValues {
+            level_amplitude: 1.0,
+            velocity_factor: 1.0,
+            key_scale_level_factor: 1.0,
+            key_scale_rate_factor: 1.0,
+            params_dirty: true,
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Operator {
@@ -22,6 +44,7 @@ pub struct Operator {
     base_frequency: f32,   // Store base frequency for real-time updates
     current_velocity: f32, // Store velocity for real-time updates
     current_note: u8,      // Store MIDI note for key scaling
+    cached_values: CachedValues, // Cached calculations for performance
 }
 
 impl Operator {
@@ -45,6 +68,7 @@ impl Operator {
             base_frequency: 440.0,
             current_velocity: 1.0,
             current_note: 60,
+            cached_values: CachedValues::new(),
         }
     }
 
@@ -61,6 +85,44 @@ impl Operator {
 
         self.phase = 0.0;
         self.last_output = 0.0;
+        self.cached_values.params_dirty = true;
+    }
+
+    fn update_cached_values(&mut self) {
+        if !self.cached_values.params_dirty {
+            return;
+        }
+
+        // Cache level amplitude using optimized lookup
+        self.cached_values.level_amplitude = 
+            OPTIMIZATION_TABLES.dx7_level_to_amplitude(self.output_level as u8);
+
+        // Cache velocity factor (exponential curve for natural response)
+        let vel_sens_factor = self.velocity_sensitivity / 7.0;
+        let velocity_curve = 1.0 - vel_sens_factor + (vel_sens_factor * self.current_velocity);
+        self.cached_values.velocity_factor = velocity_curve.clamp(0.0, 1.0);
+
+        // Cache key scaling factors
+        let key_distance = self.current_note as f32 - self.key_scale_breakpoint as f32;
+        let key_scale_normalized = key_distance / 24.0; // ±24 semitones range
+
+        // Level key scaling
+        self.cached_values.key_scale_level_factor = if self.key_scale_level > 0.0 {
+            let level_scale_amount = self.key_scale_level / 99.0;
+            1.0 + (key_scale_normalized * level_scale_amount).clamp(-0.5, 0.5)
+        } else {
+            1.0
+        };
+
+        // Rate key scaling
+        self.cached_values.key_scale_rate_factor = if self.key_scale_rate > 0.0 {
+            let rate_scale_amount = self.key_scale_rate / 7.0;
+            1.0 + (key_scale_normalized * rate_scale_amount).clamp(-0.75, 0.75)
+        } else {
+            1.0
+        };
+
+        self.cached_values.params_dirty = false;
     }
 
     pub fn release(&mut self) {
@@ -90,29 +152,14 @@ impl Operator {
     }
 
     pub fn process(&mut self, modulation: f32) -> f32 {
+        // Update cached values if parameters changed
+        self.update_cached_values();
+        
         let env_value = self.envelope.process();
 
         if env_value == 0.0 {
             return 0.0;
         }
-
-        // Apply velocity sensitivity (0-7 range, where 7 = maximum sensitivity)
-        let velocity_factor = if self.velocity_sensitivity > 0.0 {
-            let sensitivity = self.velocity_sensitivity / 7.0; // Normalize to 0-1
-            1.0 - sensitivity * (1.0 - self.current_velocity)
-        } else {
-            1.0
-        };
-
-        // Apply key scaling to level
-        let key_scale_level_factor = if self.key_scale_level > 0.0 {
-            let distance =
-                (self.current_note as i32 - self.key_scale_breakpoint as i32).abs() as f32;
-            let scaling = 1.0 - (distance * self.key_scale_level / 99.0 / 48.0); // 48 = 4 octaves
-            scaling.max(0.0).min(1.0)
-        } else {
-            1.0
-        };
 
         // Feedback: DX7 uses previous output as phase modulation
         // Feedback range 0-7 maps to 0-π radians of modulation
@@ -125,12 +172,12 @@ impl Operator {
         // Total phase modulation
         let total_modulation = modulation + feedback_mod;
 
-        // Generate output with phase modulation and apply all scaling factors
-        let output = (self.phase + total_modulation).sin()
+        // Generate output with phase modulation and apply all cached scaling factors
+        let output = OPTIMIZATION_TABLES.fast_sin(self.phase + total_modulation)
             * env_value
-            * (self.output_level / 99.0)
-            * velocity_factor
-            * key_scale_level_factor;
+            * self.cached_values.level_amplitude
+            * self.cached_values.velocity_factor
+            * self.cached_values.key_scale_level_factor;
 
         // Update phase for next sample
         self.phase += self.phase_increment;

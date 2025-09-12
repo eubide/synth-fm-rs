@@ -40,8 +40,9 @@ impl Dx7App {
 
         // Apply the first preset (E.PIANO 1)
         if !presets.is_empty() {
-            let mut synth = synthesizer.lock().unwrap();
-            presets[0].apply_to_synth(&mut synth);
+            if let Ok(mut synth) = synthesizer.lock() {
+                presets[0].apply_to_synth(&mut synth);
+            }
         }
 
         Self {
@@ -58,6 +59,10 @@ impl Dx7App {
             cached_algorithm: None,
             cached_diagram: None,
         }
+    }
+
+    fn lock_synth(&self) -> Result<std::sync::MutexGuard<FmSynthesizer>, std::sync::PoisonError<std::sync::MutexGuard<FmSynthesizer>>> {
+        self.synthesizer.lock()
     }
 
     fn draw_dx7_display(&mut self, ui: &mut egui::Ui) {
@@ -90,21 +95,27 @@ impl Dx7App {
                 // Mode-specific sub text
                 let sub_text = match self.display_mode {
                     DisplayMode::Voice => {
-                        let synth = self.synthesizer.lock().unwrap();
-                        format!("VOICE: {} | ALG: {:02}", synth.preset_name, synth.algorithm)
+                        if let Ok(synth) = self.lock_synth() {
+                            format!("VOICE: {} | ALG: {:02}", synth.preset_name, synth.algorithm)
+                        } else {
+                            "VOICE: ERROR".to_string()
+                        }
                     }
                     DisplayMode::Operator => {
                         format!("OP{} EDIT", self.selected_operator + 1)
                     }
                     DisplayMode::Algorithm => {
-                        let synth = self.synthesizer.lock().unwrap();
-                        let algorithms = Algorithm::get_all_algorithms();
-                        let alg_name = algorithms
-                            .iter()
-                            .find(|a| a.number == synth.algorithm)
-                            .map(|a| a.name.clone())
-                            .unwrap_or_else(|| "Unknown".to_string());
-                        format!("ALG {} - {}", synth.algorithm, alg_name)
+                        if let Ok(synth) = self.lock_synth() {
+                            let algorithms = Algorithm::get_all_algorithms();
+                            let alg_name = algorithms
+                                .iter()
+                                .find(|a| a.number == synth.algorithm)
+                                .map(|a| a.name.clone())
+                                .unwrap_or_else(|| "Unknown".to_string());
+                            format!("ALG {} - {}", synth.algorithm, alg_name)
+                        } else {
+                            "ALGORITHM: ERROR".to_string()
+                        }
                     }
                     DisplayMode::Function => "FUNCTION MODE".to_string(),
                 };

@@ -1,5 +1,6 @@
 use crate::algorithms::Algorithm;
 use crate::operator::Operator;
+use crate::optimization::OPTIMIZATION_TABLES;
 use std::collections::HashMap;
 
 const MAX_VOICES: usize = 16;
@@ -67,8 +68,9 @@ impl Voice {
     pub fn trigger(&mut self, note: u8, velocity: f32, master_tune: f32, portamento_enable: bool) {
         self.note = note;
         // Apply master_tune in cents (±150 cents = ±1.5 semitones)
-        let tuned_note = note as f32 + (master_tune / 100.0);
-        let new_frequency = 440.0 * 2.0_f32.powf((tuned_note - 69.0) / 12.0);
+        // Use optimized pre-calculated MIDI frequencies
+        let base_frequency = OPTIMIZATION_TABLES.get_midi_frequency(note);
+        let new_frequency = base_frequency * 2.0_f32.powf((master_tune / 100.0) / 12.0);
 
         // Check if we should use portamento: only if enabled, voice is active, and we have a valid current frequency
         let use_portamento = portamento_enable
