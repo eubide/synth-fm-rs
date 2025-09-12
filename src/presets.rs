@@ -18,6 +18,23 @@ impl Dx7Preset {
         synth.algorithm = self.algorithm;
         synth.preset_name = self.name.to_string();
 
+        // Apply Function Mode parameters if specified
+        if let Some(master_tune) = self.master_tune {
+            synth.set_master_tune(master_tune);
+        }
+        if let Some(mono_mode) = self.mono_mode {
+            synth.set_mono_mode(mono_mode);
+        }
+        if let Some(pitch_bend_range) = self.pitch_bend_range {
+            synth.set_pitch_bend_range(pitch_bend_range);
+        }
+        if let Some(portamento_enable) = self.portamento_enable {
+            synth.portamento_enable = portamento_enable;
+        }
+        if let Some(portamento_time) = self.portamento_time {
+            synth.portamento_time = portamento_time;
+        }
+
         // Apply operator settings to all voices
         for voice in &mut synth.voices {
             for (i, op) in voice.operators.iter_mut().enumerate() {
@@ -64,6 +81,11 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
                 (99.0, 95.0, 50.0, 99.0, 99.0, 50.0, 0.0, 0.0),  // Op5
                 (99.0, 85.0, 70.0, 75.0, 99.0, 85.0, 60.0, 0.0), // Op6
             ],
+            master_tune: None,
+            mono_mode: None,
+            pitch_bend_range: None,
+            portamento_enable: None,
+            portamento_time: None,
         },
         // BASS 1 - Solid Bass
         Dx7Preset {
@@ -85,6 +107,11 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
                 (99.0, 95.0, 10.0, 90.0, 99.0, 20.0, 10.0, 0.0), // Op5
                 (99.0, 75.0, 40.0, 70.0, 99.0, 80.0, 70.0, 0.0), // Op6
             ],
+            master_tune: None,
+            mono_mode: Some(true), // Bass sounds better in mono
+            pitch_bend_range: None,
+            portamento_enable: Some(true), // Glide for bass
+            portamento_time: Some(20.0),
         },
         // TUBULAR BELL
         Dx7Preset {
@@ -106,6 +133,11 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
                 (99.0, 70.0, 25.0, 60.0, 99.0, 50.0, 20.0, 0.0), // Op5
                 (99.0, 80.0, 20.0, 70.0, 99.0, 30.0, 10.0, 0.0), // Op6
             ],
+            master_tune: None,
+            mono_mode: None,
+            pitch_bend_range: Some(2.0), // Small pitch bend for bells
+            portamento_enable: None,
+            portamento_time: None,
         },
         // BRASS
         Dx7Preset {
@@ -127,6 +159,11 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
                 (85.0, 80.0, 40.0, 70.0, 99.0, 60.0, 40.0, 0.0), // Op5
                 (75.0, 70.0, 50.0, 60.0, 99.0, 85.0, 75.0, 0.0), // Op6
             ],
+            master_tune: None,
+            mono_mode: None,
+            pitch_bend_range: Some(3.0), // Good pitch bend for brass
+            portamento_enable: None,
+            portamento_time: None,
         },
         // STRINGS
         Dx7Preset {
@@ -148,6 +185,11 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
                 (60.0, 70.0, 40.0, 60.0, 99.0, 70.0, 50.0, 0.0), // Op5
                 (60.0, 70.0, 40.0, 60.0, 99.0, 70.0, 50.0, 0.0), // Op6
             ],
+            master_tune: None,
+            mono_mode: None,
+            pitch_bend_range: Some(2.0), // Standard pitch bend
+            portamento_enable: Some(true), // Smooth string glides
+            portamento_time: Some(35.0),
         },
         // ORGAN
         Dx7Preset {
@@ -169,6 +211,11 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
                 (99.0, 99.0, 99.0, 99.0, 99.0, 99.0, 99.0, 0.0), // Op5
                 (99.0, 99.0, 99.0, 99.0, 99.0, 99.0, 99.0, 0.0), // Op6
             ],
+            master_tune: None,
+            mono_mode: None,
+            pitch_bend_range: None, // Organs typically don't have pitch bend
+            portamento_enable: None,
+            portamento_time: None,
         },
         // CLAV
         Dx7Preset {
@@ -190,6 +237,11 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
                 (99.0, 99.0, 20.0, 90.0, 99.0, 20.0, 0.0, 0.0),  // Op5
                 (99.0, 99.0, 20.0, 90.0, 99.0, 20.0, 0.0, 0.0),  // Op6
             ],
+            master_tune: None,
+            mono_mode: None,
+            pitch_bend_range: Some(2.0),
+            portamento_enable: None,
+            portamento_time: None,
         },
         // FLUTE
         Dx7Preset {
@@ -211,6 +263,11 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
                 (75.0, 65.0, 55.0, 65.0, 99.0, 80.0, 70.0, 0.0), // Op5
                 (90.0, 99.0, 40.0, 80.0, 60.0, 10.0, 5.0, 0.0),  // Op6
             ],
+            master_tune: None,
+            mono_mode: Some(true), // Flute is monophonic
+            pitch_bend_range: Some(2.0),
+            portamento_enable: Some(true), // Natural breath transitions
+            portamento_time: Some(15.0),
         },
         // GUITAR - Iconic DX7 Guitar Sound
         Dx7Preset {
@@ -232,6 +289,11 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
                 (99.0, 90.0, 25.0, 80.0, 99.0, 40.0, 20.0, 0.0), // Op5
                 (99.0, 75.0, 40.0, 65.0, 99.0, 70.0, 50.0, 0.0), // Op6
             ],
+            master_tune: None,
+            mono_mode: None,
+            pitch_bend_range: Some(4.0), // Guitar needs good pitch bend
+            portamento_enable: None,
+            portamento_time: None,
         },
         // SYNTH BASS - Classic DX7 Synth Bass
         Dx7Preset {
@@ -253,6 +315,11 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
                 (99.0, 95.0, 30.0, 85.0, 99.0, 45.0, 30.0, 0.0), // Op5
                 (99.0, 80.0, 45.0, 70.0, 99.0, 75.0, 60.0, 0.0), // Op6
             ],
+            master_tune: None,
+            mono_mode: Some(true), // Synth bass in mono
+            pitch_bend_range: Some(3.0),
+            portamento_enable: Some(true), // Bass glide
+            portamento_time: Some(25.0),
         },
         // SAX - Saxophone Sound
         Dx7Preset {
@@ -274,6 +341,11 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
                 (80.0, 75.0, 45.0, 70.0, 99.0, 65.0, 55.0, 0.0), // Op5
                 (85.0, 90.0, 40.0, 75.0, 70.0, 30.0, 20.0, 0.0), // Op6
             ],
+            master_tune: None,
+            mono_mode: Some(true), // Sax is monophonic
+            pitch_bend_range: Some(3.0), // Good for sax expression
+            portamento_enable: Some(true), // Natural sax glissando
+            portamento_time: Some(18.0),
         },
         // VIBRAPHONE - Classic Mallet Sound
         Dx7Preset {
@@ -295,6 +367,11 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
                 (99.0, 45.0, 30.0, 35.0, 99.0, 85.0, 75.0, 0.0), // Op5
                 (99.0, 75.0, 15.0, 65.0, 99.0, 25.0, 10.0, 0.0), // Op6
             ],
+            master_tune: None,
+            mono_mode: None,
+            pitch_bend_range: Some(2.0), // Small pitch bend for mallet instruments
+            portamento_enable: None,
+            portamento_time: None,
         },
         // MARIMBA - Wooden Mallet Sound
         Dx7Preset {
@@ -316,6 +393,11 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
                 (99.0, 90.0, 20.0, 80.0, 99.0, 30.0, 15.0, 0.0), // Op5
                 (99.0, 95.0, 15.0, 85.0, 99.0, 20.0, 10.0, 0.0), // Op6
             ],
+            master_tune: None,
+            mono_mode: None,
+            pitch_bend_range: Some(2.0), // Small pitch bend for mallet instruments
+            portamento_enable: None,
+            portamento_time: None,
         },
         // HARPSICHORD
         Dx7Preset {
@@ -337,6 +419,11 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
                 (99.0, 85.0, 45.0, 75.0, 99.0, 50.0, 30.0, 0.0), // Op5
                 (99.0, 99.0, 20.0, 95.0, 99.0, 15.0, 5.0, 0.0),  // Op6
             ],
+            master_tune: None,
+            mono_mode: None,
+            pitch_bend_range: Some(2.0), // Small pitch bend for keyboard instruments
+            portamento_enable: None,
+            portamento_time: None,
         },
         // WOODBLOCK - Percussive Sound
         Dx7Preset {
@@ -358,6 +445,11 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
                 (99.0, 99.0, 10.0, 99.0, 99.0, 20.0, 5.0, 0.0), // Op5
                 (99.0, 99.0, 5.0, 99.0, 60.0, 5.0, 0.0, 0.0),   // Op6
             ],
+            master_tune: None,
+            mono_mode: None,
+            pitch_bend_range: Some(1.0), // Very small pitch bend for percussion
+            portamento_enable: None,
+            portamento_time: None,
         },
         // XYLOPHONE
         Dx7Preset {
@@ -379,6 +471,11 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
                 (99.0, 85.0, 15.0, 75.0, 99.0, 30.0, 20.0, 0.0), // Op5
                 (99.0, 90.0, 10.0, 80.0, 99.0, 20.0, 15.0, 0.0), // Op6
             ],
+            master_tune: None,
+            mono_mode: None,
+            pitch_bend_range: Some(2.0), // Small pitch bend for mallet instruments
+            portamento_enable: None,
+            portamento_time: None,
         },
         // CLARINET
         Dx7Preset {
@@ -400,6 +497,11 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
                 (65.0, 60.0, 65.0, 55.0, 99.0, 95.0, 90.0, 0.0), // Op5
                 (90.0, 95.0, 45.0, 80.0, 50.0, 15.0, 10.0, 0.0), // Op6
             ],
+            master_tune: None,
+            mono_mode: Some(true), // Clarinet is monophonic
+            pitch_bend_range: Some(2.0), // Standard wind instrument pitch bend
+            portamento_enable: Some(true), // Natural legato transitions
+            portamento_time: Some(20.0),
         },
         // OBOE
         Dx7Preset {
@@ -421,6 +523,11 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
                 (90.0, 85.0, 40.0, 80.0, 99.0, 50.0, 40.0, 0.0), // Op5
                 (95.0, 99.0, 35.0, 85.0, 60.0, 20.0, 10.0, 0.0), // Op6
             ],
+            master_tune: None,
+            mono_mode: Some(true), // Oboe is monophonic
+            pitch_bend_range: Some(2.0), // Standard wind instrument pitch bend
+            portamento_enable: Some(true), // Natural legato transitions
+            portamento_time: Some(25.0),
         },
         // TRUMPET
         Dx7Preset {
@@ -442,6 +549,11 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
                 (95.0, 90.0, 40.0, 85.0, 99.0, 65.0, 55.0, 0.0), // Op5
                 (99.0, 95.0, 35.0, 90.0, 99.0, 60.0, 50.0, 0.0), // Op6
             ],
+            master_tune: None,
+            mono_mode: Some(true), // Trumpet is monophonic
+            pitch_bend_range: Some(3.0), // Good pitch bend range for brass
+            portamento_enable: Some(true), // Natural brass glide
+            portamento_time: Some(15.0),
         },
         // TUBA
         Dx7Preset {
@@ -463,6 +575,11 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
                 (75.0, 70.0, 45.0, 65.0, 99.0, 60.0, 50.0, 0.0), // Op5
                 (80.0, 85.0, 40.0, 70.0, 70.0, 30.0, 20.0, 0.0), // Op6
             ],
+            master_tune: None,
+            mono_mode: Some(true), // Tuba is monophonic
+            pitch_bend_range: Some(2.0), // Conservative pitch bend for low brass
+            portamento_enable: Some(true), // Natural brass glide
+            portamento_time: Some(30.0),
         },
         // SPACE VOICE - Ethereal Pad
         Dx7Preset {
@@ -484,6 +601,11 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
                 (40.0, 50.0, 50.0, 45.0, 99.0, 75.0, 70.0, 0.0), // Op5
                 (45.0, 55.0, 45.0, 50.0, 99.0, 65.0, 60.0, 0.0), // Op6
             ],
+            master_tune: None,
+            mono_mode: None,
+            pitch_bend_range: Some(4.0), // Wide pitch bend for ethereal effects
+            portamento_enable: Some(true), // Smooth pad transitions
+            portamento_time: Some(40.0),
         },
         // GAMELAN - Metallic Percussion
         Dx7Preset {
@@ -505,6 +627,11 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
                 (99.0, 60.0, 8.0, 50.0, 99.0, 40.0, 30.0, 0.0),  // Op5
                 (99.0, 40.0, 25.0, 30.0, 99.0, 80.0, 70.0, 0.0), // Op6
             ],
+            master_tune: None,
+            mono_mode: None,
+            pitch_bend_range: Some(1.0), // Very small pitch bend for metallic percussion
+            portamento_enable: None,
+            portamento_time: None,
         },
     ]
 }

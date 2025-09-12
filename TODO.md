@@ -110,6 +110,9 @@ fn emulate_12bit_dac(sample: f32) -> f32 {
 ### Function Mode Status: 🎉 FULLY FUNCTIONAL
 The Function Mode is now complete with all essential DX7 global parameters implemented and working authentically.
 
+## FIX IT
+- [ ] Farting noise in mono when the previous note is cut off
+
 ## Secondary Improvements
 
 ### Interface
