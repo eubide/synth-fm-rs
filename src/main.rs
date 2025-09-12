@@ -16,9 +16,14 @@ use gui::Dx7App;
 use midi_handler::MidiHandler;
 
 fn main() -> Result<(), eframe::Error> {
+    // Initialize logging system
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+
+    log::info!("Starting Yamaha DX7 Emulator");
+
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([900.0, 500.0])
+            .with_inner_size([1200.0, 600.0])
             .with_title("Yamaha DX7 Emulator"),
         ..Default::default()
     };

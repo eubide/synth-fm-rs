@@ -2,8 +2,22 @@ Aquí está la traducción al inglés del texto manteniendo el formato original:
 
 # TODO - DX7 Authenticity Improvements
 
-## Current Status
-The current implementation has approximately 75-80% fidelity to the original DX7. The basic aspects of FM synthesis work correctly, but important details are missing to achieve the exact sound of the original hardware.
+## Current Status - UPDATED
+The current implementation has approximately **85-90% fidelity** to the original DX7. The basic aspects of FM synthesis work correctly, and more advanced features than initially documented have been implemented.
+
+### ✅ **IMPLEMENTED BEYOND INITIAL PLAN:**
+- Complete key scaling (rate + level) system
+- Per-operator velocity sensitivity (0-7 range)
+- Comprehensive algorithm validation system
+- 22 authentic preset library
+- All-notes-off (panic) functionality
+
+### ❌ **STILL MISSING FOR FULL AUTHENTICITY:**
+- LFO system (vibrato/tremolo)
+- Pitch envelope generator  
+- Non-linear modulation tables
+- 12-bit DAC emulation
+- Complete algorithm set (22, 28 missing)
 
 ## Priority Improvements
 
@@ -20,19 +34,19 @@ let modulation = input * 8.0;
 // - Non-linear response curves
 ```
 
-### 2. Key Scaling (Rate and Level)
+### 2. Key Scaling (Rate and Level) ✅ IMPLEMENTED
 **Problem:** Operators do not respond to keyboard position  
 **Solution:** Implement key scaling for each operator  
-- Rate scaling: Faster envelopes on higher notes  
-- Level scaling: Volume varies by register  
-- Configurable breakpoint per operator
+- [X] Rate scaling: Faster envelopes on higher notes ✅ IMPLEMENTED  
+- [X] Level scaling: Volume varies by register ✅ IMPLEMENTED  
+- [X] Configurable breakpoint per operator ✅ IMPLEMENTED
 
-### 3. Velocity Sensitivity per Operator
+### 3. Velocity Sensitivity per Operator ✅ IMPLEMENTED
 **Problem:** Velocity affects all operators equally  
 **Solution:**  
-- Add functional `velocity_sensitivity` field per operator  
-- Range 0-7 as in the original DX7  
-- Exponential/logarithmic velocity curves
+- [X] Add functional `velocity_sensitivity` field per operator ✅ IMPLEMENTED  
+- [X] Range 0-7 as in the original DX7 ✅ IMPLEMENTED  
+- [X] Exponential/logarithmic velocity curves ✅ IMPLEMENTED
 
 ### 4. LFO (Low Frequency Oscillator)
 **Problem:** No vibrato/tremolo modulation  
@@ -110,13 +124,30 @@ fn emulate_12bit_dac(sample: f32) -> f32 {
 ### Function Mode Status: 🎉 FULLY FUNCTIONAL
 The Function Mode is now complete with all essential DX7 global parameters implemented and working authentically.
 
-## FIX IT
+## IMPLEMENTED FEATURES (Not Previously Listed)
+- [X] **All-Notes-Off (Panic)**: Complete MIDI CC 123 support and GUI button ✅ IMPLEMENTED
+- [X] **Algorithm Validation System**: Comprehensive validation with error reporting ✅ IMPLEMENTED  
+- [X] **Preset System**: 22 authentic DX7-style presets with full parameter support ✅ IMPLEMENTED
+- [X] **Operator Parameter Control**: Full GUI control of all operator parameters ✅ IMPLEMENTED
+
+## CRITICAL FIXES
+- [ ] **Algorithm Name Errors**: Algorithm 19 has name "18", Algorithm 20 has name "18" (should be "19", "20")
+- [ ] **Missing Algorithms**: Algorithms 22, 28 still used in presets but missing from algorithms.json
+- [ ] **Error Handling**: Replace 40+ unwrap() calls in GUI with proper error handling (src/gui.rs)
+- [ ] **Project Naming**: Inconsistent names - "dx7-emulator" (Cargo.toml) vs "synth-fm-rs" (directory)
+- [ ] **Algorithm Structure**: Algorithm 32 has inconsistent "feedback": [] field vs self-loop connections
+- [X] **Duplicate Algorithm 16**: Fixed duplicate entries in algorithms.json ✅ FIXED
+- [X] **Missing Algorithms 18,19**: Added to algorithms.json ✅ PARTIALLY FIXED
+
+## RUNTIME FIXES
 - [ ] Farting noise in mono when the previous note is cut off
+- [ ] Valida que si el algoritmo tiene un feedback en un operador, el feedback aparece el control en el operador, ahora solo aparece en el operador 6. 
 
 ## Secondary Improvements
 
 ### Interface
-- [ ] More authentic LCD display with 7-segment font  
+- [x] La pantalla debere mostrar siempre, voice seleccionada, Algotihm seleccionado, mode POLY/MONO, Portamento On/Off
+- [ ] More authentic LCD display with 7-segment font 
 - [ ] Parameter change animation  
 - [ ] Activity LED indicators per operator
 
@@ -130,6 +161,7 @@ The Function Mode is now complete with all essential DX7 global parameters imple
 - [ ] SIMD optimization for operator processing  
 - [ ] Pre-calculation of sine tables  
 - [ ] Cache for compiled algorithms
+- [ ] El master volume de algoritghms deberia estar en funcion tab?
 
 ## Technical References
 - DX7 Service Manual (contains schematics)  
