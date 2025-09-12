@@ -138,7 +138,23 @@ impl Operator {
         };
 
         let detuned_freq = actual_freq * (1.0 + self.detune / 100.0);
-        self.phase_increment = (2.0 * PI * detuned_freq) / self.sample_rate;
+        
+        // CRITICAL: Bounds check all inputs to prevent numerical issues
+        if detuned_freq.is_finite() 
+            && detuned_freq >= 0.1 
+            && detuned_freq <= 20000.0  // Above human hearing range
+            && self.sample_rate > 0.0 
+            && self.sample_rate.is_finite() 
+        {
+            self.phase_increment = (2.0 * PI * detuned_freq) / self.sample_rate;
+            
+            // Additional safety check on phase_increment
+            if !self.phase_increment.is_finite() || self.phase_increment.abs() > 100.0 {
+                self.phase_increment = 0.0; // Silence if calculation fails
+            }
+        } else {
+            self.phase_increment = 0.0; // Silence for malformed frequency
+        }
     }
 
     pub fn set_frequency_ratio(&mut self, ratio: f32) {
@@ -179,17 +195,32 @@ impl Operator {
             * self.cached_values.velocity_factor
             * self.cached_values.key_scale_level_factor;
 
-        // Update phase for next sample
-        self.phase += self.phase_increment;
-        while self.phase >= 2.0 * PI {
-            self.phase -= 2.0 * PI;
+        // Update phase for next sample with numerical bounds checking
+        // CRITICAL: Prevent phase explosion from malformed data
+        if self.phase_increment.is_finite() && self.phase_increment.abs() < 100.0 {
+            self.phase += self.phase_increment;
+            
+            // Efficient phase wrapping using modulo instead of while loop
+            if self.phase >= 2.0 * PI {
+                self.phase = self.phase % (2.0 * PI);
+            } else if self.phase < 0.0 {
+                self.phase = self.phase % (2.0 * PI) + 2.0 * PI;
+            }
+        } else {
+            // Reset phase if increment is malformed (NaN, infinite, or too large)
+            self.phase = 0.0;
+            self.phase_increment = 0.0;
         }
 
         // Store for feedback
         self.last_output = output;
 
-        // Soft clipping for stability
-        output.tanh()
+        // FIXED: Only apply soft clipping if signal is actually clipping (> ±1.0)
+        if output.abs() > 1.0 {
+            output.tanh() // Soft clipping only when needed
+        } else {
+            output // Clean signal for normal levels
+        }
     }
 
     pub fn is_active(&self) -> bool {

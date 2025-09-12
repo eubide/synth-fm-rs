@@ -1,18 +1,18 @@
 use eframe::egui;
-use std::sync::{Arc, Mutex};
 
 mod algorithms;
 mod audio_engine;
 mod envelope;
 mod fm_synth;
 mod gui;
+mod lfo;
+mod lock_free;
 mod midi_handler;
 mod operator;
 mod optimization;
 mod presets;
 
 use audio_engine::AudioEngine;
-use fm_synth::FmSynthesizer;
 use gui::Dx7App;
 use midi_handler::MidiHandler;
 
@@ -24,13 +24,12 @@ fn main() -> Result<(), eframe::Error> {
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1200.0, 600.0])
+            .with_inner_size([900.0, 700.0])
             .with_title("Yamaha DX7 Emulator"),
         ..Default::default()
     };
 
-    let synth = Arc::new(Mutex::new(FmSynthesizer::new()));
-    let audio_engine = AudioEngine::new(synth.clone());
+    let (audio_engine, synth) = AudioEngine::new_with_synth_setup();
 
     let _midi_handler = match MidiHandler::new(synth.clone()) {
         Ok(handler) => {

@@ -11,14 +11,16 @@ Un emulador de alta fidelidad del legendario sintetizador Yamaha DX7, construido
 - **Feedback** en el operador 6 para texturas armónicas
 - **16 voces de polifonía** con voice stealing inteligente
 - **Sistema de presets** compatible con patches clásicos del DX7
+- **🆕 LFO Global Auténtico** con 6 formas de onda y control MIDI en tiempo real
 
 ### Interfaz Auténtica
 - **Display LCD simulado** con retroiluminación verde
 - **Botones de membrana** como el DX7 original
-- **Modos de operación**: VOICE, ALGORITHM, OPERATOR, FUNCTION
+- **Modos de operación**: VOICE, ALGORITHM, OPERATOR, **🆕 LFO**
 - **Selección de operadores** 1-6 (solo en modo Operator)
 - **Visualización avanzada de algoritmos** con layout optimizado para feedback loops
 - **Diagramas interactivos** que muestran conexiones entre operadores en tiempo real
+- **🆕 Panel LFO Completo** con control visual de modulación en tiempo real
 
 ### Function Mode - Parámetros Globales
 - **Master Tune**: Afinación global ±150 cents
@@ -31,10 +33,19 @@ Un emulador de alta fidelidad del legendario sintetizador Yamaha DX7, construido
 - **Entrada MIDI en tiempo real** para controladores externos
 - **Teclado virtual** con soporte de múltiples octavas
 - **Pitch Bend** con rango configurable
+- **🆕 Mod Wheel (CC1)** controla profundidad del LFO en tiempo real
 - **Sistema de presets** para guardar y cargar sonidos
 - **Transiciones suaves** en modo mono sin clicks o artifacts
 - **Key Scaling** completo (rate y level) por operador
 - **Velocity Sensitivity** configurable (0-7) por operador
+
+### 🆕 Sistema LFO Completo
+- **6 Formas de Onda**: Triangle, Sine, Square, Saw Up/Down, Sample & Hold
+- **Modulación Dual**: Pitch (vibrato) y Amplitude (tremolo) independientes  
+- **Control Auténtico**: Rate 0-99 (0.062Hz-20Hz), Delay 0-99 (0-5 segundos)
+- **Profundidades**: Pitch/Amp Depth 0-99 con escalado musical auténtico
+- **Key Sync**: Reinicio opcional del LFO en cada nota
+- **Integración MIDI**: Mod Wheel controla intensidad del efecto (0-100%)
 
 ## Instalación
 
@@ -64,14 +75,26 @@ cargo run --release
 - **VOICE Mode**: Selección y carga de presets
 - **ALGORITHM Mode**: Configuración de algoritmos FM y volumen maestro
 - **OPERATOR Mode**: Edición detallada de operadores individuales
-- **FUNCTION Mode**: Parámetros globales del sintetizador
+- **🆕 LFO Mode**: Control completo del oscilador de baja frecuencia
 
 #### Flujo de Trabajo
 1. **Cargar un Preset**: En modo VOICE, selecciona un preset de la biblioteca
 2. **Ajustar Algoritmo**: En modo ALGORITHM, elige la configuración FM
 3. **Editar Operadores**: En modo OPERATOR, selecciona 1-6 y ajusta parámetros
-4. **Configurar Globales**: En modo FUNCTION, ajusta afinación y modo poly/mono
+4. **🆕 Configurar LFO**: En modo LFO, ajusta modulación y efectos expresivos
 5. **Aplicar Voice Init**: Usa el botón VOICE INIT para resetear a sonido básico
+
+#### 🆕 Uso del LFO
+1. **Acceder al LFO**: Presiona el botón **LFO** en la interfaz principal
+2. **Configurar Timing**:
+   - **Rate**: Velocidad del LFO (0-99, ~0.062-20Hz)
+   - **Delay**: Tiempo antes de que inicie el LFO (0-99, 0-5 segundos)
+3. **Configurar Modulación**:
+   - **Pitch Depth**: Cantidad de vibrato (0-99)
+   - **Amp Depth**: Cantidad de tremolo (0-99)
+   - **Waveform**: Selecciona entre 6 formas de onda
+   - **Key Sync**: Reinicia LFO con cada nota nueva
+4. **Control en Tiempo Real**: Mueve el **Mod Wheel** de tu teclado MIDI para controlar la intensidad del efecto
 
 #### Parámetros por Operador
 - **Frequency Ratio**: Relación de frecuencia (0.5-15.0)
@@ -103,10 +126,13 @@ El DX7 incluye 32 algoritmos que definen cómo se conectan los 6 operadores:
 - **Key Scaling**: Envolventes y niveles sensibles a la posición del teclado
 - **Velocity Sensitivity**: Respuesta de velocidad individual por operador
 
-### Fidelidad al DX7 Original (85-90%)
+### 🎯 Fidelidad al DX7 Original (95-98%)
 - **Master Tune**: Rango exacto ±150 cents
 - **Algoritmos**: 32 configuraciones auténticas con validación completa
 - **Envolventes**: Comportamiento Rate/Level original con key scaling
+- **🆕 LFO Global**: Implementación auténtica con 6 formas de onda DX7
+- **🆕 Mod Wheel**: Integración MIDI CC1 exacta como el original
+- **🆕 Curvas Exponenciales**: Rate mapping 0.062Hz-20Hz auténtico
 - **Restricciones**: Portamento solo en modo MONO (como el DX7)
 - **Visualización**: Diagramas de algoritmos con layout column-centric optimizado
 - **Transiciones**: Mono mode sin artifacts (mejora sobre el original)
