@@ -70,13 +70,21 @@ impl Voice {
         let tuned_note = note as f32 + (master_tune / 100.0);
         let new_frequency = 440.0 * 2.0_f32.powf((tuned_note - 69.0) / 12.0);
 
-        if portamento_enable && self.active {
+        // Check if we should use portamento: only if enabled, voice is active, and we have a valid current frequency
+        let use_portamento = portamento_enable
+            && self.active
+            && self.current_frequency > 0.0
+            && (self.current_frequency - new_frequency).abs() > 0.1; // Only if frequency actually changed
+
+        // Always update frequencies
+        self.frequency = new_frequency;
+
+        if use_portamento {
             // Portamento: smooth transition from current to new frequency
             self.target_frequency = new_frequency;
-            // current_frequency stays as is for smooth transition
+            // Keep current_frequency for smooth portamento transition
         } else {
             // No portamento: immediate frequency change
-            self.frequency = new_frequency;
             self.current_frequency = new_frequency;
             self.target_frequency = new_frequency;
         }
@@ -84,8 +92,9 @@ impl Voice {
         self.velocity = velocity;
         self.active = true;
 
+        // Always re-trigger operators with new frequency for consistent sound
         for op in &mut self.operators {
-            op.trigger(self.frequency, velocity, note);
+            op.trigger(new_frequency, velocity, note);
         }
     }
 
@@ -197,15 +206,11 @@ impl FmSynthesizer {
         let velocity_f = velocity as f32 / 127.0;
 
         if self.mono_mode {
-            // Mono mode: stop all voices and use only the first one
-            for voice in &mut self.voices {
-                if voice.active {
-                    voice.stop();
-                }
-            }
+            // Mono mode: use portamento for smooth transition or immediate change
             self.held_notes.clear();
 
-            // Trigger the first voice
+            // In mono mode, always trigger the first voice
+            // Portamento will be handled inside trigger() based on portamento settings
             self.voices[0].trigger(note, velocity_f, self.master_tune, self.portamento_enable);
             self.held_notes.insert(note, 0);
         } else {
@@ -287,6 +292,35 @@ impl FmSynthesizer {
     pub fn set_algorithm(&mut self, algorithm: u8) {
         if algorithm >= 1 && algorithm <= 32 {
             self.algorithm = algorithm;
+
+            // Configure feedback based on self-loops in the algorithm
+            self.configure_algorithm_feedback(algorithm);
+        }
+    }
+
+    fn configure_algorithm_feedback(&mut self, algorithm: u8) {
+        use crate::algorithms::find_algorithm;
+
+        if let Some(alg_def) = find_algorithm(algorithm) {
+            // First, reset all feedback to 0
+            for voice in &mut self.voices {
+                for op in &mut voice.operators {
+                    op.feedback = 0.0;
+                }
+            }
+
+            // Then configure feedback for operators with self-loops
+            for conn in &alg_def.connections {
+                if conn.from == conn.to {
+                    // Self-loop found - configure feedback for this operator
+                    let op_index = (conn.from - 1) as usize; // Convert 1-6 to 0-5
+                    if op_index < 6 {
+                        for voice in &mut self.voices {
+                            voice.operators[op_index].feedback = 4.0; // Moderate feedback
+                        }
+                    }
+                }
+            }
         }
     }
 

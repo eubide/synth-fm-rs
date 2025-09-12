@@ -51,10 +51,6 @@ impl Envelope {
         }
     }
 
-    pub fn trigger(&mut self, velocity: f32) {
-        self.trigger_with_key_scale(velocity, 1.0);
-    }
-
     pub fn trigger_with_key_scale(&mut self, velocity: f32, key_scale_factor: f32) {
         self.velocity = velocity;
         self.key_scale_factor = key_scale_factor;

@@ -17,6 +17,9 @@ pub struct Dx7App {
     current_octave: i32,
     presets: Vec<Dx7Preset>,
     selected_preset: usize,
+    // Cache for algorithm diagrams
+    cached_algorithm: Option<u8>,
+    cached_diagram: Option<crate::algorithms::AlgorithmGraph>,
 }
 
 #[derive(PartialEq)]
@@ -52,6 +55,8 @@ impl Dx7App {
             current_octave: 4,
             presets,
             selected_preset: 0,
+            cached_algorithm: None,
+            cached_diagram: None,
         }
     }
 
@@ -67,19 +72,22 @@ impl Dx7App {
                 .fg_stroke
                 .color = egui::Color32::from_rgb(30, 30, 30);
 
-            ui.set_min_height(60.0);
+            ui.set_min_height(80.0);
             ui.vertical_centered(|ui| {
                 ui.add_space(5.0);
 
                 let display_font = egui::FontId::new(16.0, egui::FontFamily::Monospace);
+                let small_font = egui::FontId::new(12.0, egui::FontFamily::Monospace);
                 let display_color = egui::Color32::from_rgb(30, 30, 30);
 
+                // Main display text (current mode)
                 ui.label(
                     egui::RichText::new(&self.display_text)
                         .font(display_font.clone())
                         .color(display_color),
                 );
 
+                // Mode-specific sub text
                 let sub_text = match self.display_mode {
                     DisplayMode::Voice => {
                         let synth = self.synthesizer.lock().unwrap();
@@ -104,6 +112,35 @@ impl Dx7App {
                 ui.label(
                     egui::RichText::new(sub_text)
                         .font(display_font)
+                        .color(display_color),
+                );
+
+                ui.add_space(5.0);
+                ui.separator();
+
+                // Always display current status information
+                let synth = self.synthesizer.lock().unwrap();
+                let mode_text = if synth.mono_mode { "MONO" } else { "POLY" };
+                let midi_text = if self._midi_handler.is_some() { "MIDI OK" } else { "NO MIDI" };
+                
+                let status_line = if synth.mono_mode {
+                    // Show portamento only in MONO mode
+                    let porta_text = if synth.portamento_enable { "ON" } else { "OFF" };
+                    format!(
+                        "VOICE: {} | ALG: {:02} | MODE: {} | PORTA: {} | {}",
+                        synth.preset_name, synth.algorithm, mode_text, porta_text, midi_text
+                    )
+                } else {
+                    // In POLY mode, don't show portamento
+                    format!(
+                        "VOICE: {} | ALG: {:02} | MODE: {} | {}",
+                        synth.preset_name, synth.algorithm, mode_text, midi_text
+                    )
+                };
+
+                ui.label(
+                    egui::RichText::new(status_line)
+                        .font(small_font)
                         .color(display_color),
                 );
             });
@@ -265,7 +302,7 @@ impl Dx7App {
                     }
                 });
 
-                if op_idx == 5 {
+                if self.operator_has_feedback(op_idx) {
                     ui.horizontal(|ui| {
                         ui.label("Feedback:");
                         if ui
@@ -781,19 +818,27 @@ impl eframe::App for Dx7App {
                     self.draw_preset_selector(ui);
                 }
                 DisplayMode::Algorithm => {
-                    // Only show algorithm controls
+                    // Algorithm controls + visualization
                     ui.horizontal(|ui| {
                         ui.vertical(|ui| {
                             self.draw_algorithm_selector(ui);
                         });
+                        ui.separator();
+                        ui.vertical(|ui| {
+                            self.draw_algorithm_diagram(ui);
+                        });
                     });
                 }
                 DisplayMode::Operator => {
-                    // Show operator controls and envelope
-                    ui.horizontal(|ui| {
-                        ui.vertical(|ui| {
+                    // Show operator controls and envelope in two columns
+                    ui.columns(2, |columns| {
+                        // Left column: Operator parameters
+                        columns[0].vertical(|ui| {
                             self.draw_operator_panel(ui);
-                            ui.add_space(10.0);
+                        });
+                        
+                        // Right column: Envelope parameters  
+                        columns[1].vertical(|ui| {
                             self.draw_envelope_panel(ui);
                         });
                     });
@@ -811,17 +856,384 @@ impl eframe::App for Dx7App {
                 ui.label(format!("| Octave: {}", self.current_octave));
                 ui.label("| Space: Panic");
                 ui.label("| Up/Down: Change octave");
-
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if self._midi_handler.is_some() {
-                        ui.colored_label(egui::Color32::from_rgb(50, 150, 50), "MIDI OK");
-                    } else {
-                        ui.colored_label(egui::Color32::from_rgb(150, 50, 50), "NO MIDI");
-                    }
-                });
             });
         });
 
-        ctx.request_repaint();
+        // Only repaint when needed (user interaction or animation)
+        if ctx.input(|i| !i.events.is_empty()) {
+            ctx.request_repaint_after(std::time::Duration::from_millis(16)); // ~60 FPS
+        }
     }
+}
+
+impl Dx7App {
+    fn operator_has_feedback(&self, op_idx: usize) -> bool {
+        let synth = self.synthesizer.lock().unwrap();
+        let current_algorithm = synth.algorithm;
+        drop(synth);
+        
+        if let Some(algorithm_def) = crate::algorithms::find_algorithm(current_algorithm) {
+            let op_number = (op_idx + 1) as u8;
+            
+            // Check if this operator has feedback:
+            // 1. Self-feedback (from == to, same operator)
+            // 2. Cross-operator feedback where this operator receives feedback from a carrier
+            algorithm_def.connections.iter().any(|conn| {
+                // Case 1: Self-feedback (operator feeds back to itself)
+                (conn.from == op_number && conn.to == op_number) ||
+                // Case 2: Cross-operator feedback (this operator receives feedback from another)
+                (conn.to == op_number && algorithm_def.carriers.contains(&conn.from))
+            })
+        } else {
+            false
+        }
+    }
+
+    fn draw_algorithm_diagram(&mut self, ui: &mut egui::Ui) {
+        ui.group(|ui| {
+            ui.vertical(|ui| {
+                ui.label("ALGORITHM DIAGRAM");
+
+                let synth = self.synthesizer.lock().unwrap();
+                let current_algorithm = synth.algorithm;
+                drop(synth);
+
+                // Check if we need to regenerate the diagram
+                let positioned_graph = if self.cached_algorithm != Some(current_algorithm) {
+                    let graph = Algorithm::parse_algorithm_graph(current_algorithm);
+                    let canvas_size = (400.0, 280.0);
+                    let positioned = Algorithm::calculate_layout(graph, canvas_size);
+                    self.cached_algorithm = Some(current_algorithm);
+                    self.cached_diagram = Some(positioned.clone());
+                    positioned
+                } else if let Some(ref cached) = self.cached_diagram {
+                    cached.clone()
+                } else {
+                    // Fallback
+                    let graph = Algorithm::parse_algorithm_graph(current_algorithm);
+                    let canvas_size = (400.0, 280.0);
+                    Algorithm::calculate_layout(graph, canvas_size)
+                };
+
+                // Create drawing area (centered)
+                let canvas_size = (400.0, 280.0);
+
+                let (response, painter) = ui
+                    .allocate_ui_with_layout(
+                        egui::Vec2::new(ui.available_width(), canvas_size.1),
+                        egui::Layout::top_down(egui::Align::Center),
+                        |ui| {
+                            ui.allocate_painter(
+                                egui::Vec2::new(canvas_size.0, canvas_size.1),
+                                egui::Sense::hover(),
+                            )
+                        },
+                    )
+                    .inner;
+
+                let rect = response.rect;
+
+                // Background
+                painter.rect_filled(
+                    rect,
+                    egui::Rounding::same(5.0),
+                    egui::Color32::from_gray(20),
+                );
+                painter.rect_stroke(
+                    rect,
+                    egui::Rounding::same(5.0),
+                    egui::Stroke::new(1.0, egui::Color32::from_gray(100)),
+                );
+
+                // Draw carrier sum line first (at the bottom)
+                let carriers: Vec<_> = positioned_graph
+                    .operators
+                    .iter()
+                    .filter(|op| op.is_carrier)
+                    .collect();
+                if carriers.len() > 1 {
+                    // Draw horizontal line connecting all carriers at the bottom
+                    let carrier_y = carriers
+                        .iter()
+                        .map(|op| op.position.1)
+                        .fold(f32::NEG_INFINITY, f32::max);
+                    let sum_y = rect.top() + carrier_y + 35.0;
+
+                    let min_x = carriers
+                        .iter()
+                        .map(|op| op.position.0)
+                        .fold(f32::INFINITY, f32::min);
+                    let max_x = carriers
+                        .iter()
+                        .map(|op| op.position.0)
+                        .fold(f32::NEG_INFINITY, f32::max);
+
+                    // Main sum line (thinner)
+                    painter.line_segment(
+                        [
+                            egui::Pos2::new(rect.left() + min_x, sum_y),
+                            egui::Pos2::new(rect.left() + max_x, sum_y),
+                        ],
+                        egui::Stroke::new(2.0, egui::Color32::from_rgb(255, 200, 100)),
+                    );
+
+                    // Vertical lines from each carrier to sum line (thinner)
+                    for carrier in &carriers {
+                        let carrier_pos = egui::Pos2::new(
+                            rect.left() + carrier.position.0,
+                            rect.top() + carrier.position.1,
+                        );
+                        let sum_connection =
+                            egui::Pos2::new(rect.left() + carrier.position.0, sum_y);
+
+                        painter.line_segment(
+                            [carrier_pos, sum_connection],
+                            egui::Stroke::new(1.5, egui::Color32::from_rgb(255, 200, 100)),
+                        );
+                    }
+
+                    // Smaller output label
+                    painter.text(
+                        egui::Pos2::new(rect.left() + (min_x + max_x) / 2.0, sum_y + 10.0),
+                        egui::Align2::CENTER_CENTER,
+                        "OUT",
+                        egui::FontId::proportional(9.0),
+                        egui::Color32::from_rgb(255, 200, 100),
+                    );
+                }
+
+                // Draw connections (behind operators)
+                for connection in &positioned_graph.connections {
+                    if let (Some(from_op), Some(to_op)) = (
+                        positioned_graph
+                            .operators
+                            .iter()
+                            .find(|op| op.id == connection.from),
+                        positioned_graph
+                            .operators
+                            .iter()
+                            .find(|op| op.id == connection.to),
+                    ) {
+                        let from_pos = egui::Pos2::new(
+                            rect.left() + from_op.position.0,
+                            rect.top() + from_op.position.1,
+                        );
+                        let to_pos = egui::Pos2::new(
+                            rect.left() + to_op.position.0,
+                            rect.top() + to_op.position.1,
+                        );
+
+                        if connection.is_feedback {
+                            let color = egui::Color32::from_rgb(255, 150, 150);
+
+                            // Check if this is a self-loop (from == to)
+                            if connection.from == connection.to {
+                                // Draw external horizontal feedback line for self-loops
+                                self.draw_self_loop_feedback(&painter, from_pos, color);
+                            } else {
+                                // Draw curved line for cross-operator feedback (legacy)
+                                let op_radius = 12.5; // Half of op_size (25.0)
+                                let (from_edge, to_edge) = self
+                                    .calculate_edge_connection_points(from_pos, to_pos, op_radius);
+
+                                let curve_offset = 20.0; // Smaller curve
+                                let control1 = egui::Pos2::new(
+                                    from_edge.x + curve_offset,
+                                    from_edge.y - curve_offset,
+                                );
+                                let control2 = egui::Pos2::new(
+                                    to_edge.x - curve_offset,
+                                    to_edge.y - curve_offset,
+                                );
+
+                                // Approximate curve with fewer segments
+                                let segments = 8;
+                                for i in 0..segments {
+                                    let t1 = i as f32 / segments as f32;
+                                    let t2 = (i + 1) as f32 / segments as f32;
+
+                                    let p1 =
+                                        bezier_point(from_edge, control1, control2, to_edge, t1);
+                                    let p2 =
+                                        bezier_point(from_edge, control1, control2, to_edge, t2);
+
+                                    painter.line_segment([p1, p2], egui::Stroke::new(1.5, color));
+                                }
+
+                                // Smaller arrow head for feedback
+                                self.draw_arrow_head(
+                                    &painter,
+                                    bezier_point(from_edge, control1, control2, to_edge, 0.9),
+                                    bezier_point(from_edge, control1, control2, to_edge, 1.0),
+                                    color,
+                                );
+                            }
+                        } else {
+                            // Regular connection (thinner) - connect at edges
+                            let color = egui::Color32::from_rgb(150, 150, 255);
+                            let op_radius = 12.5; // Half of op_size (25.0)
+                            let (from_edge, to_edge) =
+                                self.calculate_edge_connection_points(from_pos, to_pos, op_radius);
+
+                            painter
+                                .line_segment([from_edge, to_edge], egui::Stroke::new(1.5, color));
+
+                            // Smaller arrow head at the edge
+                            self.draw_arrow_head(&painter, from_edge, to_edge, color);
+                        }
+                    }
+                }
+
+                // Draw operators
+                for op in &positioned_graph.operators {
+                    let pos =
+                        egui::Pos2::new(rect.left() + op.position.0, rect.top() + op.position.1);
+
+                    let op_size = 25.0;
+                    let op_rect = egui::Rect::from_center_size(pos, egui::Vec2::splat(op_size));
+
+                    // Color based on type
+                    let (fill_color, text_color) = if op.is_carrier {
+                        (egui::Color32::from_rgb(100, 150, 255), egui::Color32::WHITE)
+                    // Blue for carriers
+                    } else {
+                        (egui::Color32::from_rgb(120, 120, 120), egui::Color32::WHITE)
+                        // Gray for modulators
+                    };
+
+                    // Draw operator box
+                    painter.rect_filled(op_rect, egui::Rounding::same(5.0), fill_color);
+                    painter.rect_stroke(
+                        op_rect,
+                        egui::Rounding::same(5.0),
+                        egui::Stroke::new(2.0, egui::Color32::WHITE),
+                    );
+
+                    // Draw operator number
+                    let text = op.id.to_string();
+                    painter.text(
+                        pos,
+                        egui::Align2::CENTER_CENTER,
+                        text,
+                        egui::FontId::proportional(12.0),
+                        text_color,
+                    );
+                }
+
+                // Legend (centered)
+                ui.allocate_ui_with_layout(
+                    egui::Vec2::new(ui.available_width(), 20.0),
+                    egui::Layout::top_down(egui::Align::Center),
+                    |ui| {
+                        ui.horizontal(|ui| {
+                            ui.colored_label(egui::Color32::from_rgb(100, 150, 255), "■");
+                            ui.label("Carriers");
+                            ui.add_space(15.0);
+                            ui.colored_label(egui::Color32::from_rgb(120, 120, 120), "■");
+                            ui.label("Modulators");
+                            ui.add_space(15.0);
+                            ui.colored_label(egui::Color32::from_rgb(255, 150, 150), "→");
+                            ui.label("Feedback");
+                            ui.add_space(15.0);
+                            ui.colored_label(egui::Color32::from_rgb(255, 200, 100), "━");
+                            ui.label("Output Sum");
+                        });
+                    },
+                );
+            });
+        });
+    }
+
+    fn draw_arrow_head(
+        &self,
+        painter: &egui::Painter,
+        from: egui::Pos2,
+        to: egui::Pos2,
+        color: egui::Color32,
+    ) {
+        let direction = (to - from).normalized();
+        let perpendicular = egui::Vec2::new(-direction.y, direction.x);
+
+        let arrow_size = 5.0; // Smaller arrow
+        let arrow_tip = to - direction * 3.0; // Smaller offset
+
+        let arrow_left = arrow_tip - direction * arrow_size + perpendicular * (arrow_size * 0.4);
+        let arrow_right = arrow_tip - direction * arrow_size - perpendicular * (arrow_size * 0.4);
+
+        painter.line_segment([arrow_left, arrow_tip], egui::Stroke::new(1.5, color));
+        painter.line_segment([arrow_right, arrow_tip], egui::Stroke::new(1.5, color));
+    }
+
+    fn calculate_edge_connection_points(
+        &self,
+        from_center: egui::Pos2,
+        to_center: egui::Pos2,
+        op_radius: f32,
+    ) -> (egui::Pos2, egui::Pos2) {
+        let direction = (to_center - from_center).normalized();
+
+        // Calculate edge points
+        let from_edge = from_center + direction * op_radius;
+        let to_edge = to_center - direction * op_radius;
+
+        (from_edge, to_edge)
+    }
+
+    fn draw_self_loop_feedback(
+        &self,
+        painter: &egui::Painter,
+        op_pos: egui::Pos2,
+        color: egui::Color32,
+    ) {
+        let op_radius = 12.5; // Half of op_size (25.0)
+        let feedback_line_length = 40.0; // Length of horizontal feedback line
+        let external_offset = 25.0; // Distance from operator edge to feedback line
+
+        // Position the horizontal line to the right of the operator, at external offset
+        let line_start_x = op_pos.x + op_radius + external_offset;
+        let line_end_x = line_start_x + feedback_line_length;
+        let line_y = op_pos.y; // Same Y level as operator
+
+        let line_start = egui::Pos2::new(line_start_x, line_y);
+        let line_end = egui::Pos2::new(line_end_x, line_y);
+
+        // Draw the main horizontal feedback line
+        painter.line_segment([line_start, line_end], egui::Stroke::new(1.5, color));
+
+        // Draw connector from operator to feedback line
+        let connector_start = egui::Pos2::new(op_pos.x + op_radius, op_pos.y);
+        painter.line_segment([connector_start, line_start], egui::Stroke::new(1.5, color));
+
+        // Draw return connector from feedback line back to operator
+        let return_connector_end = egui::Pos2::new(op_pos.x + op_radius, op_pos.y - 8.0); // Slightly above
+        painter.line_segment(
+            [line_end, return_connector_end],
+            egui::Stroke::new(1.5, color),
+        );
+
+        // Draw arrow head at the return point
+        self.draw_arrow_head(painter, line_end, return_connector_end, color);
+    }
+}
+
+// Helper function for cubic Bezier curves
+fn bezier_point(
+    p0: egui::Pos2,
+    p1: egui::Pos2,
+    p2: egui::Pos2,
+    p3: egui::Pos2,
+    t: f32,
+) -> egui::Pos2 {
+    let u = 1.0 - t;
+    let tt = t * t;
+    let uu = u * u;
+    let uuu = uu * u;
+    let ttt = tt * t;
+
+    let mut point = p0.to_vec2() * uuu;
+    point += p1.to_vec2() * (3.0 * uu * t);
+    point += p2.to_vec2() * (3.0 * u * tt);
+    point += p3.to_vec2() * ttt;
+
+    egui::Pos2::new(point.x, point.y)
 }
