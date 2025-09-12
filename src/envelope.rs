@@ -1,3 +1,5 @@
+use crate::optimization::OPTIMIZATION_TABLES;
+
 #[derive(Debug, Clone)]
 pub struct Envelope {
     pub rate1: f32,
@@ -120,8 +122,9 @@ impl Envelope {
             return 0.0;
         }
 
-        let time_seconds = (100.0 - rate_value) / 25.0 + 0.001;
-        1.0 / (time_seconds * self.sample_rate)
+        // Use optimized DX7 rate calculation
+        let multiplier = OPTIMIZATION_TABLES.dx7_rate_to_multiplier(rate_value as u8);
+        multiplier / self.sample_rate
     }
 
     pub fn is_active(&self) -> bool {
