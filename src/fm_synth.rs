@@ -1,4 +1,6 @@
 use crate::algorithms::Algorithm;
+use crate::lfo::LFO;
+use crate::lock_free::LockFreeSynth;
 use crate::operator::Operator;
 use crate::optimization::OPTIMIZATION_TABLES;
 use std::collections::HashMap;
@@ -16,17 +18,33 @@ pub struct Voice {
     pub release_time: f32,
     pub current_frequency: f32, // For portamento
     pub target_frequency: f32,  // For portamento
+    sample_rate: f32,           // Store sample rate for calculations
+    // Graceful voice stealing
+    fade_state: VoiceFadeState,
+    fade_gain: f32,             // 0.0 to 1.0 for fade in/out
+    fade_rate: f32,             // Rate per sample
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum VoiceFadeState {
+    Normal,     // Regular playing
+    FadeOut,    // Being stolen, fading out
+    FadeIn,     // New note, fading in
 }
 
 impl Voice {
     pub fn new() -> Self {
+        Self::new_with_sample_rate(SAMPLE_RATE)
+    }
+    
+    pub fn new_with_sample_rate(sample_rate: f32) -> Self {
         let mut operators = [
-            Operator::new(SAMPLE_RATE),
-            Operator::new(SAMPLE_RATE),
-            Operator::new(SAMPLE_RATE),
-            Operator::new(SAMPLE_RATE),
-            Operator::new(SAMPLE_RATE),
-            Operator::new(SAMPLE_RATE),
+            Operator::new(sample_rate),
+            Operator::new(sample_rate),
+            Operator::new(sample_rate),
+            Operator::new(sample_rate),
+            Operator::new(sample_rate),
+            Operator::new(sample_rate),
         ];
 
         // Set up a DX7 E.Piano-like patch (Algorithm 5)
@@ -62,9 +80,19 @@ impl Voice {
             release_time: 0.0,
             current_frequency: 0.0,
             target_frequency: 0.0,
+            sample_rate,
+            fade_state: VoiceFadeState::Normal,
+            fade_gain: 1.0,
+            fade_rate: 0.001, // Fast fade: ~2ms @ 44.1kHz
         }
     }
 
+    pub fn steal_voice(&mut self) {
+        // Start graceful fade-out for voice stealing
+        self.fade_state = VoiceFadeState::FadeOut;
+        self.fade_rate = 1.0 / (self.sample_rate * 0.002); // 2ms fade-out
+    }
+    
     pub fn trigger(&mut self, note: u8, velocity: f32, master_tune: f32, portamento_enable: bool) {
         self.note = note;
         // Apply master_tune in cents (±150 cents = ±1.5 semitones)
@@ -94,6 +122,11 @@ impl Voice {
         self.velocity = velocity;
         self.active = true;
 
+        // Set up graceful fade-in for new notes
+        self.fade_state = VoiceFadeState::FadeIn;
+        self.fade_gain = 0.0;
+        self.fade_rate = 1.0 / (self.sample_rate * 0.005); // 5ms fade-in
+
         // Always re-trigger operators with new frequency for consistent sound
         for op in &mut self.operators {
             op.trigger(new_frequency, velocity, note);
@@ -120,6 +153,8 @@ impl Voice {
         pitch_bend: f32,
         pitch_bend_range: f32,
         portamento_time: f32,
+        lfo_pitch_mod: f32,
+        lfo_amp_mod: f32,
     ) -> f32 {
         if !self.active {
             return 0.0;
@@ -129,8 +164,8 @@ impl Voice {
         if self.current_frequency != self.target_frequency {
             let portamento_rate = if portamento_time > 0.0 {
                 // Convert portamento time (0-99) to rate per sample
-                // Higher time = slower rate
-                1.0 / (portamento_time * 10.0 + 1.0) / 44.1 // Approx for 44.1kHz
+                // Higher time = slower rate - use actual sample rate
+                1.0 / (portamento_time * 10.0 + 1.0) / (self.sample_rate / 1000.0)
             } else {
                 1.0 // Instant
             };
@@ -148,72 +183,102 @@ impl Voice {
         let bend_semitones = pitch_bend * pitch_bend_range;
         let bent_frequency = self.current_frequency * 2.0_f32.powf(bend_semitones / 12.0);
 
+        // Apply LFO pitch modulation (vibrato effect) - DX7 authentic scaling
+        // Convert LFO modulation to semitones for musical vibrato (±0.5 semitones max)
+        let lfo_pitch_semitones = lfo_pitch_mod * 0.5; // ±0.5 semitones = ±50 cents
+        let lfo_pitch_factor = 2.0_f32.powf(lfo_pitch_semitones / 12.0);
+        let final_frequency = bent_frequency * lfo_pitch_factor;
+
         let output = Algorithm::process_algorithm(
             algorithm,
             &mut self.operators,
-            bent_frequency,
+            final_frequency,
             self.velocity,
         );
 
+        // Apply LFO amplitude modulation (tremolo effect) - DX7 authentic scaling
+        // Scale for audible tremolo: ±50% amplitude variation
+        let lfo_amp_factor = 1.0 + (lfo_amp_mod * 0.5); // ±50% amplitude modulation
+        let modulated_output = output * lfo_amp_factor;
+
         let all_inactive = self.operators.iter().all(|op| !op.is_active());
-        if all_inactive {
+        if all_inactive && self.fade_state != VoiceFadeState::FadeOut {
             self.active = false;
         }
 
-        output * 0.8 // Increased output level
+        // CRITICAL: Process graceful fading for voice stealing
+        let final_output = match self.fade_state {
+            VoiceFadeState::FadeIn => {
+                self.fade_gain += self.fade_rate;
+                if self.fade_gain >= 1.0 {
+                    self.fade_gain = 1.0;
+                    self.fade_state = VoiceFadeState::Normal;
+                }
+                modulated_output * self.fade_gain
+            },
+            VoiceFadeState::FadeOut => {
+                self.fade_gain -= self.fade_rate;
+                if self.fade_gain <= 0.0 {
+                    self.fade_gain = 0.0;
+                    self.active = false; // Voice fully faded out, can be reused
+                }
+                modulated_output * self.fade_gain
+            },
+            VoiceFadeState::Normal => modulated_output,
+        };
+
+        final_output * 0.8 // Increased output level with fade processing
     }
 }
 
 pub struct FmSynthesizer {
     pub voices: Vec<Voice>,
-    pub algorithm: u8,
-    pub master_volume: f32,
-    pub pitch_bend: f32,
-    pub mod_wheel: f32,
-    pub sustain_pedal: bool,
     pub held_notes: HashMap<u8, usize>,
     pub preset_name: String,
-    pub master_tune: f32,        // ±150 cents (±1.5 semitones)
-    pub mono_mode: bool,         // false = poly, true = mono
-    pub pitch_bend_range: f32,   // 0-12 semitones
-    pub portamento_enable: bool, // Portamento on/off
-    pub portamento_time: f32,    // 0-99 (time in seconds scaled)
+    pub lfo: LFO,               // Global LFO instance
+    pub lock_free_params: LockFreeSynth, // Real-time safe parameters
+    sample_rate: f32,           // Store actual sample rate
 }
 
 impl FmSynthesizer {
     pub fn new() -> Self {
+        Self::new_with_sample_rate(SAMPLE_RATE)
+    }
+    
+    pub fn new_with_sample_rate(sample_rate: f32) -> Self {
         let mut voices = Vec::with_capacity(MAX_VOICES);
         for _ in 0..MAX_VOICES {
-            voices.push(Voice::new());
+            // Create voices with actual sample rate instead of hardcoded
+            let voice = Voice::new_with_sample_rate(sample_rate);
+            voices.push(voice);
         }
+
+        let lock_free_params = LockFreeSynth::new();
 
         Self {
             voices,
-            algorithm: 5, // Start with Algorithm 5 (E.Piano)
-            master_volume: 0.7,
-            pitch_bend: 0.0,
-            mod_wheel: 0.0,
-            sustain_pedal: false,
             held_notes: HashMap::new(),
             preset_name: "Init Voice".to_string(),
-            master_tune: 0.0,         // Centered tuning
-            mono_mode: false,         // Polyphonic by default
-            pitch_bend_range: 2.0,    // Default 2 semitones like DX7
-            portamento_enable: false, // Portamento off by default
-            portamento_time: 50.0,    // Medium portamento time
+            lfo: LFO::new(sample_rate), // Initialize global LFO with real sample rate
+            lock_free_params,
+            sample_rate,
         }
     }
 
     pub fn note_on(&mut self, note: u8, velocity: u8) {
         let velocity_f = velocity as f32 / 127.0;
+        let params = self.lock_free_params.get_global_params();
 
-        if self.mono_mode {
+        // Trigger LFO if key sync is enabled
+        self.lfo.trigger();
+
+        if params.mono_mode {
             // Mono mode: use portamento for smooth transition or immediate change
             self.held_notes.clear();
 
             // In mono mode, always trigger the first voice
             // Portamento will be handled inside trigger() based on portamento settings
-            self.voices[0].trigger(note, velocity_f, self.master_tune, self.portamento_enable);
+            self.voices[0].trigger(note, velocity_f, params.master_tune, params.portamento_enable);
             self.held_notes.insert(note, 0);
         } else {
             // Poly mode: original logic
@@ -221,15 +286,15 @@ impl FmSynthesizer {
                 self.voices[voice_idx].trigger(
                     note,
                     velocity_f,
-                    self.master_tune,
-                    self.portamento_enable && self.mono_mode,
+                    params.master_tune,
+                    params.portamento_enable && params.mono_mode,
                 );
                 return;
             }
 
             for (i, voice) in self.voices.iter_mut().enumerate() {
                 if !voice.active {
-                    voice.trigger(note, velocity_f, self.master_tune, false); // No portamento in poly mode
+                    voice.trigger(note, velocity_f, params.master_tune, false); // No portamento in poly mode
                     self.held_notes.insert(note, i);
                     return;
                 }
@@ -243,7 +308,11 @@ impl FmSynthesizer {
                 .map(|(i, _)| i)
                 .unwrap_or(0);
 
-            self.voices[oldest_voice].trigger(note, velocity_f, self.master_tune, false); // No portamento in poly mode
+            // CRITICAL: Graceful voice stealing instead of abrupt cutoff
+            self.voices[oldest_voice].steal_voice();
+            // Wait for fade-out to complete naturally in process() before triggering new note
+            // For immediate response, trigger new note but it will fade in gracefully
+            self.voices[oldest_voice].trigger(note, velocity_f, params.master_tune, false);
 
             self.held_notes.retain(|_, &mut v| v != oldest_voice);
             self.held_notes.insert(note, oldest_voice);
@@ -253,7 +322,7 @@ impl FmSynthesizer {
     pub fn note_off(&mut self, note: u8) {
         // Debug: println!("Note OFF: {}", note);
         if let Some(&voice_idx) = self.held_notes.get(&note) {
-            if !self.sustain_pedal {
+            if !self.lock_free_params.get_sustain_pedal() {
                 self.voices[voice_idx].release();
                 self.held_notes.remove(&note);
             }
@@ -264,20 +333,37 @@ impl FmSynthesizer {
         let mut output = 0.0;
         let mut _active_voices = 0;
 
+        // Get lock-free parameters (real-time safe)
+        let params = self.lock_free_params.get_global_params();
+        
+        // Check for panic request
+        if self.lock_free_params.check_panic_request() {
+            for voice in &mut self.voices {
+                voice.stop();
+            }
+            self.held_notes.clear();
+            return 0.0;
+        }
+
+        // Generate global LFO modulation values
+        let (lfo_pitch_mod, lfo_amp_mod) = self.lfo.process(params.mod_wheel);
+
         for voice in &mut self.voices {
             if voice.active {
                 let voice_output = voice.process(
-                    self.algorithm,
-                    self.pitch_bend,
-                    self.pitch_bend_range,
-                    self.portamento_time,
+                    params.algorithm,
+                    params.pitch_bend,
+                    params.pitch_bend_range,
+                    params.portamento_time,
+                    lfo_pitch_mod,
+                    lfo_amp_mod,
                 );
                 output += voice_output;
                 _active_voices += 1;
             }
         }
 
-        let final_output = output * self.master_volume;
+        let final_output = output * params.master_volume;
 
         // Debug output occasionally (disabled)
         // static mut SAMPLE_COUNT: u32 = 0;
@@ -293,7 +379,10 @@ impl FmSynthesizer {
 
     pub fn set_algorithm(&mut self, algorithm: u8) {
         if algorithm >= 1 && algorithm <= 32 {
-            self.algorithm = algorithm;
+            // Update lock-free parameters
+            let mut params = self.lock_free_params.get_global_params().clone();
+            params.algorithm = algorithm;
+            self.lock_free_params.set_global_param(params);
 
             // Configure feedback based on self-loops in the algorithm
             self.configure_algorithm_feedback(algorithm);
@@ -377,24 +466,37 @@ impl FmSynthesizer {
 
     pub fn control_change(&mut self, controller: u8, value: u8) {
         match controller {
-            1 => self.mod_wheel = value as f32 / 127.0,
-            64 => self.sustain_pedal = value >= 64,
-            123 => self.panic(),
+            1 => {
+                let mut params = self.lock_free_params.get_global_params().clone();
+                params.mod_wheel = value as f32 / 127.0;
+                self.lock_free_params.set_global_param(params);
+            }
+            64 => {
+                self.lock_free_params.set_sustain_pedal(value >= 64);
+            }
+            123 => {
+                self.lock_free_params.request_panic();
+            }
             _ => {}
         }
     }
 
     pub fn pitch_bend(&mut self, value: i16) {
-        self.pitch_bend = value as f32 / 8192.0;
+        let mut params = self.lock_free_params.get_global_params().clone();
+        params.pitch_bend = value as f32 / 8192.0;
+        self.lock_free_params.set_global_param(params);
     }
 
     pub fn set_master_tune(&mut self, cents: f32) {
-        // Clamp to DX7 original range: ±150 cents
-        self.master_tune = cents.clamp(-150.0, 150.0);
+        let mut params = self.lock_free_params.get_global_params().clone();
+        params.master_tune = cents.clamp(-150.0, 150.0);
+        self.lock_free_params.set_global_param(params);
     }
 
     pub fn set_mono_mode(&mut self, mono: bool) {
-        self.mono_mode = mono;
+        let mut params = self.lock_free_params.get_global_params().clone();
+        params.mono_mode = mono;
+        self.lock_free_params.set_global_param(params);
 
         // If switching to mono, stop all voices except the first active one
         if mono {
@@ -412,23 +514,31 @@ impl FmSynthesizer {
     }
 
     pub fn set_pitch_bend_range(&mut self, range: f32) {
-        // Clamp to DX7 original range: 0-12 semitones
-        self.pitch_bend_range = range.clamp(0.0, 12.0);
+        let mut params = self.lock_free_params.get_global_params().clone();
+        params.pitch_bend_range = range.clamp(0.0, 12.0);
+        self.lock_free_params.set_global_param(params);
     }
 
     pub fn set_portamento_enable(&mut self, enable: bool) {
-        self.portamento_enable = enable;
+        let mut params = self.lock_free_params.get_global_params().clone();
+        params.portamento_enable = enable;
+        self.lock_free_params.set_global_param(params);
     }
 
     pub fn set_portamento_time(&mut self, time: f32) {
-        // Clamp to DX7 range: 0-99
-        self.portamento_time = time.clamp(0.0, 99.0);
+        let mut params = self.lock_free_params.get_global_params().clone();
+        params.portamento_time = time.clamp(0.0, 99.0);
+        self.lock_free_params.set_global_param(params);
     }
 
     pub fn voice_initialize(&mut self) {
         // Reset all voices to basic DX7 init voice settings
         self.preset_name = "Init Voice".to_string();
-        self.algorithm = 1; // Basic algorithm
+        
+        // Set algorithm to 1 using lock-free parameters
+        let mut params = self.lock_free_params.get_global_params().clone();
+        params.algorithm = 1; // Basic algorithm
+        self.lock_free_params.set_global_param(params);
 
         // Stop all playing voices
         for voice in &mut self.voices {
@@ -459,5 +569,106 @@ impl FmSynthesizer {
                 op.envelope.level4 = 0.0; // Release level
             }
         }
+    }
+
+    // LFO control methods
+    pub fn set_lfo_rate(&mut self, rate: f32) {
+        self.lfo.set_rate(rate);
+    }
+
+    pub fn set_lfo_delay(&mut self, delay: f32) {
+        self.lfo.set_delay(delay);
+    }
+
+    pub fn set_lfo_pitch_depth(&mut self, depth: f32) {
+        self.lfo.set_pitch_depth(depth);
+    }
+
+    pub fn set_lfo_amp_depth(&mut self, depth: f32) {
+        self.lfo.set_amp_depth(depth);
+    }
+
+    pub fn set_lfo_waveform(&mut self, waveform: crate::lfo::LFOWaveform) {
+        self.lfo.set_waveform(waveform);
+    }
+
+    pub fn set_lfo_key_sync(&mut self, key_sync: bool) {
+        self.lfo.set_key_sync(key_sync);
+    }
+
+    // LFO getters for GUI display
+    pub fn get_lfo_rate(&self) -> f32 {
+        self.lfo.rate
+    }
+
+    pub fn get_lfo_delay(&self) -> f32 {
+        self.lfo.delay
+    }
+
+    pub fn get_lfo_pitch_depth(&self) -> f32 {
+        self.lfo.pitch_depth
+    }
+
+    pub fn get_lfo_amp_depth(&self) -> f32 {
+        self.lfo.amp_depth
+    }
+
+    pub fn get_lfo_waveform(&self) -> crate::lfo::LFOWaveform {
+        self.lfo.waveform
+    }
+
+    pub fn get_lfo_key_sync(&self) -> bool {
+        self.lfo.key_sync
+    }
+
+    pub fn get_lfo_frequency_hz(&self) -> f32 {
+        self.lfo.get_frequency_hz()
+    }
+
+    pub fn get_lfo_delay_seconds(&self) -> f32 {
+        self.lfo.get_delay_seconds()
+    }
+    
+    // Lock-free parameter getters for GUI
+    pub fn get_algorithm(&self) -> u8 {
+        self.lock_free_params.get_global_params().algorithm
+    }
+    
+    pub fn get_master_volume(&self) -> f32 {
+        self.lock_free_params.get_global_params().master_volume
+    }
+    
+    pub fn set_master_volume(&mut self, volume: f32) {
+        let mut params = self.lock_free_params.get_global_params().clone();
+        params.master_volume = volume.clamp(0.0, 1.0);
+        self.lock_free_params.set_global_param(params);
+    }
+    
+    pub fn get_pitch_bend(&self) -> f32 {
+        self.lock_free_params.get_global_params().pitch_bend
+    }
+    
+    pub fn get_mod_wheel(&self) -> f32 {
+        self.lock_free_params.get_global_params().mod_wheel
+    }
+    
+    pub fn get_master_tune(&self) -> f32 {
+        self.lock_free_params.get_global_params().master_tune
+    }
+    
+    pub fn get_mono_mode(&self) -> bool {
+        self.lock_free_params.get_global_params().mono_mode
+    }
+    
+    pub fn get_pitch_bend_range(&self) -> f32 {
+        self.lock_free_params.get_global_params().pitch_bend_range
+    }
+    
+    pub fn get_portamento_enable(&self) -> bool {
+        self.lock_free_params.get_global_params().portamento_enable
+    }
+    
+    pub fn get_portamento_time(&self) -> f32 {
+        self.lock_free_params.get_global_params().portamento_time
     }
 }

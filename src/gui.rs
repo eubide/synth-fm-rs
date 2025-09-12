@@ -27,7 +27,7 @@ enum DisplayMode {
     Voice,
     Operator,
     Algorithm,
-    Function,
+    LFO,
 }
 
 impl Dx7App {
@@ -96,7 +96,7 @@ impl Dx7App {
                 let sub_text = match self.display_mode {
                     DisplayMode::Voice => {
                         if let Ok(synth) = self.lock_synth() {
-                            format!("VOICE: {} | ALG: {:02}", synth.preset_name, synth.algorithm)
+                            format!("VOICE: {} | ALG: {:02}", synth.preset_name, synth.get_algorithm())
                         } else {
                             "VOICE: ERROR".to_string()
                         }
@@ -109,15 +109,25 @@ impl Dx7App {
                             let algorithms = Algorithm::get_all_algorithms();
                             let alg_name = algorithms
                                 .iter()
-                                .find(|a| a.number == synth.algorithm)
+                                .find(|a| a.number == synth.get_algorithm())
                                 .map(|a| a.name.clone())
                                 .unwrap_or_else(|| "Unknown".to_string());
-                            format!("ALG {} - {}", synth.algorithm, alg_name)
+                            format!("ALG {} - {}", synth.get_algorithm(), alg_name)
                         } else {
                             "ALGORITHM: ERROR".to_string()
                         }
                     }
-                    DisplayMode::Function => "FUNCTION MODE".to_string(),
+                    DisplayMode::LFO => {
+                        if let Ok(synth) = self.lock_synth() {
+                            let waveform_name = synth.get_lfo_waveform().name();
+                            format!("LFO: {} | Rate: {:.0} | Mod: {:.0}%", 
+                                waveform_name, 
+                                synth.get_lfo_rate(),
+                                synth.get_mod_wheel() * 100.0)
+                        } else {
+                            "LFO: ERROR".to_string()
+                        }
+                    }
                 };
 
                 ui.label(
@@ -131,21 +141,21 @@ impl Dx7App {
 
                 // Always display current status information
                 let synth = self.synthesizer.lock().unwrap();
-                let mode_text = if synth.mono_mode { "MONO" } else { "POLY" };
+                let mode_text = if synth.get_mono_mode() { "MONO" } else { "POLY" };
                 let midi_text = if self._midi_handler.is_some() { "MIDI OK" } else { "NO MIDI" };
                 
-                let status_line = if synth.mono_mode {
+                let status_line = if synth.get_mono_mode() {
                     // Show portamento only in MONO mode
-                    let porta_text = if synth.portamento_enable { "ON" } else { "OFF" };
+                    let porta_text = if synth.get_portamento_enable() { "ON" } else { "OFF" };
                     format!(
                         "VOICE: {} | ALG: {:02} | MODE: {} | PORTA: {} | {}",
-                        synth.preset_name, synth.algorithm, mode_text, porta_text, midi_text
+                        synth.preset_name, synth.get_algorithm(), mode_text, porta_text, midi_text
                     )
                 } else {
                     // In POLY mode, don't show portamento
                     format!(
                         "VOICE: {} | ALG: {:02} | MODE: {} | {}",
-                        synth.preset_name, synth.algorithm, mode_text, midi_text
+                        synth.preset_name, synth.get_algorithm(), mode_text, midi_text
                     )
                 };
 
@@ -158,73 +168,404 @@ impl Dx7App {
         });
     }
 
-    fn draw_membrane_buttons(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            ui.spacing_mut().button_padding = egui::vec2(8.0, 4.0);
-
-            let voice_button = if self.display_mode == DisplayMode::Voice {
-                egui::Button::new("VOICE").fill(egui::Color32::from_rgb(180, 200, 220))
+    fn draw_global_controls(&mut self, ui: &mut egui::Ui) {
+        ui.group(|ui| {
+            // Light gray background for global panel
+            ui.style_mut().visuals.widgets.noninteractive.bg_fill =
+                egui::Color32::from_rgb(245, 245, 245);
+            
+            let available_width = ui.available_width();
+            let is_narrow = available_width < 800.0;
+            
+            ui.set_min_height(if is_narrow { 100.0 } else { 60.0 });
+            
+            if is_narrow {
+                // Vertical layout for narrow windows
+                ui.vertical(|ui| {
+                    ui.label(egui::RichText::new("GLOBAL CONTROLS").size(10.0).strong());
+                    
+                    // First row: Volume and Mode
+                    ui.horizontal(|ui| {
+                        // Volume section
+                        ui.vertical(|ui| {
+                            ui.horizontal(|ui| {
+                                ui.label("MASTER VOL:");
+                                if let Ok(mut synth) = self.lock_synth() {
+                                    ui.allocate_ui_with_layout(
+                                        egui::vec2(60.0, 20.0),
+                                        egui::Layout::left_to_right(egui::Align::Center),
+                                        |ui| {
+                                            let mut volume = synth.get_master_volume();
+                                            if ui.add(
+                                                egui::Slider::new(&mut volume, 0.0..=1.0)
+                                                    .show_value(false)
+                                            ).changed() {
+                                                synth.set_master_volume(volume);
+                                            }
+                                        }
+                                    );
+                                    ui.label(format!("{:.0}", synth.get_master_volume() * 100.0));
+                                }
+                            });
+                        });
+                        
+                        ui.separator();
+                        
+                        // Mode section
+                        ui.vertical(|ui| {
+                            self.draw_mode_controls_compact(ui);
+                        });
+                    });
+                    
+                    // Second row: Tune and utilities
+                    ui.horizontal(|ui| {
+                        self.draw_tune_and_utilities_compact(ui);
+                    });
+                });
             } else {
-                egui::Button::new("VOICE")
+                // Horizontal layout for wide windows
+                ui.vertical(|ui| {
+                    ui.label(egui::RichText::new("GLOBAL CONTROLS").size(10.0).strong());
+                    
+                    // First row: Volume, Tuning, Mode, Panic/Init
+                    ui.horizontal(|ui| {
+                        // Left section: Volume
+                        ui.vertical(|ui| {
+                            ui.set_min_width(120.0);
+                            ui.horizontal(|ui| {
+                                ui.label("MASTER VOL:");
+                                if let Ok(mut synth) = self.lock_synth() {
+                                    ui.allocate_ui_with_layout(
+                                        egui::vec2(60.0, 20.0),
+                                        egui::Layout::left_to_right(egui::Align::Center),
+                                        |ui| {
+                                            let mut volume = synth.get_master_volume();
+                                            if ui.add(
+                                                egui::Slider::new(&mut volume, 0.0..=1.0)
+                                                    .show_value(false)
+                                            ).changed() {
+                                                synth.set_master_volume(volume);
+                                            }
+                                        }
+                                    );
+                                    ui.label(format!("{:.0}", synth.get_master_volume() * 100.0));
+                                }
+                            });
+                        });
+
+                        ui.separator();
+
+                        // Center-left section: Tuning controls  
+                        ui.vertical(|ui| {
+                            ui.set_min_width(180.0);
+                            if let Ok(mut synth) = self.lock_synth() {
+                                // Master Tune
+                                ui.horizontal(|ui| {
+                                    ui.label("MASTER TUNE:");
+                                    let mut master_tune = synth.get_master_tune();
+                                    ui.allocate_ui_with_layout(
+                                        egui::vec2(70.0, 20.0),
+                                        egui::Layout::left_to_right(egui::Align::Center),
+                                        |ui| {
+                                            if ui.add(
+                                                egui::Slider::new(&mut master_tune, -150.0..=150.0)
+                                                    .show_value(false)
+                                            ).changed() {
+                                                synth.set_master_tune(master_tune);
+                                            }
+                                        }
+                                    );
+                                    ui.label(format!("{:.0}c", master_tune));
+                                    
+                                    if ui.small_button("RST").clicked() {
+                                        synth.set_master_tune(0.0);
+                                    }
+                                });
+                                
+                                // Pitch Bend Range
+                                ui.horizontal(|ui| {
+                                    ui.label("PITCH BEND:");
+                                    let mut pb_range = synth.get_pitch_bend_range();
+                                    ui.allocate_ui_with_layout(
+                                        egui::vec2(50.0, 20.0),
+                                        egui::Layout::left_to_right(egui::Align::Center),
+                                        |ui| {
+                                            if ui.add(
+                                                egui::Slider::new(&mut pb_range, 0.0..=12.0)
+                                                    .show_value(false)
+                                            ).changed() {
+                                                synth.set_pitch_bend_range(pb_range);
+                                            }
+                                        }
+                                    );
+                                    ui.label(format!("{:.0}", pb_range));
+                                });
+                            }
+                        });
+
+                        ui.separator();
+
+                        // Center-right section: Mode controls
+                        ui.vertical(|ui| {
+                            ui.set_min_width(150.0);
+                            if let Ok(mut synth) = self.lock_synth() {
+                                ui.horizontal(|ui| {
+                                    ui.label("MODE:");
+                                    
+                                    let was_mono = synth.get_mono_mode();
+                                    
+                                    if ui.selectable_value(&mut synth.get_mono_mode(), false, "POLY").clicked() {
+                                        if was_mono {
+                                            synth.set_mono_mode(false);
+                                        }
+                                    }
+                                    
+                                    if ui.selectable_value(&mut synth.get_mono_mode(), true, "MONO").clicked() {
+                                        if !was_mono {
+                                            synth.set_mono_mode(true);
+                                        }
+                                    }
+                                });
+                                
+                                // Portamento (only visible in MONO mode)
+                                if synth.get_mono_mode() {
+                                    ui.horizontal(|ui| {
+                                        ui.label("PORTAMENTO:");
+                                        let mut porta_on = synth.get_portamento_enable();
+                                        if ui.checkbox(&mut porta_on, "").changed() {
+                                            synth.set_portamento_enable(porta_on);
+                                        }
+                                        
+                                        if synth.get_portamento_enable() {
+                                            ui.label("TIME:");
+                                            let mut porta_time = synth.get_portamento_time();
+                                            ui.allocate_ui_with_layout(
+                                                egui::vec2(50.0, 20.0),
+                                                egui::Layout::left_to_right(egui::Align::Center),
+                                                |ui| {
+                                                    if ui.add(
+                                                        egui::Slider::new(&mut porta_time, 0.0..=99.0)
+                                                            .show_value(false)
+                                                    ).changed() {
+                                                        synth.set_portamento_time(porta_time);
+                                                    }
+                                                }
+                                            );
+                                            ui.label(format!("{:.0}", porta_time));
+                                        }
+                                    });
+                                }
+                            }
+                        });
+
+                        ui.separator();
+
+                        // Right section: Panic and Init buttons
+                        ui.vertical(|ui| {
+                            ui.set_min_width(100.0);
+                            ui.horizontal(|ui| {
+                                if ui.small_button("PANIC").clicked() {
+                                    if let Ok(mut synth) = self.lock_synth() {
+                                        synth.panic();
+                                    }
+                                }
+                                
+                                if ui.small_button("INIT").clicked() {
+                                    if let Ok(mut synth) = self.lock_synth() {
+                                        synth.voice_initialize();
+                                    }
+                                }
+                            });
+                        });
+                    });
+                    
+                });
             };
-
-            if ui.add(voice_button).clicked() {
-                self.display_mode = DisplayMode::Voice;
-                self.display_text = "VOICE SELECT".to_string();
-            }
-
-            let algorithm_button = if self.display_mode == DisplayMode::Algorithm {
-                egui::Button::new("ALGORITHM").fill(egui::Color32::from_rgb(180, 200, 220))
-            } else {
-                egui::Button::new("ALGORITHM")
-            };
-
-            if ui.add(algorithm_button).clicked() {
-                self.display_mode = DisplayMode::Algorithm;
-                self.display_text = "ALGORITHM SELECT".to_string();
-            }
-
-            let op_select_button = if self.display_mode == DisplayMode::Operator {
-                egui::Button::new("OPERATOR").fill(egui::Color32::from_rgb(180, 200, 220))
-            } else {
-                egui::Button::new("OPERATOR")
-            };
-
-            if ui.add(op_select_button).clicked() {
-                self.display_mode = DisplayMode::Operator;
-                self.display_text = format!("OPERATOR {}", self.selected_operator + 1);
-            }
-
-            let function_button = if self.display_mode == DisplayMode::Function {
-                egui::Button::new("FUNCTION").fill(egui::Color32::from_rgb(180, 200, 220))
-            } else {
-                egui::Button::new("FUNCTION")
-            };
-
-            if ui.add(function_button).clicked() {
-                self.display_mode = DisplayMode::Function;
-                self.display_text = "FUNCTION MODE".to_string();
-            }
-
-            // Only show operator buttons when in Operator mode
-            if self.display_mode == DisplayMode::Operator {
-                ui.separator();
-
-                for i in 1..=6 {
-                    let is_selected = self.selected_operator == i - 1;
-                    let button = if is_selected {
-                        egui::Button::new(&format!("{}", i))
-                            .fill(egui::Color32::from_rgb(180, 200, 220))
-                    } else {
-                        egui::Button::new(&format!("{}", i))
-                    };
-
-                    if ui.add(button).clicked() {
-                        self.selected_operator = i - 1;
-                        self.display_text = format!("OPERATOR {}", i);
+        });
+    }
+    
+    fn draw_mode_controls_compact(&mut self, ui: &mut egui::Ui) {
+        if let Ok(mut synth) = self.lock_synth() {
+            ui.horizontal(|ui| {
+                ui.label("MODE:");
+                
+                let was_mono = synth.get_mono_mode();
+                
+                if ui.selectable_value(&mut synth.get_mono_mode(), false, "POLY").clicked() {
+                    if was_mono {
+                        synth.set_mono_mode(false);
                     }
                 }
+                
+                if ui.selectable_value(&mut synth.get_mono_mode(), true, "MONO").clicked() {
+                    if !was_mono {
+                        synth.set_mono_mode(true);
+                    }
+                }
+            });
+            
+            // Portamento (only visible in MONO mode)
+            if synth.get_mono_mode() {
+                ui.horizontal(|ui| {
+                    ui.label("PORTA:");
+                    let mut porta_on = synth.get_portamento_enable();
+                    if ui.checkbox(&mut porta_on, "").changed() {
+                        synth.set_portamento_enable(porta_on);
+                    }
+                    
+                    if synth.get_portamento_enable() {
+                        ui.label("TIME:");
+                        let mut porta_time = synth.get_portamento_time();
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(40.0, 20.0),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                if ui.add(
+                                    egui::Slider::new(&mut porta_time, 0.0..=99.0)
+                                        .show_value(false)
+                                ).changed() {
+                                    synth.set_portamento_time(porta_time);
+                                }
+                            }
+                        );
+                        ui.label(format!("{:.0}", porta_time));
+                    }
+                });
             }
+        }
+    }
+    
+    fn draw_tune_and_utilities_compact(&mut self, ui: &mut egui::Ui) {
+        if let Ok(mut synth) = self.lock_synth() {
+            // First row: Master Tune
+            ui.horizontal(|ui| {
+                ui.label("TUNE:");
+                let mut master_tune = synth.get_master_tune();
+                ui.allocate_ui_with_layout(
+                    egui::vec2(50.0, 20.0),
+                    egui::Layout::left_to_right(egui::Align::Center),
+                    |ui| {
+                        if ui.add(
+                            egui::Slider::new(&mut master_tune, -150.0..=150.0)
+                                .show_value(false)
+                        ).changed() {
+                            synth.set_master_tune(master_tune);
+                        }
+                    }
+                );
+                ui.label(format!("{:.0}c", master_tune));
+                
+                if ui.small_button("RST").clicked() {
+                    synth.set_master_tune(0.0);
+                }
+            });
+            
+            // Second row: Pitch Bend and utilities
+            ui.horizontal(|ui| {
+                ui.label("BEND:");
+                let mut pb_range = synth.get_pitch_bend_range();
+                ui.allocate_ui_with_layout(
+                    egui::vec2(40.0, 20.0),
+                    egui::Layout::left_to_right(egui::Align::Center),
+                    |ui| {
+                        if ui.add(
+                            egui::Slider::new(&mut pb_range, 0.0..=12.0)
+                                .show_value(false)
+                        ).changed() {
+                            synth.set_pitch_bend_range(pb_range);
+                        }
+                    }
+                );
+                ui.label(format!("{:.0}", pb_range));
+                
+                ui.separator();
+                
+                if ui.small_button("PANIC").clicked() {
+                    synth.panic();
+                }
+                
+                if ui.small_button("INIT").clicked() {
+                    synth.voice_initialize();
+                }
+            });
+        }
+    }
+
+    fn draw_membrane_buttons(&mut self, ui: &mut egui::Ui) {
+        ui.group(|ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().button_padding = egui::vec2(12.0, 6.0);
+                
+                // Make buttons more DX7-like with consistent sizing
+                let button_size = egui::vec2(85.0, 25.0);
+
+                let voice_button = if self.display_mode == DisplayMode::Voice {
+                    egui::Button::new("VOICE").fill(egui::Color32::from_rgb(180, 200, 220)).min_size(button_size)
+                } else {
+                    egui::Button::new("VOICE").min_size(button_size)
+                };
+
+                if ui.add(voice_button).clicked() {
+                    self.display_mode = DisplayMode::Voice;
+                    self.display_text = "VOICE SELECT".to_string();
+                }
+
+                let algorithm_button = if self.display_mode == DisplayMode::Algorithm {
+                    egui::Button::new("ALGORITHM").fill(egui::Color32::from_rgb(180, 200, 220)).min_size(button_size)
+                } else {
+                    egui::Button::new("ALGORITHM").min_size(button_size)
+                };
+
+                if ui.add(algorithm_button).clicked() {
+                    self.display_mode = DisplayMode::Algorithm;
+                    self.display_text = "ALGORITHM SELECT".to_string();
+                }
+
+                let op_select_button = if self.display_mode == DisplayMode::Operator {
+                    egui::Button::new("OPERATOR").fill(egui::Color32::from_rgb(180, 200, 220)).min_size(button_size)
+                } else {
+                    egui::Button::new("OPERATOR").min_size(button_size)
+                };
+
+                if ui.add(op_select_button).clicked() {
+                    self.display_mode = DisplayMode::Operator;
+                    self.display_text = format!("OPERATOR {}", self.selected_operator + 1);
+                }
+
+                let lfo_button = if self.display_mode == DisplayMode::LFO {
+                    egui::Button::new("LFO").fill(egui::Color32::from_rgb(180, 200, 220)).min_size(button_size)
+                } else {
+                    egui::Button::new("LFO").min_size(button_size)
+                };
+
+                if ui.add(lfo_button).clicked() {
+                    self.display_mode = DisplayMode::LFO;
+                    self.display_text = "LFO CONTROLS".to_string();
+                }
+
+                // Only show operator buttons when in Operator mode
+                if self.display_mode == DisplayMode::Operator {
+                    ui.separator();
+                    ui.label("OP:");
+
+                    for i in 1..=6 {
+                        let is_selected = self.selected_operator == i - 1;
+                        let op_button_size = egui::vec2(25.0, 25.0);
+                        let button = if is_selected {
+                            egui::Button::new(&format!("{}", i))
+                                .fill(egui::Color32::from_rgb(180, 200, 220))
+                                .min_size(op_button_size)
+                        } else {
+                            egui::Button::new(&format!("{}", i)).min_size(op_button_size)
+                        };
+
+                        if ui.add(button).clicked() {
+                            self.selected_operator = i - 1;
+                            self.display_text = format!("OPERATOR {}", i);
+                        }
+                    }
+                }
+            });
         });
     }
 
@@ -261,9 +602,9 @@ impl Dx7App {
                     }
                 };
 
-                ui.horizontal(|ui| {
-                    ui.label("Frequency Ratio:");
-                    if ui
+                ui.columns(2, |columns| {
+                    columns[0].label("Frequency Ratio:");
+                    if columns[1]
                         .add(
                             egui::Slider::new(&mut freq_ratio, 0.5..=15.0)
                                 .step_by(0.5)
@@ -278,9 +619,9 @@ impl Dx7App {
                     }
                 });
 
-                ui.horizontal(|ui| {
-                    ui.label("Output Level:");
-                    if ui
+                ui.columns(2, |columns| {
+                    columns[0].label("Output Level:");
+                    if columns[1]
                         .add(
                             egui::Slider::new(&mut output_level, 0.0..=99.0)
                                 .integer()
@@ -296,9 +637,9 @@ impl Dx7App {
                     }
                 });
 
-                ui.horizontal(|ui| {
-                    ui.label("Detune:");
-                    if ui
+                ui.columns(2, |columns| {
+                    columns[0].label("Detune:");
+                    if columns[1]
                         .add(
                             egui::Slider::new(&mut detune, -7.0..=7.0)
                                 .integer()
@@ -314,9 +655,9 @@ impl Dx7App {
                 });
 
                 if self.operator_has_feedback(op_idx) {
-                    ui.horizontal(|ui| {
-                        ui.label("Feedback:");
-                        if ui
+                    ui.columns(2, |columns| {
+                        columns[0].label("Feedback:");
+                        if columns[1]
                             .add(
                                 egui::Slider::new(&mut feedback, 0.0..=7.0)
                                     .integer()
@@ -335,9 +676,9 @@ impl Dx7App {
                 ui.separator();
                 ui.label("Sensitivity:");
 
-                ui.horizontal(|ui| {
-                    ui.label("Velocity Sens:");
-                    if ui
+                ui.columns(2, |columns| {
+                    columns[0].label("Velocity Sens:");
+                    if columns[1]
                         .add(
                             egui::Slider::new(&mut vel_sens, 0.0..=7.0)
                                 .integer()
@@ -352,9 +693,9 @@ impl Dx7App {
                     }
                 });
 
-                ui.horizontal(|ui| {
-                    ui.label("Key Scale Level:");
-                    if ui
+                ui.columns(2, |columns| {
+                    columns[0].label("Key Scale Level:");
+                    if columns[1]
                         .add(
                             egui::Slider::new(&mut key_scale_lvl, 0.0..=99.0)
                                 .integer()
@@ -370,9 +711,9 @@ impl Dx7App {
                     }
                 });
 
-                ui.horizontal(|ui| {
-                    ui.label("Key Scale Rate:");
-                    if ui
+                ui.columns(2, |columns| {
+                    columns[0].label("Key Scale Rate:");
+                    if columns[1]
                         .add(
                             egui::Slider::new(&mut key_scale_rt, 0.0..=7.0)
                                 .integer()
@@ -397,32 +738,61 @@ impl Dx7App {
                 ui.label("SELECT VOICE:");
                 ui.separator();
 
-                // Display presets in a grid
+                // Calculate responsive grid columns based on available width
+                let available_width = ui.available_width();
+                let button_width = 120.0;
+                let button_spacing = 10.0;
+                let min_columns = 2;
+                let max_columns = 6;
+                
+                // Calculate how many columns fit, with padding for margins
+                let padding = 40.0; // Account for group padding and margins
+                let usable_width = available_width - padding;
+                let columns_that_fit = ((usable_width + button_spacing) / (button_width + button_spacing)) as usize;
+                let optimal_columns = columns_that_fit.clamp(min_columns, max_columns);
+
+                // Display presets in a responsive grid
                 egui::Grid::new("preset_grid")
-                    .num_columns(4)
-                    .spacing([10.0, 10.0])
+                    .num_columns(optimal_columns)
+                    .spacing([button_spacing, 10.0])
+                    .min_col_width(button_width)
+                    .max_col_width(button_width)
                     .show(ui, |ui| {
                         for (i, preset) in self.presets.iter().enumerate() {
                             let is_selected = i == self.selected_preset;
                             let button = if is_selected {
                                 egui::Button::new(preset.name)
                                     .fill(egui::Color32::from_rgb(180, 200, 220))
-                                    .min_size(egui::vec2(120.0, 30.0))
+                                    .min_size(egui::vec2(button_width, 30.0))
                             } else {
-                                egui::Button::new(preset.name).min_size(egui::vec2(120.0, 30.0))
+                                egui::Button::new(preset.name).min_size(egui::vec2(button_width, 30.0))
                             };
 
                             if ui.add(button).clicked() {
                                 self.selected_preset = i;
+                                let preset_name = preset.name.to_string();
                                 // Apply preset to synthesizer
-                                let mut synth = self.synthesizer.lock().unwrap();
-                                preset.apply_to_synth(&mut synth);
-                                self.display_text = format!("LOADED: {}", preset.name);
+                                if let Ok(mut synth) = self.lock_synth() {
+                                    preset.apply_to_synth(&mut synth);
+                                };
+                                self.display_text = format!("LOADED: {}", preset_name);
                             }
 
-                            if (i + 1) % 4 == 0 {
+                            // End row when we reach the optimal column count
+                            if (i + 1) % optimal_columns == 0 {
                                 ui.end_row();
                             }
+                        }
+                        
+                        // Handle the last row if it's incomplete
+                        let total_presets = self.presets.len();
+                        let last_row_items = total_presets % optimal_columns;
+                        if last_row_items != 0 {
+                            // Add empty cells to complete the last row for better alignment
+                            for _ in last_row_items..optimal_columns {
+                                ui.add_space(button_width);
+                            }
+                            ui.end_row();
                         }
                     });
 
@@ -464,15 +834,15 @@ impl Dx7App {
                     }
                 };
 
-                ui.columns(2, |columns| {
-                    columns[0].vertical(|ui| {
-                        ui.label("RATES");
-
-                        if ui
+                ui.vertical(|ui| {
+                    ui.label("RATES");
+                    ui.columns(2, |columns| {
+                        columns[0].label("Attack Rate:");
+                        if columns[1]
                             .add(
                                 egui::Slider::new(&mut rate1, 0.0..=99.0)
-                                    .text("R1")
-                                    .integer(),
+                                    .integer()
+                                    .show_value(true),
                             )
                             .changed()
                         {
@@ -481,12 +851,14 @@ impl Dx7App {
                                 .unwrap()
                                 .set_envelope_param(op_idx, "rate1", rate1);
                         }
-
-                        if ui
+                    });
+                    ui.columns(2, |columns| {
+                        columns[0].label("Decay Rate:");
+                        if columns[1]
                             .add(
                                 egui::Slider::new(&mut rate2, 0.0..=99.0)
-                                    .text("R2")
-                                    .integer(),
+                                    .integer()
+                                    .show_value(true),
                             )
                             .changed()
                         {
@@ -495,12 +867,14 @@ impl Dx7App {
                                 .unwrap()
                                 .set_envelope_param(op_idx, "rate2", rate2);
                         }
-
-                        if ui
+                    });
+                    ui.columns(2, |columns| {
+                        columns[0].label("Sustain Rate:");
+                        if columns[1]
                             .add(
                                 egui::Slider::new(&mut rate3, 0.0..=99.0)
-                                    .text("R3")
-                                    .integer(),
+                                    .integer()
+                                    .show_value(true),
                             )
                             .changed()
                         {
@@ -509,12 +883,14 @@ impl Dx7App {
                                 .unwrap()
                                 .set_envelope_param(op_idx, "rate3", rate3);
                         }
-
-                        if ui
+                    });
+                    ui.columns(2, |columns| {
+                        columns[0].label("Release Rate:");
+                        if columns[1]
                             .add(
                                 egui::Slider::new(&mut rate4, 0.0..=99.0)
-                                    .text("R4")
-                                    .integer(),
+                                    .integer()
+                                    .show_value(true),
                             )
                             .changed()
                         {
@@ -524,15 +900,17 @@ impl Dx7App {
                                 .set_envelope_param(op_idx, "rate4", rate4);
                         }
                     });
+                });
 
-                    columns[1].vertical(|ui| {
-                        ui.label("LEVELS");
-
-                        if ui
+                ui.vertical(|ui| {
+                    ui.label("LEVELS");
+                    ui.columns(2, |columns| {
+                        columns[0].label("Attack Level:");
+                        if columns[1]
                             .add(
                                 egui::Slider::new(&mut level1, 0.0..=99.0)
-                                    .text("L1")
-                                    .integer(),
+                                    .integer()
+                                    .show_value(true),
                             )
                             .changed()
                         {
@@ -541,12 +919,14 @@ impl Dx7App {
                                 .unwrap()
                                 .set_envelope_param(op_idx, "level1", level1);
                         }
-
-                        if ui
+                    });
+                    ui.columns(2, |columns| {
+                        columns[0].label("Decay Level:");
+                        if columns[1]
                             .add(
                                 egui::Slider::new(&mut level2, 0.0..=99.0)
-                                    .text("L2")
-                                    .integer(),
+                                    .integer()
+                                    .show_value(true),
                             )
                             .changed()
                         {
@@ -555,12 +935,14 @@ impl Dx7App {
                                 .unwrap()
                                 .set_envelope_param(op_idx, "level2", level2);
                         }
-
-                        if ui
+                    });
+                    ui.columns(2, |columns| {
+                        columns[0].label("Sustain Level:");
+                        if columns[1]
                             .add(
                                 egui::Slider::new(&mut level3, 0.0..=99.0)
-                                    .text("L3")
-                                    .integer(),
+                                    .integer()
+                                    .show_value(true),
                             )
                             .changed()
                         {
@@ -569,12 +951,14 @@ impl Dx7App {
                                 .unwrap()
                                 .set_envelope_param(op_idx, "level3", level3);
                         }
-
-                        if ui
+                    });
+                    ui.columns(2, |columns| {
+                        columns[0].label("Release Level:");
+                        if columns[1]
                             .add(
                                 egui::Slider::new(&mut level4, 0.0..=99.0)
-                                    .text("L4")
-                                    .integer(),
+                                    .integer()
+                                    .show_value(true),
                             )
                             .changed()
                         {
@@ -600,10 +984,10 @@ impl Dx7App {
                 egui::ComboBox::from_label("")
                     .selected_text(format!(
                         "{:02} - {}",
-                        synth.algorithm,
+                        synth.get_algorithm(),
                         algorithms
                             .iter()
-                            .find(|a| a.number == synth.algorithm)
+                            .find(|a| a.number == synth.get_algorithm())
                             .map(|a| a.name.as_str())
                             .unwrap_or("Unknown")
                     ))
@@ -611,7 +995,7 @@ impl Dx7App {
                         for alg in &algorithms {
                             if ui
                                 .selectable_value(
-                                    &mut synth.algorithm,
+                                    &mut synth.get_algorithm(),
                                     alg.number,
                                     format!("{:02} - {}", alg.number, alg.name),
                                 )
@@ -623,128 +1007,10 @@ impl Dx7App {
                     });
 
                 ui.add_space(10.0);
-                ui.label("Master Volume:");
-                ui.add(egui::Slider::new(&mut synth.master_volume, 0.0..=1.0).show_value(true));
             });
         });
     }
 
-    fn draw_function_panel(&mut self, ui: &mut egui::Ui) {
-        ui.group(|ui| {
-            ui.vertical(|ui| {
-                ui.label("FUNCTION MODE");
-                ui.separator();
-
-                // Master Tune
-                let mut synth = self.synthesizer.lock().unwrap();
-                ui.horizontal(|ui| {
-                    ui.label("Master Tune:");
-                    let mut master_tune = synth.master_tune;
-                    if ui
-                        .add(
-                            egui::Slider::new(&mut master_tune, -150.0..=150.0)
-                                .text("cents")
-                                .show_value(true),
-                        )
-                        .changed()
-                    {
-                        synth.set_master_tune(master_tune);
-                    }
-                });
-
-                ui.add_space(10.0);
-
-                // Reset Master Tune button
-                ui.horizontal(|ui| {
-                    if ui.button("Reset Tune").clicked() {
-                        synth.set_master_tune(0.0);
-                    }
-                    ui.label("(Reset to A440)");
-                });
-
-                ui.add_space(10.0);
-                ui.separator();
-
-                // Poly/Mono Mode
-                ui.horizontal(|ui| {
-                    ui.label("Mode:");
-                    let mut mono_mode = synth.mono_mode;
-
-                    if ui.selectable_value(&mut mono_mode, false, "POLY").clicked() {
-                        synth.set_mono_mode(false);
-                    }
-
-                    if ui.selectable_value(&mut mono_mode, true, "MONO").clicked() {
-                        synth.set_mono_mode(true);
-                    }
-                });
-
-                ui.add_space(10.0);
-                ui.separator();
-
-                // Pitch Bend Range
-                ui.horizontal(|ui| {
-                    ui.label("Pitch Bend Range:");
-                    let mut pb_range = synth.pitch_bend_range;
-                    if ui
-                        .add(
-                            egui::Slider::new(&mut pb_range, 0.0..=12.0)
-                                .text("semitones")
-                                .integer()
-                                .show_value(true),
-                        )
-                        .changed()
-                    {
-                        synth.set_pitch_bend_range(pb_range);
-                    }
-                });
-
-                ui.add_space(10.0);
-                ui.separator();
-
-                // Portamento (only in Mono mode)
-                if synth.mono_mode {
-                    ui.horizontal(|ui| {
-                        ui.label("Portamento:");
-                        let mut porta_enable = synth.portamento_enable;
-                        if ui.checkbox(&mut porta_enable, "Enable").changed() {
-                            synth.set_portamento_enable(porta_enable);
-                        }
-                    });
-
-                    if synth.portamento_enable {
-                        ui.horizontal(|ui| {
-                            ui.label("Portamento Time:");
-                            let mut porta_time = synth.portamento_time;
-                            if ui
-                                .add(
-                                    egui::Slider::new(&mut porta_time, 0.0..=99.0)
-                                        .integer()
-                                        .show_value(true),
-                                )
-                                .changed()
-                            {
-                                synth.set_portamento_time(porta_time);
-                            }
-                        });
-                    }
-                } else {
-                    ui.label("Portamento: Only available in MONO mode");
-                }
-
-                ui.add_space(10.0);
-                ui.separator();
-
-                // Voice Initialize
-                ui.horizontal(|ui| {
-                    if ui.button("VOICE INIT").clicked() {
-                        synth.voice_initialize();
-                    }
-                    ui.label("Reset to basic DX7 init voice");
-                });
-            });
-        });
-    }
 
     fn handle_keyboard_input(&mut self, ctx: &egui::Context) {
         use egui::Key;
@@ -813,16 +1079,26 @@ impl eframe::App for Dx7App {
         ctx.set_visuals(egui::Visuals::light());
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("YAMAHA DX7 DIGITAL SYNTHESIZER");
+            // Header
+            ui.vertical_centered(|ui| {
+                ui.heading("YAMAHA DX7 DIGITAL SYNTHESIZER");
+            });
             ui.separator();
 
+            // DX7 LCD Display
             self.draw_dx7_display(ui);
+            
+            ui.add_space(8.0);
 
-            ui.add_space(10.0);
+            // Global Controls Panel (always visible)
+            self.draw_global_controls(ui);
 
+            ui.add_space(8.0);
+
+            // Mode Selection Buttons
             self.draw_membrane_buttons(ui);
 
-            ui.add_space(10.0);
+            ui.add_space(8.0);
 
             match self.display_mode {
                 DisplayMode::Voice => {
@@ -854,9 +1130,8 @@ impl eframe::App for Dx7App {
                         });
                     });
                 }
-                DisplayMode::Function => {
-                    // Function mode - global controls
-                    self.draw_function_panel(ui);
+                DisplayMode::LFO => {
+                    self.draw_lfo_panel(ui);
                 }
             }
 
@@ -880,7 +1155,7 @@ impl eframe::App for Dx7App {
 impl Dx7App {
     fn operator_has_feedback(&self, op_idx: usize) -> bool {
         let synth = self.synthesizer.lock().unwrap();
-        let current_algorithm = synth.algorithm;
+        let current_algorithm = synth.get_algorithm();
         drop(synth);
         
         if let Some(algorithm_def) = crate::algorithms::find_algorithm(current_algorithm) {
@@ -906,7 +1181,7 @@ impl Dx7App {
                 ui.label("ALGORITHM DIAGRAM");
 
                 let synth = self.synthesizer.lock().unwrap();
-                let current_algorithm = synth.algorithm;
+                let current_algorithm = synth.get_algorithm();
                 drop(synth);
 
                 // Check if we need to regenerate the diagram
@@ -1224,6 +1499,172 @@ impl Dx7App {
 
         // Draw arrow head at the return point
         self.draw_arrow_head(painter, line_end, return_connector_end, color);
+    }
+
+    fn draw_lfo_panel(&mut self, ui: &mut egui::Ui) {
+        ui.group(|ui| {
+            ui.vertical(|ui| {
+                ui.label("LFO CONTROLS");
+                ui.separator();
+
+                // Get current LFO values
+                let (
+                    mut lfo_rate,
+                    mut lfo_delay,
+                    mut lfo_pitch_depth,
+                    mut lfo_amp_depth,
+                    lfo_waveform,
+                    mut lfo_key_sync,
+                ) = {
+                    if let Ok(synth) = self.synthesizer.lock() {
+                        (
+                            synth.get_lfo_rate(),
+                            synth.get_lfo_delay(),
+                            synth.get_lfo_pitch_depth(),
+                            synth.get_lfo_amp_depth(),
+                            synth.get_lfo_waveform(),
+                            synth.get_lfo_key_sync(),
+                        )
+                    } else {
+                        (0.0, 0.0, 0.0, 0.0, crate::lfo::LFOWaveform::Triangle, false)
+                    }
+                };
+
+                ui.columns(2, |columns| {
+                    // Left column: Rate and Delay
+                    columns[0].vertical(|ui| {
+                        ui.label("TIMING");
+                        
+                        ui.columns(2, |cols| {
+                            cols[0].label("Rate:");
+                            if cols[1]
+                                .add(
+                                    egui::Slider::new(&mut lfo_rate, 0.0..=99.0)
+                                        .integer()
+                                        .show_value(true),
+                                )
+                                .changed()
+                            {
+                                if let Ok(mut synth) = self.synthesizer.lock() {
+                                    synth.set_lfo_rate(lfo_rate);
+                                }
+                            }
+                        });
+
+                        ui.columns(2, |cols| {
+                            cols[0].label("Delay:");
+                            if cols[1]
+                                .add(
+                                    egui::Slider::new(&mut lfo_delay, 0.0..=99.0)
+                                        .integer()
+                                        .show_value(true),
+                                )
+                                .changed()
+                            {
+                                if let Ok(mut synth) = self.synthesizer.lock() {
+                                    synth.set_lfo_delay(lfo_delay);
+                                }
+                            }
+                        });
+
+                        // Display current frequency in Hz
+                        if let Ok(synth) = self.synthesizer.lock() {
+                            let freq_hz = synth.get_lfo_frequency_hz();
+                            let delay_sec = synth.get_lfo_delay_seconds();
+                            ui.separator();
+                            ui.label(format!("Frequency: {:.2} Hz", freq_hz));
+                            ui.label(format!("Delay: {:.2} sec", delay_sec));
+                        }
+                    });
+
+                    // Right column: Depths and Waveform
+                    columns[1].vertical(|ui| {
+                        ui.label("MODULATION");
+                        
+                        ui.columns(2, |cols| {
+                            cols[0].label("Pitch Depth:");
+                            if cols[1]
+                                .add(
+                                    egui::Slider::new(&mut lfo_pitch_depth, 0.0..=99.0)
+                                        .integer()
+                                        .show_value(true),
+                                )
+                                .changed()
+                            {
+                                if let Ok(mut synth) = self.synthesizer.lock() {
+                                    synth.set_lfo_pitch_depth(lfo_pitch_depth);
+                                }
+                            }
+                        });
+
+                        ui.columns(2, |cols| {
+                            cols[0].label("Amp Depth:");
+                            if cols[1]
+                                .add(
+                                    egui::Slider::new(&mut lfo_amp_depth, 0.0..=99.0)
+                                        .integer()
+                                        .show_value(true),
+                                )
+                                .changed()
+                            {
+                                if let Ok(mut synth) = self.synthesizer.lock() {
+                                    synth.set_lfo_amp_depth(lfo_amp_depth);
+                                }
+                            }
+                        });
+
+                        ui.separator();
+                        
+                        // Waveform selector
+                        ui.horizontal(|ui| {
+                            ui.label("Waveform:");
+                            egui::ComboBox::from_id_source("lfo_waveform")
+                                .selected_text(lfo_waveform.name())
+                                .show_ui(ui, |ui| {
+                                    for &waveform in crate::lfo::LFOWaveform::all() {
+                                        let response = ui.selectable_value(
+                                            &mut lfo_waveform.clone(),
+                                            waveform,
+                                            waveform.name(),
+                                        );
+                                        if response.clicked() {
+                                            if let Ok(mut synth) = self.synthesizer.lock() {
+                                                synth.set_lfo_waveform(waveform);
+                                            }
+                                        }
+                                    }
+                                });
+                        });
+
+                        // Key sync checkbox
+                        ui.horizontal(|ui| {
+                            ui.label("Key Sync:");
+                            if ui.checkbox(&mut lfo_key_sync, "").changed() {
+                                if let Ok(mut synth) = self.synthesizer.lock() {
+                                    synth.set_lfo_key_sync(lfo_key_sync);
+                                }
+                            }
+                        });
+                    });
+                });
+
+                ui.separator();
+
+                // Mod Wheel status display
+                if let Ok(synth) = self.synthesizer.lock() {
+                    let mod_wheel_percent = (synth.get_mod_wheel() * 100.0) as i32;
+                    ui.horizontal(|ui| {
+                        ui.label("Mod Wheel:");
+                        ui.label(format!("{}%", mod_wheel_percent));
+                        if mod_wheel_percent == 0 {
+                            ui.label("(LFO effect disabled - move mod wheel)");
+                        } else {
+                            ui.label("(LFO active)");
+                        }
+                    });
+                }
+            });
+        });
     }
 }
 

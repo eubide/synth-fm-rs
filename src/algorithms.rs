@@ -129,49 +129,69 @@ pub fn find_algorithm(algorithm: u8) -> Option<&'static AlgorithmDef> {
     load_algorithms().iter().find(|a| a.algorithm == algorithm)
 }
 
-fn process_operators_recursive(
+fn process_operators_iterative(
     ops: &mut [Operator; 6],
-    processed: &mut [bool; 6],
-    target_op: u8,
     algorithm_def: &AlgorithmDef,
-) -> f32 {
-    let idx = (target_op - 1) as usize;
-
-    if processed[idx] {
-        return 0.0; // Avoid infinite recursion
-    }
-
-    processed[idx] = true;
-
-    // Find all operators that modulate this target
-    let modulators: Vec<u8> = algorithm_def
-        .connections
-        .iter()
-        .filter(|conn| conn.to == target_op)
-        .map(|conn| conn.from)
-        .collect();
-
-    // Calculate total modulation
-    let mut total_modulation = 0.0;
-    for modulator in modulators {
-        if modulator != target_op {
-            // Avoid direct self-recursion here
-            total_modulation +=
-                process_operators_recursive(ops, processed, modulator, algorithm_def);
+) -> [f32; 6] {
+    let mut outputs = [0.0_f32; 6];
+    let mut processed = [false; 6];
+    
+    // Build dependency graph once
+    let mut dependencies: [Vec<usize>; 6] = Default::default();
+    let mut self_feedback = [false; 6];
+    
+    for conn in &algorithm_def.connections {
+        let from_idx = (conn.from - 1) as usize;
+        let to_idx = (conn.to - 1) as usize;
+        
+        if from_idx < 6 && to_idx < 6 {
+            if from_idx == to_idx {
+                self_feedback[from_idx] = true; // Self-feedback handled by operator
+            } else {
+                dependencies[to_idx].push(from_idx);
+            }
         }
     }
-
-    // Apply feedback if this operator has a self-loop connection
-    let has_feedback = algorithm_def
-        .connections
-        .iter()
-        .any(|conn| conn.from == target_op && conn.to == target_op);
-    if has_feedback {
-        // Feedback is handled internally by the operator
+    
+    // CRITICAL: Iterative processing with cycle detection to prevent infinite loops
+    let mut max_iterations = 12; // Prevent infinite loops (2 passes per operator max)
+    let mut progress_made = true;
+    
+    while progress_made && max_iterations > 0 {
+        progress_made = false;
+        max_iterations -= 1;
+        
+        for op_idx in 0..6 {
+            if processed[op_idx] {
+                continue;
+            }
+            
+            // Check if all dependencies are processed
+            let deps_ready = dependencies[op_idx].iter()
+                .all(|&dep_idx| processed[dep_idx]);
+                
+            if deps_ready {
+                // Calculate modulation from dependencies
+                let modulation = dependencies[op_idx].iter()
+                    .map(|&dep_idx| outputs[dep_idx])
+                    .sum::<f32>();
+                
+                // Process this operator
+                outputs[op_idx] = ops[op_idx].process(modulation);
+                processed[op_idx] = true;
+                progress_made = true;
+            }
+        }
     }
-
-    // Process this operator
-    ops[idx].process(total_modulation)
+    
+    // SAFETY: Process any remaining unprocessed operators with zero modulation
+    for op_idx in 0..6 {
+        if !processed[op_idx] {
+            outputs[op_idx] = ops[op_idx].process(0.0);
+        }
+    }
+    
+    outputs
 }
 
 impl Algorithm {
@@ -189,22 +209,17 @@ impl Algorithm {
             }
         };
 
-        // Reset processed flags
-        let mut processed = [false; 6];
+        // FIXED: Use iterative processing instead of recursive
+        let outputs = process_operators_iterative(ops, algorithm_def);
 
         // Calculate output from all carriers
         let mut total_output = 0.0;
         let carrier_count = algorithm_def.carriers.len() as f32;
 
         for &carrier in &algorithm_def.carriers {
-            total_output +=
-                process_operators_recursive(ops, &mut processed, carrier, algorithm_def);
-        }
-
-        // Process any remaining operators that weren't reached (shouldn't happen in well-defined algorithms)
-        for i in 0..6 {
-            if !processed[i] {
-                ops[i].process(0.0);
+            let carrier_idx = (carrier - 1) as usize;
+            if carrier_idx < 6 {
+                total_output += outputs[carrier_idx];
             }
         }
 
