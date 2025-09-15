@@ -23,7 +23,6 @@ pub struct Dx7App {
 enum DisplayMode {
     Voice,
     Operator,
-    Algorithm,
     LFO,
 }
 
@@ -107,15 +106,6 @@ impl Dx7App {
                     }
                     DisplayMode::Operator => {
                         format!("OP{} EDIT", self.selected_operator + 1)
-                    }
-                    DisplayMode::Algorithm => {
-                        if let Ok(synth) = self.lock_synth() {
-                            let current_alg = synth.get_algorithm();
-                            let alg_name = algorithms::get_algorithm_name(current_alg).to_string();
-                            format!("ALG {} - {}", current_alg, alg_name)
-                        } else {
-                            "ALGORITHM: ERROR".to_string()
-                        }
                     }
                     DisplayMode::LFO => {
                         if let Ok(synth) = self.lock_synth() {
@@ -571,18 +561,6 @@ impl Dx7App {
                     self.display_text = "VOICE SELECT".to_string();
                 }
 
-                let algorithm_button = if self.display_mode == DisplayMode::Algorithm {
-                    egui::Button::new("ALGORITHM")
-                        .fill(egui::Color32::from_rgb(180, 200, 220))
-                        .min_size(button_size)
-                } else {
-                    egui::Button::new("ALGORITHM").min_size(button_size)
-                };
-
-                if ui.add(algorithm_button).clicked() {
-                    self.display_mode = DisplayMode::Algorithm;
-                    self.display_text = "ALGORITHM SELECT".to_string();
-                }
 
                 let op_select_button = if self.display_mode == DisplayMode::Operator {
                     egui::Button::new("OPERATOR")
@@ -1054,7 +1032,7 @@ impl Dx7App {
                 egui::ComboBox::from_label("")
                     .selected_text(format!("{:02} - {}", current_alg, current_name))
                     .show_ui(ui, |ui| {
-                        for i in 1..=35 {
+                        for i in 1..=32 {
                             let alg_name = algorithms::get_algorithm_name(i).to_string();
 
                             if ui
@@ -1167,10 +1145,11 @@ impl eframe::App for Dx7App {
                 DisplayMode::Voice => {
                     self.draw_preset_selector(ui);
                 }
-                DisplayMode::Algorithm => {
-                    self.draw_algorithm_selector(ui);
-                }
                 DisplayMode::Operator => {
+                    // Algorithm control at top-left
+                    self.draw_algorithm_selector(ui);
+                    ui.add_space(10.0);
+
                     // Show operator controls and envelope in two columns
                     ui.columns(2, |columns| {
                         // Left column: Operator parameters
