@@ -2,7 +2,7 @@ Aquí está la traducción al inglés del texto manteniendo el formato original:
 
 # TODO - DX7 Authenticity Improvements
 
-## Current Status - UPDATED 2025-09-15 (MAJOR ARCHITECTURAL SIMPLIFICATION COMPLETE)
+## Current Status - UPDATED 2025-09-16 (CRITICAL FIXES & DOCUMENTATION UPDATE)
 The current implementation has approximately **95-98% fidelity** to the original DX7. Major performance optimizations, UI improvements, and the complete LFO system have been implemented, bringing it to production-ready quality with full expressive capabilities.
 
 **🚀 MAJOR UPDATE**: Complete architectural simplification has been implemented, reducing codebase from ~6000 to ~4800 lines (20% reduction) with dramatically improved maintainability and extensibility.
@@ -425,10 +425,10 @@ let custom = create_custom_algorithm(
 
 Now that the architectural simplification is complete, these are the recommended next steps in order of priority:
 
-### 🥇 **PRIORITY 1: Real-Time Matrix Editor** 
-**Impact: HIGH** | **Difficulty: MEDIUM** | **Estimated: 2-3 days**
+### ❌ **PRIORITY 1: Real-Time Matrix Editor** (**CANCELLED/NON-FUNCTIONAL**)
+**Status: TESTED AND NOT WORKING** | **Impact: HIGH** | **Difficulty: HIGH** | **Estimated: 2-3 days**
 
-Create a visual interface for live algorithm editing:
+~~Create a visual interface for live algorithm editing~~ **Attempted but non-functional**:
 
 **Features:**
 - Interactive 6x6 grid in GUI (new tab: "MATRIX")
@@ -451,8 +451,17 @@ Create a visual interface for live algorithm editing:
 - Educational tool for understanding FM synthesis
 - Unique feature not found in other DX7 emulators
 
+### 🥇 **NEW PRIORITY 1: Critical Bug Fixes**
+**Impact: HIGH** | **Difficulty: LOW** | **Estimated: 1-2 hours each**
+
+Focus on immediate functional issues:
+- [X] ✅ MIDI Pitch Bend operator precedence (COMPLETED 2025-09-16)
+- [ ] Farting noise in mono mode when switching notes
+- [ ] Feedback controls missing for operators 1-5 (only Op6 shows feedback)
+- [ ] Error handling cleanup (reduce remaining .unwrap() calls)
+
 ### 🥈 **PRIORITY 2: External Preset System**
-**Impact: HIGH** | **Difficulty: LOW** | **Estimated: 1-2 days**
+**Impact: MEDIUM** | **Difficulty: LOW** | **Estimated: 1-2 days**
 
 Replace hardcoded presets with file-based system:
 
@@ -584,6 +593,7 @@ gui/
 - [ ] **Missing Algorithms**: Algorithms 22, 28 still used in presets but missing from algorithms.json
 
 ## RUNTIME FIXES
+- [X] **MIDI Pitch Bend Operator Precedence**: Fixed critical bug in pitch bend calculation ✅ FIXED (2025-09-16)
 - [ ] Farting noise in mono when the previous note is cut off
 - [ ] Valida que si el algoritmo tiene un feedback en un operador, el feedback aparece el control en el operador, ahora solo aparece en el operador 6. 
 
