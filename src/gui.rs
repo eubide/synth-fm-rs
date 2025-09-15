@@ -1,4 +1,4 @@
-use crate::algorithms::Algorithm;
+use crate::algorithm_matrix::AlgorithmMatrix;
 use crate::audio_engine::AudioEngine;
 use crate::fm_synth::FmSynthesizer;
 use crate::midi_handler::MidiHandler;
@@ -19,7 +19,7 @@ pub struct Dx7App {
     selected_preset: usize,
     // Cache for algorithm diagrams
     cached_algorithm: Option<u8>,
-    cached_diagram: Option<crate::algorithms::AlgorithmGraph>,
+    cached_diagram: Option<crate::algorithm_matrix::AlgorithmGraph>,
 }
 
 #[derive(PartialEq)]
@@ -106,13 +106,13 @@ impl Dx7App {
                     }
                     DisplayMode::Algorithm => {
                         if let Ok(synth) = self.lock_synth() {
-                            let algorithms = Algorithm::get_all_algorithms();
-                            let alg_name = algorithms
-                                .iter()
-                                .find(|a| a.number == synth.get_algorithm())
-                                .map(|a| a.name.clone())
-                                .unwrap_or_else(|| "Unknown".to_string());
-                            format!("ALG {} - {}", synth.get_algorithm(), alg_name)
+                            let current_alg = synth.get_algorithm();
+                            let alg_name = if let Some(matrix) = synth.algorithm_library.get(current_alg) {
+                                matrix.name.clone()
+                            } else {
+                                format!("Algorithm {}", current_alg)
+                            };
+                            format!("ALG {} - {}", current_alg, alg_name)
                         } else {
                             "ALGORITHM: ERROR".to_string()
                         }
@@ -979,29 +979,32 @@ impl Dx7App {
                 ui.label("ALGORITHM");
 
                 let mut synth = self.synthesizer.lock().unwrap();
-                let algorithms = Algorithm::get_all_algorithms();
+                let current_alg = synth.get_algorithm();
+                let current_name = if let Some(matrix) = synth.algorithm_library.get(current_alg) {
+                    matrix.name.clone()
+                } else {
+                    format!("Algorithm {}", current_alg)
+                };
 
                 egui::ComboBox::from_label("")
-                    .selected_text(format!(
-                        "{:02} - {}",
-                        synth.get_algorithm(),
-                        algorithms
-                            .iter()
-                            .find(|a| a.number == synth.get_algorithm())
-                            .map(|a| a.name.as_str())
-                            .unwrap_or("Unknown")
-                    ))
+                    .selected_text(format!("{:02} - {}", current_alg, current_name))
                     .show_ui(ui, |ui| {
-                        for alg in &algorithms {
+                        for i in 1..=35 {
+                            let alg_name = if let Some(matrix) = synth.algorithm_library.get(i) {
+                                matrix.name.clone()
+                            } else {
+                                format!("Algorithm {}", i)
+                            };
+                            
                             if ui
                                 .selectable_value(
-                                    &mut synth.get_algorithm(),
-                                    alg.number,
-                                    format!("{:02} - {}", alg.number, alg.name),
+                                    &mut current_alg.clone(),
+                                    i,
+                                    format!("{:02} - {}", i, alg_name),
                                 )
                                 .clicked()
                             {
-                                synth.set_algorithm(alg.number);
+                                synth.set_algorithm(i);
                             }
                         }
                     });
@@ -1158,18 +1161,13 @@ impl Dx7App {
         let current_algorithm = synth.get_algorithm();
         drop(synth);
         
-        if let Some(algorithm_def) = crate::algorithms::find_algorithm(current_algorithm) {
-            let op_number = (op_idx + 1) as u8;
-            
-            // Check if this operator has feedback:
-            // 1. Self-feedback (from == to, same operator)
-            // 2. Cross-operator feedback where this operator receives feedback from a carrier
-            algorithm_def.connections.iter().any(|conn| {
-                // Case 1: Self-feedback (operator feeds back to itself)
-                (conn.from == op_number && conn.to == op_number) ||
-                // Case 2: Cross-operator feedback (this operator receives feedback from another)
-                (conn.to == op_number && algorithm_def.carriers.contains(&conn.from))
-            })
+        if let Ok(synth) = self.lock_synth() {
+            if let Some(matrix) = synth.algorithm_library.get(current_algorithm) {
+                // Check if this operator has self-feedback
+                matrix.connections[op_idx][op_idx] > 0.0
+            } else {
+                false
+            }
         } else {
             false
         }
@@ -1186,19 +1184,50 @@ impl Dx7App {
 
                 // Check if we need to regenerate the diagram
                 let positioned_graph = if self.cached_algorithm != Some(current_algorithm) {
-                    let graph = Algorithm::parse_algorithm_graph(current_algorithm);
-                    let canvas_size = (400.0, 280.0);
-                    let positioned = Algorithm::calculate_layout(graph, canvas_size);
-                    self.cached_algorithm = Some(current_algorithm);
-                    self.cached_diagram = Some(positioned.clone());
-                    positioned
+                    let graph_result = if let Ok(synth) = self.lock_synth() {
+                        if let Some(matrix) = synth.algorithm_library.get(current_algorithm) {
+                            let graph = matrix.create_algorithm_graph();
+                            let canvas_size = (400.0, 280.0);
+                            Some(AlgorithmMatrix::calculate_layout(graph, canvas_size))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+                    
+                    if let Some(positioned) = graph_result {
+                        self.cached_algorithm = Some(current_algorithm);
+                        self.cached_diagram = Some(positioned.clone());
+                        positioned
+                    } else {
+                        // Return empty graph for error cases
+                        crate::algorithm_matrix::AlgorithmGraph {
+                            operators: vec![],
+                            connections: vec![]
+                        }
+                    }
                 } else if let Some(ref cached) = self.cached_diagram {
                     cached.clone()
                 } else {
-                    // Fallback
-                    let graph = Algorithm::parse_algorithm_graph(current_algorithm);
-                    let canvas_size = (400.0, 280.0);
-                    Algorithm::calculate_layout(graph, canvas_size)
+                    // Fallback - try to create from current algorithm
+                    if let Ok(synth) = self.lock_synth() {
+                        if let Some(matrix) = synth.algorithm_library.get(current_algorithm) {
+                            let graph = matrix.create_algorithm_graph();
+                            let canvas_size = (400.0, 280.0);
+                            AlgorithmMatrix::calculate_layout(graph, canvas_size)
+                        } else {
+                            crate::algorithm_matrix::AlgorithmGraph {
+                                operators: vec![],
+                                connections: vec![]
+                            }
+                        }
+                    } else {
+                        crate::algorithm_matrix::AlgorithmGraph {
+                            operators: vec![],
+                            connections: vec![]
+                        }
+                    }
                 };
 
                 // Create drawing area (centered)
