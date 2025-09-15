@@ -1,4 +1,5 @@
-use crate::algorithms::Algorithm;
+use crate::algorithm_matrix::{AlgorithmMatrix, AlgorithmLibrary};
+use crate::algorithm_migration::AlgorithmMigrator;
 use crate::lfo::LFO;
 use crate::lock_free::LockFreeSynth;
 use crate::operator::Operator;
@@ -149,7 +150,7 @@ impl Voice {
 
     pub fn process(
         &mut self,
-        algorithm: u8,
+        algorithm_matrix: &AlgorithmMatrix,
         pitch_bend: f32,
         pitch_bend_range: f32,
         portamento_time: f32,
@@ -160,53 +161,48 @@ impl Voice {
             return 0.0;
         }
 
-        // Apply portamento smoothing
+        // Apply portamento smoothing (same as original)
         if self.current_frequency != self.target_frequency {
             let portamento_rate = if portamento_time > 0.0 {
-                // Convert portamento time (0-99) to rate per sample
-                // Higher time = slower rate - use actual sample rate
                 1.0 / (portamento_time * 10.0 + 1.0) / (self.sample_rate / 1000.0)
             } else {
-                1.0 // Instant
+                1.0
             };
 
             let freq_diff = self.target_frequency - self.current_frequency;
             self.current_frequency += freq_diff * portamento_rate;
 
-            // Snap to target when very close
             if (self.target_frequency - self.current_frequency).abs() < 0.1 {
                 self.current_frequency = self.target_frequency;
             }
         }
 
-        // Apply pitch bend to current frequency
+        // Apply pitch bend and LFO
         let bend_semitones = pitch_bend * pitch_bend_range;
         let bent_frequency = self.current_frequency * 2.0_f32.powf(bend_semitones / 12.0);
-
-        // Apply LFO pitch modulation (vibrato effect) - DX7 authentic scaling
-        // Convert LFO modulation to semitones for musical vibrato (±0.5 semitones max)
-        let lfo_pitch_semitones = lfo_pitch_mod * 0.5; // ±0.5 semitones = ±50 cents
+        let lfo_pitch_semitones = lfo_pitch_mod * 0.5;
         let lfo_pitch_factor = 2.0_f32.powf(lfo_pitch_semitones / 12.0);
         let final_frequency = bent_frequency * lfo_pitch_factor;
 
-        let output = Algorithm::process_algorithm(
-            algorithm,
-            &mut self.operators,
-            final_frequency,
-            self.velocity,
-        );
+        // Update operator frequencies
+        for op in &mut self.operators {
+            op.trigger(final_frequency, self.velocity, self.note);
+        }
 
-        // Apply LFO amplitude modulation (tremolo effect) - DX7 authentic scaling
-        // Scale for audible tremolo: ±50% amplitude variation
-        let lfo_amp_factor = 1.0 + (lfo_amp_mod * 0.5); // ±50% amplitude modulation
+        // Process using the new matrix algorithm system
+        let output = algorithm_matrix.process(&mut self.operators);
+
+        // Apply LFO amplitude modulation
+        let lfo_amp_factor = 1.0 + (lfo_amp_mod * 0.5);
         let modulated_output = output * lfo_amp_factor;
 
+        // Check if voice is still active
         let all_inactive = self.operators.iter().all(|op| !op.is_active());
         if all_inactive && self.fade_state != VoiceFadeState::FadeOut {
             self.active = false;
         }
 
-        // CRITICAL: Process graceful fading for voice stealing
+        // Handle voice fade states (same as original)
         let final_output = match self.fade_state {
             VoiceFadeState::FadeIn => {
                 self.fade_gain += self.fade_rate;
@@ -220,15 +216,16 @@ impl Voice {
                 self.fade_gain -= self.fade_rate;
                 if self.fade_gain <= 0.0 {
                     self.fade_gain = 0.0;
-                    self.active = false; // Voice fully faded out, can be reused
+                    self.active = false;
                 }
                 modulated_output * self.fade_gain
             },
             VoiceFadeState::Normal => modulated_output,
         };
 
-        final_output * 0.8 // Increased output level with fade processing
+        final_output * 0.8
     }
+
 }
 
 pub struct FmSynthesizer {
@@ -237,7 +234,7 @@ pub struct FmSynthesizer {
     pub preset_name: String,
     pub lfo: LFO,               // Global LFO instance
     pub lock_free_params: LockFreeSynth, // Real-time safe parameters
-    sample_rate: f32,           // Store actual sample rate
+    pub algorithm_library: AlgorithmLibrary, // Matrix-based algorithm system
 }
 
 impl FmSynthesizer {
@@ -254,6 +251,9 @@ impl FmSynthesizer {
         }
 
         let lock_free_params = LockFreeSynth::new();
+        
+        // Initialize algorithm library with all DX7 algorithms
+        let algorithm_library = AlgorithmMigrator::create_full_dx7_library();
 
         Self {
             voices,
@@ -261,7 +261,7 @@ impl FmSynthesizer {
             preset_name: "Init Voice".to_string(),
             lfo: LFO::new(sample_rate), // Initialize global LFO with real sample rate
             lock_free_params,
-            sample_rate,
+            algorithm_library,
         }
     }
 
@@ -348,18 +348,21 @@ impl FmSynthesizer {
         // Generate global LFO modulation values
         let (lfo_pitch_mod, lfo_amp_mod) = self.lfo.process(params.mod_wheel);
 
-        for voice in &mut self.voices {
-            if voice.active {
-                let voice_output = voice.process(
-                    params.algorithm,
-                    params.pitch_bend,
-                    params.pitch_bend_range,
-                    params.portamento_time,
-                    lfo_pitch_mod,
-                    lfo_amp_mod,
-                );
-                output += voice_output;
-                _active_voices += 1;
+        // Process voices using matrix-based algorithm system
+        if let Some(algorithm_matrix) = self.algorithm_library.get(params.algorithm) {
+            for voice in &mut self.voices {
+                if voice.active {
+                    let voice_output = voice.process(
+                        algorithm_matrix,
+                        params.pitch_bend,
+                        params.pitch_bend_range,
+                        params.portamento_time,
+                        lfo_pitch_mod,
+                        lfo_amp_mod,
+                    );
+                    output += voice_output;
+                    _active_voices += 1;
+                }
             }
         }
 
@@ -390,9 +393,7 @@ impl FmSynthesizer {
     }
 
     fn configure_algorithm_feedback(&mut self, algorithm: u8) {
-        use crate::algorithms::find_algorithm;
-
-        if let Some(alg_def) = find_algorithm(algorithm) {
+        if let Some(matrix) = self.algorithm_library.get(algorithm) {
             // First, reset all feedback to 0
             for voice in &mut self.voices {
                 for op in &mut voice.operators {
@@ -401,14 +402,11 @@ impl FmSynthesizer {
             }
 
             // Then configure feedback for operators with self-loops
-            for conn in &alg_def.connections {
-                if conn.from == conn.to {
-                    // Self-loop found - configure feedback for this operator
-                    let op_index = (conn.from - 1) as usize; // Convert 1-6 to 0-5
-                    if op_index < 6 {
-                        for voice in &mut self.voices {
-                            voice.operators[op_index].feedback = 4.0; // Moderate feedback
-                        }
+            for from in 0..6 {
+                if matrix.connections[from][from] > 0.0 {
+                    // Self-feedback found - configure feedback for this operator
+                    for voice in &mut self.voices {
+                        voice.operators[from].feedback = 4.0; // Moderate feedback
                     }
                 }
             }

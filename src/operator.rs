@@ -167,6 +167,11 @@ impl Operator {
         self.update_frequency();
     }
 
+    /// Get the previous output for feedback routing
+    pub fn get_feedback_output(&self) -> f32 {
+        self.last_output * self.feedback
+    }
+
     pub fn process(&mut self, modulation: f32) -> f32 {
         // Update cached values if parameters changed
         self.update_cached_values();

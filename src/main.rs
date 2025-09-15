@@ -1,6 +1,7 @@
 use eframe::egui;
 
-mod algorithms;
+mod algorithm_matrix;
+mod algorithm_migration;
 mod audio_engine;
 mod envelope;
 mod fm_synth;
