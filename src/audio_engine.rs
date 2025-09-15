@@ -132,10 +132,10 @@ impl AudioEngine {
             .expect("Failed to build output stream")
     }
 
-    /// Improved soft limiting using a smooth S-curve instead of harsh tanh
+    /// Gentle soft limiting to preserve DX7 crystalline character
     fn soft_limit(sample: f32) -> f32 {
-        const THRESHOLD: f32 = 0.8;  // Start limiting at 80% to prevent harsh clipping
-        const KNEE: f32 = 0.1;      // Smooth knee transition
+        const THRESHOLD: f32 = 0.95; // Much higher threshold - preserve dynamics
+        const KNEE: f32 = 0.05;      // Gentler knee for transparent limiting
 
         if sample.abs() <= THRESHOLD {
             sample
@@ -143,13 +143,13 @@ impl AudioEngine {
             let sign = sample.signum();
             let abs_sample = sample.abs();
 
-            // Smooth compression above threshold
+            // Very gentle compression only at extreme levels
             let excess = abs_sample - THRESHOLD;
             let compressed_excess = excess / (1.0 + excess / KNEE);
             let limited = THRESHOLD + compressed_excess;
 
-            // Final hard limit to prevent any overshoot
-            sign * limited.min(0.95)
+            // Preserve more headroom - DX7 was very clean
+            sign * limited.min(0.98)
         }
     }
 }

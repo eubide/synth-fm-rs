@@ -350,10 +350,13 @@ impl FmSynthesizer {
             }
         }
 
-        // Apply automatic gain scaling based on active voices to prevent overload
-        let voice_scaling = if active_voice_count > 1 {
-            // Scale down as more voices become active (logarithmic scaling)
-            1.0 / (1.0 + (active_voice_count as f32 - 1.0) * 0.15)
+        // Apply DX7-authentic polyphonic scaling to preserve clarity
+        let voice_scaling = if active_voice_count > 0 {
+            // More aggressive scaling like the original DX7 to prevent muddiness
+            // DX7 had significant headroom and clear voice separation
+            let voice_count_f = active_voice_count as f32;
+            // Exponential scaling: 1 voice = 1.0, 8 voices = 0.35, 16 voices = 0.25
+            (1.0 / voice_count_f.sqrt()).min(1.0) * 0.7 // Extra 0.7 for crystalline clarity
         } else {
             1.0
         };

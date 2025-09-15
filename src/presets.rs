@@ -61,25 +61,25 @@ impl Dx7Preset {
 
 pub fn get_dx7_presets() -> Vec<Dx7Preset> {
     vec![
-        // E.PIANO 1 - Aggressive Electric Piano with metallic bite
+        // E.PIANO 1 - Brilliant & Deep Electric Piano (Authentic DX7 Character)
         Dx7Preset {
             name: "E.PIANO 1",
             algorithm: 5,
             operators: [
-                (1.0, 99.0, 0.0, 0.0),   // Op1: Carrier - fundamental
-                (1.0, 45.0, 8.5, 0.0),   // Op2: Modulator -> Op1 (aggressive bell texture)
-                (1.0, 85.0, -12.3, 0.0), // Op3: Carrier - detuned bright tone
-                (1.0, 75.0, 0.0, 0.0),   // Op4: Carrier - body
-                (14.7, 60.0, 0.0, 0.0),  // Op5: High modulator -> Op3 (extreme metallic ring)
-                (1.0, 55.0, 0.0, 4.5),   // Op6: Modulator -> Op2 + high feedback (warm distortion)
+                (1.0, 85.0, 0.0, 0.0),    // Op1: Carrier - rich fundamental
+                (2.0, 65.0, 3.2, 0.0),    // Op2: Modulator -> Op1 (harmonic brightness)
+                (1.0, 78.0, -7.1, 0.0),   // Op3: Carrier - subtle detuned warmth
+                (4.0, 45.0, 0.0, 0.0),    // Op4: Carrier - upper harmonic body
+                (8.0, 28.0, 1.7, 0.0),    // Op5: Bell-like modulator (authentic DX7 ratio)
+                (1.0, 42.0, 0.0, 2.8),    // Op6: Modulator -> Op2 + gentle feedback
             ],
             envelopes: [
-                (99.0, 85.0, 70.0, 75.0, 99.0, 85.0, 60.0, 0.0), // Op1
-                (99.0, 99.0, 30.0, 85.0, 99.0, 70.0, 40.0, 0.0), // Op2: Faster attack
-                (99.0, 99.0, 25.0, 99.0, 99.0, 30.0, 0.0, 0.0),  // Op3: Sharp attack
-                (99.0, 85.0, 70.0, 75.0, 99.0, 85.0, 60.0, 0.0), // Op4
-                (99.0, 99.0, 15.0, 99.0, 99.0, 20.0, 0.0, 0.0),  // Op5: Very sharp metallic
-                (99.0, 85.0, 70.0, 75.0, 99.0, 85.0, 60.0, 0.0), // Op6
+                (95.0, 75.0, 65.0, 70.0, 99.0, 90.0, 75.0, 0.0), // Op1: Natural piano decay
+                (99.0, 80.0, 50.0, 75.0, 99.0, 85.0, 60.0, 0.0), // Op2: Bright attack, warm sustain
+                (90.0, 70.0, 60.0, 65.0, 99.0, 85.0, 70.0, 0.0), // Op3: Warm fundamental support
+                (85.0, 85.0, 45.0, 80.0, 99.0, 70.0, 50.0, 0.0), // Op4: Upper harmonic presence
+                (99.0, 90.0, 35.0, 85.0, 99.0, 60.0, 25.0, 0.0), // Op5: Bell attack, quick fade
+                (95.0, 80.0, 55.0, 75.0, 99.0, 80.0, 65.0, 0.0), // Op6: Modulation warmth
             ],
             master_tune: None,
             mono_mode: Some(false), // POLY mode
@@ -87,17 +87,17 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
             portamento_enable: Some(false),
             portamento_time: None,
         },
-        // BASS 1 - Aggressive Distorted Bass
+        // BASS 1 - Crystalline Distorted Bass (DX7-authentic levels)
         Dx7Preset {
             name: "BASS 1",
             algorithm: 1,
             operators: [
-                (1.0, 99.0, 0.0, 0.0), // Op1: Carrier - fundamental bass
-                (2.0, 65.0, 0.0, 0.0), // Op2: Modulator -> Op1 (aggressive punch/attack)
-                (1.0, 90.0, 4.2, 0.0), // Op3: Carrier - detuned bass body
-                (2.0, 50.0, 0.0, 0.0), // Op4: Modulator -> Op3 (strong harmonic)
-                (3.0, 40.0, 0.0, 0.0), // Op5: Modulator -> Op4 (upper harmonic)
-                (1.0, 70.0, 0.0, 6.5), // Op6: Modulator -> Op5 + extreme feedback (grit)
+                (1.0, 75.0, 0.0, 0.0), // Op1: Carrier - fundamental bass (reduced from 99)
+                (2.0, 50.0, 0.0, 0.0), // Op2: Modulator -> Op1 (reduced from 65)
+                (1.0, 68.0, 4.2, 0.0), // Op3: Carrier - detuned bass body (reduced from 90)
+                (2.0, 38.0, 0.0, 0.0), // Op4: Modulator -> Op3 (reduced from 50)
+                (3.0, 30.0, 0.0, 0.0), // Op5: Modulator -> Op4 (reduced from 40)
+                (1.0, 53.0, 0.0, 6.5), // Op6: Modulator -> Op5 + feedback (reduced from 70)
             ],
             envelopes: [
                 (99.0, 75.0, 40.0, 70.0, 99.0, 80.0, 70.0, 0.0), // Op1
@@ -113,17 +113,17 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
             portamento_enable: Some(true), // Glide for bass
             portamento_time: Some(20.0),
         },
-        // TUBULAR BELL
+        // TUBULAR BELL - Crystalline Bell Tones (DX7-authentic levels)
         Dx7Preset {
             name: "TUB BELLS",
             algorithm: 7,
             operators: [
-                (1.0, 99.0, 0.0, 0.0),  // Op1: Main carrier
-                (1.0, 85.0, 7.0, 0.0),  // Op2: Detuned carrier
-                (3.5, 70.0, 0.0, 0.0),  // Op3: Modulator
-                (1.0, 75.0, -7.0, 0.0), // Op4: Detuned carrier
-                (7.0, 50.0, 0.0, 0.0),  // Op5: High modulator
-                (14.0, 30.0, 0.0, 1.0), // Op6: Very high modulator
+                (1.0, 75.0, 0.0, 0.0),  // Op1: Main carrier (reduced from 99)
+                (1.0, 64.0, 7.0, 0.0),  // Op2: Detuned carrier (reduced from 85)
+                (3.5, 53.0, 0.0, 0.0),  // Op3: Modulator (reduced from 70)
+                (1.0, 56.0, -7.0, 0.0), // Op4: Detuned carrier (reduced from 75)
+                (7.0, 38.0, 0.0, 0.0),  // Op5: High modulator (reduced from 50)
+                (14.0, 23.0, 0.0, 1.0), // Op6: Very high modulator (reduced from 30)
             ],
             envelopes: [
                 (99.0, 50.0, 35.0, 40.0, 99.0, 90.0, 80.0, 0.0), // Op1
@@ -139,17 +139,17 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
             portamento_enable: Some(false),
             portamento_time: None,
         },
-        // BRASS 1 - Aggressive Screaming Brass
+        // BRASS 1 - Crystalline Screaming Brass (DX7-authentic levels)
         Dx7Preset {
             name: "BRASS 1",
             algorithm: 16,
             operators: [
-                (1.0, 99.0, 0.0, 0.0),  // Op1: Carrier - main brass sound
-                (1.0, 75.0, 11.2, 0.0), // Op2: Modulator -> Op1 (extreme brightness)
-                (2.0, 65.0, -8.7, 0.0), // Op3: Modulator -> Op1 (aggressive bite)
-                (3.0, 55.0, 0.0, 0.0),  // Op4: Modulator -> Op3 (strong harmonic texture)
-                (4.0, 70.0, 0.0, 0.0),  // Op5: Modulator -> Op1 (enhanced brass richness)
-                (1.0, 60.0, 0.0, 7.0),  // Op6: Modulator -> Op5 + max feedback (extreme growl)
+                (1.0, 75.0, 0.0, 0.0),  // Op1: Carrier - main brass sound (reduced from 99)
+                (1.0, 56.0, 11.2, 0.0), // Op2: Modulator -> Op1 (reduced from 75)
+                (2.0, 49.0, -8.7, 0.0), // Op3: Modulator -> Op1 (reduced from 65)
+                (3.0, 41.0, 0.0, 0.0),  // Op4: Modulator -> Op3 (reduced from 55)
+                (4.0, 53.0, 0.0, 0.0),  // Op5: Modulator -> Op1 (reduced from 70)
+                (1.0, 45.0, 0.0, 7.0),  // Op6: Modulator -> Op5 + feedback (reduced from 60)
             ],
             envelopes: [
                 (85.0, 80.0, 60.0, 70.0, 99.0, 90.0, 80.0, 0.0), // Op1: More aggressive
@@ -165,17 +165,17 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
             portamento_enable: Some(true),
             portamento_time: None,
         },
-        // STRINGS
+        // STRINGS - Crystalline String Ensemble (DX7-authentic levels)
         Dx7Preset {
             name: "STRINGS",
             algorithm: 14,
             operators: [
-                (1.0, 99.0, 0.0, 0.0),   // Op1: Carrier - main string voice
-                (1.0, 30.0, 7.0, 0.0),   // Op2: Modulator -> Op1 (string texture)
-                (0.99, 90.0, -7.0, 0.0), // Op3: Carrier - detuned string voice
-                (1.01, 35.0, 0.0, 0.0),  // Op4: Modulator -> Op3 (subtle movement)
-                (2.0, 20.0, 0.0, 0.0),   // Op5: Modulator -> Op4 (harmonic content)
-                (3.0, 25.0, 0.0, 1.0),   // Op6: Modulator -> Op4 + feedback (richness)
+                (1.0, 75.0, 0.0, 0.0),   // Op1: Carrier - main string voice (reduced from 99)
+                (1.0, 23.0, 7.0, 0.0),   // Op2: Modulator -> Op1 (reduced from 30)
+                (0.99, 68.0, -7.0, 0.0), // Op3: Carrier - detuned string voice (reduced from 90)
+                (1.01, 26.0, 0.0, 0.0),  // Op4: Modulator -> Op3 (reduced from 35)
+                (2.0, 15.0, 0.0, 0.0),   // Op5: Modulator -> Op4 (reduced from 20)
+                (3.0, 19.0, 0.0, 1.0),   // Op6: Modulator -> Op4 + feedback (reduced from 25)
             ],
             envelopes: [
                 (50.0, 60.0, 50.0, 50.0, 99.0, 90.0, 85.0, 0.0), // Op1
@@ -191,17 +191,17 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
             portamento_enable: Some(true), // Smooth string glides
             portamento_time: Some(35.0),
         },
-        // ORGAN
+        // ORGAN - Crystalline Drawbar Organ (DX7-authentic levels)
         Dx7Preset {
             name: "ORGAN 1",
             algorithm: 32,
             operators: [
-                (1.0, 99.0, 0.0, 0.0), // Op1: Fundamental
-                (2.0, 70.0, 0.0, 0.0), // Op2: 2nd harmonic
-                (3.0, 50.0, 0.0, 0.0), // Op3: 3rd harmonic
-                (4.0, 40.0, 0.0, 0.0), // Op4: 4th harmonic
-                (5.0, 30.0, 0.0, 0.0), // Op5: 5th harmonic
-                (6.0, 25.0, 0.0, 0.0), // Op6: 6th harmonic
+                (1.0, 75.0, 0.0, 0.0), // Op1: Fundamental (reduced from 99)
+                (2.0, 53.0, 0.0, 0.0), // Op2: 2nd harmonic (reduced from 70)
+                (3.0, 38.0, 0.0, 0.0), // Op3: 3rd harmonic (reduced from 50)
+                (4.0, 30.0, 0.0, 0.0), // Op4: 4th harmonic (reduced from 40)
+                (5.0, 23.0, 0.0, 0.0), // Op5: 5th harmonic (reduced from 30)
+                (6.0, 19.0, 0.0, 0.0), // Op6: 6th harmonic (reduced from 25)
             ],
             envelopes: [
                 (99.0, 99.0, 99.0, 99.0, 99.0, 99.0, 99.0, 0.0), // Op1
@@ -217,17 +217,17 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
             portamento_enable: Some(false),
             portamento_time: None,
         },
-        // CLAV
+        // CLAV - Crystalline Clavinet (DX7-authentic levels)
         Dx7Preset {
             name: "CLAV",
             algorithm: 3,
             operators: [
-                (1.0, 99.0, 0.0, 0.0), // Op1: Carrier
-                (1.0, 85.0, 0.0, 0.0), // Op2: Carrier
-                (3.0, 60.0, 0.0, 0.0), // Op3: Modulator
-                (1.0, 75.0, 0.0, 0.0), // Op4: Carrier
-                (7.0, 40.0, 0.0, 0.0), // Op5: Modulator
-                (5.0, 50.0, 0.0, 5.0), // Op6: Modulator with feedback
+                (1.0, 75.0, 0.0, 0.0), // Op1: Carrier (reduced from 99)
+                (1.0, 64.0, 0.0, 0.0), // Op2: Carrier (reduced from 85)
+                (3.0, 45.0, 0.0, 0.0), // Op3: Modulator (reduced from 60)
+                (1.0, 56.0, 0.0, 0.0), // Op4: Carrier (reduced from 75)
+                (7.0, 30.0, 0.0, 0.0), // Op5: Modulator (reduced from 40)
+                (5.0, 38.0, 0.0, 5.0), // Op6: Modulator with feedback (reduced from 50)
             ],
             envelopes: [
                 (99.0, 95.0, 30.0, 85.0, 99.0, 40.0, 20.0, 0.0), // Op1
@@ -243,17 +243,17 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
             portamento_enable: Some(false),
             portamento_time: None,
         },
-        // FLUTE
+        // FLUTE - Crystalline Wooden Flute (DX7-authentic levels)
         Dx7Preset {
             name: "FLUTE",
             algorithm: 19,
             operators: [
-                (1.0, 99.0, 0.0, 0.0), // Op1: Carrier - main flute tone
-                (1.0, 25.0, 0.0, 0.0), // Op2: Modulator -> Op1 (breath texture)
-                (2.0, 20.0, 0.0, 3.0), // Op3: Modulator -> Op1 + feedback (air noise)
-                (1.0, 85.0, 0.0, 0.0), // Op4: Carrier - flute body
-                (1.0, 75.0, 0.0, 0.0), // Op5: Carrier - flute harmonic
-                (1.0, 35.0, 0.0, 0.0), // Op6: Modulator -> Op5 (subtle breath)
+                (1.0, 75.0, 0.0, 0.0), // Op1: Carrier - main flute tone (reduced from 99)
+                (1.0, 19.0, 0.0, 0.0), // Op2: Modulator -> Op1 (reduced from 25)
+                (2.0, 15.0, 0.0, 3.0), // Op3: Modulator -> Op1 + feedback (reduced from 20)
+                (1.0, 64.0, 0.0, 0.0), // Op4: Carrier - flute body (reduced from 85)
+                (1.0, 56.0, 0.0, 0.0), // Op5: Carrier - flute harmonic (reduced from 75)
+                (1.0, 26.0, 0.0, 0.0), // Op6: Modulator -> Op5 (reduced from 35)
             ],
             envelopes: [
                 (70.0, 60.0, 60.0, 60.0, 99.0, 95.0, 90.0, 0.0), // Op1
@@ -269,17 +269,17 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
             portamento_enable: Some(true), // Natural breath transitions
             portamento_time: Some(15.0),
         },
-        // GUITAR - Iconic DX7 Guitar Sound
+        // GUITAR - Crystalline DX7 Guitar Sound (DX7-authentic levels)
         Dx7Preset {
             name: "GUITAR",
             algorithm: 18,
             operators: [
-                (1.0, 99.0, 0.0, 0.0), // Op1: Carrier - main guitar sound
-                (2.0, 35.0, 0.0, 0.0), // Op2: Modulator -> Op1 (attack/pick)
-                (3.0, 40.0, 0.0, 3.0), // Op3: Modulator -> Op1 + feedback (grit)
-                (1.0, 45.0, 0.0, 0.0), // Op4: Modulator -> Op1 (body resonance)
-                (7.0, 25.0, 0.0, 0.0), // Op5: Modulator -> Op4 (string harmonics)
-                (1.0, 30.0, 0.0, 0.0), // Op6: Modulator -> Op5 (subtle texture)
+                (1.0, 75.0, 0.0, 0.0), // Op1: Carrier - main guitar sound (reduced from 99)
+                (2.0, 26.0, 0.0, 0.0), // Op2: Modulator -> Op1 (reduced from 35)
+                (3.0, 30.0, 0.0, 3.0), // Op3: Modulator -> Op1 + feedback (reduced from 40)
+                (1.0, 34.0, 0.0, 0.0), // Op4: Modulator -> Op1 (reduced from 45)
+                (7.0, 19.0, 0.0, 0.0), // Op5: Modulator -> Op4 (reduced from 25)
+                (1.0, 23.0, 0.0, 0.0), // Op6: Modulator -> Op5 (reduced from 30)
             ],
             envelopes: [
                 (99.0, 75.0, 40.0, 65.0, 99.0, 70.0, 50.0, 0.0), // Op1
@@ -295,17 +295,17 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
             portamento_enable: Some(false),
             portamento_time: None,
         },
-        // SYNTH BASS - Classic DX7 Synth Bass
+        // SYNTH BASS - Crystalline DX7 Synth Bass (DX7-authentic levels)
         Dx7Preset {
             name: "SYN BASS",
             algorithm: 6,
             operators: [
-                (1.0, 99.0, 0.0, 0.0), // Op1: Carrier - main bass fundamental
-                (2.0, 35.0, 0.0, 0.0), // Op2: Modulator -> Op1 (attack punch)
-                (1.0, 85.0, 0.0, 0.0), // Op3: Carrier - bass body
-                (1.0, 75.0, 0.0, 0.0), // Op4: Carrier - bass harmonic
-                (2.0, 25.0, 0.0, 0.0), // Op5: Modulator -> Op3 (grit)
-                (1.0, 40.0, 0.0, 2.0), // Op6: Modulator -> Op2 + feedback (warmth)
+                (1.0, 75.0, 0.0, 0.0), // Op1: Carrier - main bass fundamental (reduced from 99)
+                (2.0, 26.0, 0.0, 0.0), // Op2: Modulator -> Op1 (reduced from 35)
+                (1.0, 64.0, 0.0, 0.0), // Op3: Carrier - bass body (reduced from 85)
+                (1.0, 56.0, 0.0, 0.0), // Op4: Carrier - bass harmonic (reduced from 75)
+                (2.0, 19.0, 0.0, 0.0), // Op5: Modulator -> Op3 (reduced from 25)
+                (1.0, 30.0, 0.0, 2.0), // Op6: Modulator -> Op2 + feedback (reduced from 40)
             ],
             envelopes: [
                 (99.0, 80.0, 45.0, 70.0, 99.0, 75.0, 60.0, 0.0), // Op1
@@ -321,17 +321,17 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
             portamento_enable: Some(true), // Bass glide
             portamento_time: Some(25.0),
         },
-        // SAX - Saxophone Sound
+        // SAX - Crystalline Saxophone Sound (DX7-authentic levels)
         Dx7Preset {
             name: "SAX",
             algorithm: 11,
             operators: [
-                (1.0, 99.0, 0.0, 0.0),  // Op1: Carrier - main sax tone
-                (1.0, 35.0, 5.0, 0.0),  // Op2: Modulator -> Op1 (reed bite)
-                (3.0, 25.0, 0.0, 0.0),  // Op3: Modulator -> Op2 (harmonic content)
-                (1.0, 85.0, -5.0, 0.0), // Op4: Carrier - sax body resonance
-                (7.0, 30.0, 0.0, 0.0),  // Op5: Modulator -> Op4 (brightness)
-                (1.0, 40.0, 0.0, 4.0),  // Op6: Modulator -> Op4 + feedback (breath)
+                (1.0, 75.0, 0.0, 0.0),  // Op1: Carrier - main sax tone (reduced from 99)
+                (1.0, 26.0, 5.0, 0.0),  // Op2: Modulator -> Op1 (reduced from 35)
+                (3.0, 19.0, 0.0, 0.0),  // Op3: Modulator -> Op2 (reduced from 25)
+                (1.0, 64.0, -5.0, 0.0), // Op4: Carrier - sax body resonance (reduced from 85)
+                (7.0, 23.0, 0.0, 0.0),  // Op5: Modulator -> Op4 (reduced from 30)
+                (1.0, 30.0, 0.0, 4.0),  // Op6: Modulator -> Op4 + feedback (reduced from 40)
             ],
             envelopes: [
                 (70.0, 65.0, 55.0, 60.0, 99.0, 90.0, 80.0, 0.0), // Op1
@@ -347,17 +347,17 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
             portamento_enable: Some(true), // Natural sax glissando
             portamento_time: Some(18.0),
         },
-        // VIBRAPHONE - Classic Mallet Sound
+        // VIBRAPHONE - Crystalline Mallet Sound (DX7-authentic levels)
         Dx7Preset {
             name: "VIBES",
             algorithm: 9,
             operators: [
-                (1.0, 99.0, 0.0, 0.0),  // Op1: Carrier - fundamental vibes
-                (1.0, 40.0, 7.0, 2.0),  // Op2: Modulator -> Op1 + feedback (metallic ring)
-                (3.5, 85.0, 0.0, 0.0),  // Op3: Carrier - bright metallic tone
-                (7.0, 30.0, 0.0, 0.0),  // Op4: Modulator -> Op3 (shimmer)
-                (1.0, 35.0, -7.0, 0.0), // Op5: Modulator -> Op3 (detuned sparkle)
-                (14.0, 20.0, 0.0, 0.0), // Op6: Modulator -> Op5 (high harmonics)
+                (1.0, 75.0, 0.0, 0.0),  // Op1: Carrier - fundamental vibes (reduced from 99)
+                (1.0, 30.0, 7.0, 2.0),  // Op2: Modulator -> Op1 + feedback (reduced from 40)
+                (3.5, 64.0, 0.0, 0.0),  // Op3: Carrier - bright metallic tone (reduced from 85)
+                (7.0, 23.0, 0.0, 0.0),  // Op4: Modulator -> Op3 (reduced from 30)
+                (1.0, 26.0, -7.0, 0.0), // Op5: Modulator -> Op3 (reduced from 35)
+                (14.0, 15.0, 0.0, 0.0), // Op6: Modulator -> Op5 (reduced from 20)
             ],
             envelopes: [
                 (99.0, 45.0, 30.0, 35.0, 99.0, 85.0, 75.0, 0.0), // Op1
@@ -373,17 +373,17 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
             portamento_enable: Some(false),
             portamento_time: None,
         },
-        // MARIMBA - Wooden Mallet Sound
+        // MARIMBA - Crystalline Wooden Mallet Sound (DX7-authentic levels)
         Dx7Preset {
             name: "MARIMBA",
             algorithm: 15,
             operators: [
-                (1.0, 99.0, 0.0, 0.0),  // Op1: Fundamental
-                (2.0, 75.0, 0.0, 0.0),  // Op2: Octave
-                (3.0, 55.0, 0.0, 0.0),  // Op3: Third harmonic
-                (4.0, 40.0, 0.0, 0.0),  // Op4: Fourth harmonic
-                (7.0, 30.0, 0.0, 0.0),  // Op5: Woody overtone
-                (11.0, 20.0, 0.0, 0.0), // Op6: High overtone
+                (1.0, 75.0, 0.0, 0.0),  // Op1: Fundamental (reduced from 99)
+                (2.0, 56.0, 0.0, 0.0),  // Op2: Octave (reduced from 75)
+                (3.0, 41.0, 0.0, 0.0),  // Op3: Third harmonic (reduced from 55)
+                (4.0, 30.0, 0.0, 0.0),  // Op4: Fourth harmonic (reduced from 40)
+                (7.0, 23.0, 0.0, 0.0),  // Op5: Woody overtone (reduced from 30)
+                (11.0, 15.0, 0.0, 0.0), // Op6: High overtone (reduced from 20)
             ],
             envelopes: [
                 (99.0, 70.0, 40.0, 60.0, 99.0, 70.0, 50.0, 0.0), // Op1
@@ -399,17 +399,17 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
             portamento_enable: Some(false),
             portamento_time: None,
         },
-        // HARPSICHORD
+        // HARPSICHORD - Crystalline Harpsichord (DX7-authentic levels)
         Dx7Preset {
             name: "HARPSI",
             algorithm: 4,
             operators: [
-                (1.0, 99.0, 0.0, 0.0), // Op1: Fundamental
-                (2.0, 70.0, 0.0, 0.0), // Op2: Octave
-                (4.0, 50.0, 0.0, 0.0), // Op3: Two octaves
-                (8.0, 35.0, 0.0, 0.0), // Op4: Three octaves
-                (1.0, 85.0, 5.0, 0.0), // Op5: Detuned fundamental
-                (3.0, 40.0, 0.0, 2.0), // Op6: Pluck attack
+                (1.0, 75.0, 0.0, 0.0), // Op1: Fundamental (reduced from 99)
+                (2.0, 53.0, 0.0, 0.0), // Op2: Octave (reduced from 70)
+                (4.0, 38.0, 0.0, 0.0), // Op3: Two octaves (reduced from 50)
+                (8.0, 26.0, 0.0, 0.0), // Op4: Three octaves (reduced from 35)
+                (1.0, 64.0, 5.0, 0.0), // Op5: Detuned fundamental (reduced from 85)
+                (3.0, 30.0, 0.0, 2.0), // Op6: Pluck attack (reduced from 40)
             ],
             envelopes: [
                 (99.0, 85.0, 45.0, 75.0, 99.0, 50.0, 30.0, 0.0), // Op1
@@ -425,17 +425,17 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
             portamento_enable: Some(false),
             portamento_time: None,
         },
-        // WOODBLOCK - Percussive Sound
+        // WOODBLOCK - Crystalline Percussive Sound (DX7-authentic levels)
         Dx7Preset {
             name: "WOODBLOK",
             algorithm: 12,
             operators: [
-                (1.0, 99.0, 0.0, 0.0),  // Op1: Fundamental
-                (3.5, 75.0, 0.0, 0.0),  // Op2: Woody overtone
-                (7.2, 65.0, 0.0, 0.0),  // Op3: Higher woody tone
-                (11.3, 55.0, 0.0, 0.0), // Op4: Even higher
-                (1.0, 85.0, 0.0, 0.0),  // Op5: Fundamental support
-                (2.1, 45.0, 0.0, 6.0),  // Op6: Noise with feedback
+                (1.0, 75.0, 0.0, 0.0),  // Op1: Fundamental (reduced from 99)
+                (3.5, 56.0, 0.0, 0.0),  // Op2: Woody overtone (reduced from 75)
+                (7.2, 49.0, 0.0, 0.0),  // Op3: Higher woody tone (reduced from 65)
+                (11.3, 41.0, 0.0, 0.0), // Op4: Even higher (reduced from 55)
+                (1.0, 64.0, 0.0, 0.0),  // Op5: Fundamental support (reduced from 85)
+                (2.1, 34.0, 0.0, 6.0),  // Op6: Noise with feedback (reduced from 45)
             ],
             envelopes: [
                 (99.0, 99.0, 10.0, 99.0, 99.0, 20.0, 5.0, 0.0), // Op1
@@ -451,17 +451,17 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
             portamento_enable: Some(false),
             portamento_time: None,
         },
-        // XYLOPHONE
+        // XYLOPHONE - Crystalline Xylophone (DX7-authentic levels)
         Dx7Preset {
             name: "XYLO",
             algorithm: 1,
             operators: [
-                (1.0, 99.0, 0.0, 0.0),  // Op1: Fundamental
-                (3.0, 80.0, 0.0, 0.0),  // Op2: Third harmonic
-                (5.0, 65.0, 0.0, 0.0),  // Op3: Fifth harmonic
-                (7.0, 50.0, 0.0, 0.0),  // Op4: Seventh harmonic
-                (9.0, 40.0, 0.0, 0.0),  // Op5: Ninth harmonic
-                (11.0, 30.0, 0.0, 1.0), // Op6: Eleventh harmonic
+                (1.0, 75.0, 0.0, 0.0),  // Op1: Fundamental (reduced from 99)
+                (3.0, 60.0, 0.0, 0.0),  // Op2: Third harmonic (reduced from 80)
+                (5.0, 49.0, 0.0, 0.0),  // Op3: Fifth harmonic (reduced from 65)
+                (7.0, 38.0, 0.0, 0.0),  // Op4: Seventh harmonic (reduced from 50)
+                (9.0, 30.0, 0.0, 0.0),  // Op5: Ninth harmonic (reduced from 40)
+                (11.0, 23.0, 0.0, 1.0), // Op6: Eleventh harmonic (reduced from 30)
             ],
             envelopes: [
                 (99.0, 65.0, 35.0, 55.0, 99.0, 70.0, 50.0, 0.0), // Op1
@@ -477,17 +477,17 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
             portamento_enable: Some(false),
             portamento_time: None,
         },
-        // CLARINET
+        // CLARINET - Crystalline Clarinet (DX7-authentic levels)
         Dx7Preset {
             name: "CLARINET",
             algorithm: 19,
             operators: [
-                (1.0, 99.0, 0.0, 0.0), // Op1: Fundamental
-                (3.0, 60.0, 0.0, 0.0), // Op2: Third harmonic
-                (5.0, 40.0, 0.0, 0.0), // Op3: Fifth harmonic
-                (7.0, 25.0, 0.0, 0.0), // Op4: Seventh harmonic
-                (1.0, 85.0, 0.0, 0.0), // Op5: Fundamental support
-                (2.0, 30.0, 0.0, 4.0), // Op6: Breath noise
+                (1.0, 75.0, 0.0, 0.0), // Op1: Fundamental (reduced from 99)
+                (3.0, 45.0, 0.0, 0.0), // Op2: Third harmonic (reduced from 60)
+                (5.0, 30.0, 0.0, 0.0), // Op3: Fifth harmonic (reduced from 40)
+                (7.0, 19.0, 0.0, 0.0), // Op4: Seventh harmonic (reduced from 25)
+                (1.0, 64.0, 0.0, 0.0), // Op5: Fundamental support (reduced from 85)
+                (2.0, 23.0, 0.0, 4.0), // Op6: Breath noise (reduced from 30)
             ],
             envelopes: [
                 (65.0, 60.0, 65.0, 55.0, 99.0, 95.0, 90.0, 0.0), // Op1
@@ -503,17 +503,17 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
             portamento_enable: Some(true), // Natural legato transitions
             portamento_time: Some(20.0),
         },
-        // OBOE
+        // OBOE - Crystalline Oboe (DX7-authentic levels)
         Dx7Preset {
             name: "OBOE",
             algorithm: 8,
             operators: [
-                (1.0, 99.0, 0.0, 0.0), // Op1: Fundamental
-                (2.0, 75.0, 0.0, 0.0), // Op2: Octave
-                (3.0, 65.0, 0.0, 0.0), // Op3: Third harmonic
-                (4.0, 55.0, 0.0, 0.0), // Op4: Fourth harmonic
-                (5.0, 45.0, 0.0, 0.0), // Op5: Fifth harmonic
-                (1.0, 60.0, 0.0, 5.0), // Op6: Reed noise
+                (1.0, 75.0, 0.0, 0.0), // Op1: Fundamental (reduced from 99)
+                (2.0, 56.0, 0.0, 0.0), // Op2: Octave (reduced from 75)
+                (3.0, 49.0, 0.0, 0.0), // Op3: Third harmonic (reduced from 65)
+                (4.0, 41.0, 0.0, 0.0), // Op4: Fourth harmonic (reduced from 55)
+                (5.0, 34.0, 0.0, 0.0), // Op5: Fifth harmonic (reduced from 45)
+                (1.0, 45.0, 0.0, 5.0), // Op6: Reed noise (reduced from 60)
             ],
             envelopes: [
                 (70.0, 65.0, 60.0, 60.0, 99.0, 90.0, 85.0, 0.0), // Op1
@@ -529,17 +529,17 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
             portamento_enable: Some(true), // Natural legato transitions
             portamento_time: Some(25.0),
         },
-        // TRUMPET
+        // TRUMPET - Crystalline Trumpet (DX7-authentic levels)
         Dx7Preset {
             name: "TRUMPET",
             algorithm: 22,
             operators: [
-                (1.0, 99.0, 0.0, 0.0), // Op1: Carrier - trumpet fundamental
-                (2.0, 30.0, 0.0, 0.0), // Op2: Modulator -> Op1 (attack brightness)
-                (2.0, 85.0, 0.0, 0.0), // Op3: Carrier - second harmonic
-                (3.0, 75.0, 0.0, 0.0), // Op4: Carrier - third harmonic
-                (4.0, 70.0, 0.0, 0.0), // Op5: Carrier - fourth harmonic
-                (1.0, 35.0, 0.0, 2.0), // Op6: Modulator -> Op3,4,5 + feedback (brass bite)
+                (1.0, 75.0, 0.0, 0.0), // Op1: Carrier - trumpet fundamental (reduced from 99)
+                (2.0, 23.0, 0.0, 0.0), // Op2: Modulator -> Op1 (reduced from 30)
+                (2.0, 64.0, 0.0, 0.0), // Op3: Carrier - second harmonic (reduced from 85)
+                (3.0, 56.0, 0.0, 0.0), // Op4: Carrier - third harmonic (reduced from 75)
+                (4.0, 53.0, 0.0, 0.0), // Op5: Carrier - fourth harmonic (reduced from 70)
+                (1.0, 26.0, 0.0, 2.0), // Op6: Modulator -> Op3,4,5 + feedback (reduced from 35)
             ],
             envelopes: [
                 (75.0, 70.0, 60.0, 65.0, 99.0, 85.0, 80.0, 0.0), // Op1
@@ -555,17 +555,17 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
             portamento_enable: Some(true), // Natural brass glide
             portamento_time: Some(15.0),
         },
-        // TUBA
+        // TUBA - Crystalline Tuba (DX7-authentic levels)
         Dx7Preset {
             name: "TUBA",
             algorithm: 1,
             operators: [
-                (1.0, 99.0, 0.0, 0.0), // Op1: Fundamental
-                (0.5, 85.0, 0.0, 0.0), // Op2: Sub octave
-                (2.0, 60.0, 0.0, 0.0), // Op3: Octave
-                (3.0, 45.0, 0.0, 0.0), // Op4: Third harmonic
-                (4.0, 30.0, 0.0, 0.0), // Op5: Fourth harmonic
-                (1.0, 70.0, 0.0, 2.0), // Op6: Breath with feedback
+                (1.0, 75.0, 0.0, 0.0), // Op1: Fundamental (reduced from 99)
+                (0.5, 64.0, 0.0, 0.0), // Op2: Sub octave (reduced from 85)
+                (2.0, 45.0, 0.0, 0.0), // Op3: Octave (reduced from 60)
+                (3.0, 34.0, 0.0, 0.0), // Op4: Third harmonic (reduced from 45)
+                (4.0, 23.0, 0.0, 0.0), // Op5: Fourth harmonic (reduced from 30)
+                (1.0, 53.0, 0.0, 2.0), // Op6: Breath with feedback (reduced from 70)
             ],
             envelopes: [
                 (60.0, 55.0, 60.0, 50.0, 99.0, 90.0, 85.0, 0.0), // Op1
