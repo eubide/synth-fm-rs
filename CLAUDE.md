@@ -51,10 +51,11 @@ This is a Yamaha DX7 FM synthesizer emulator built with Rust, using a thread-saf
 - Feedback loop detection and handling
 
 **GUI System** (`gui.rs`) - egui-based DX7 interface emulation:
-- Four operation modes: VOICE, ALGORITHM, OPERATOR, FUNCTION
+- Three operation modes: VOICE, OPERATOR (with integrated algorithm selection), LFO
 - Real-time parameter control with immediate audio feedback
 - Algorithm diagram visualization with automatic layout
 - Preset management and selection
+- Streamlined interface with algorithm controls integrated into OPERATOR mode
 
 ### Key Architectural Patterns
 

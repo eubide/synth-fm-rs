@@ -6,7 +6,7 @@ Un emulador de alta fidelidad del legendario sintetizador Yamaha DX7, construido
 
 ### Motor de Síntesis FM
 - **6 Operadores FM** con control independiente de frecuencia y nivel
-- **32 Algoritmos** de routing auténticos del DX7
+- **32 Algoritmos** de routing auténticos del DX7 (correctamente implementados)
 - **Envolventes de 4 etapas** (Rate/Level) para cada operador
 - **Feedback** en el operador 6 para texturas armónicas
 - **16 voces de polifonía** con voice stealing inteligente
@@ -16,7 +16,7 @@ Un emulador de alta fidelidad del legendario sintetizador Yamaha DX7, construido
 ### Interfaz Auténtica
 - **Display LCD simulado** con retroiluminación verde
 - **Botones de membrana** como el DX7 original
-- **Modos de operación**: VOICE, ALGORITHM, OPERATOR, **🆕 LFO**
+- **Modos de operación**: VOICE, OPERATOR (con selector de algoritmos integrado), **🆕 LFO**
 - **Selección de operadores** 1-6 (solo en modo Operator)
 - **Visualización avanzada de algoritmos** con layout optimizado para feedback loops
 - **Diagramas interactivos** que muestran conexiones entre operadores en tiempo real
@@ -73,16 +73,16 @@ cargo run --release
 
 #### Modos de Interfaz
 - **VOICE Mode**: Selección y carga de presets
-- **ALGORITHM Mode**: Configuración de algoritmos FM y volumen maestro
-- **OPERATOR Mode**: Edición detallada de operadores individuales
+- **OPERATOR Mode**: Edición detallada de operadores individuales y selección de algoritmos FM
 - **🆕 LFO Mode**: Control completo del oscilador de baja frecuencia
+
+**Nota**: El control de algoritmos ahora se encuentra integrado en el modo OPERATOR para un flujo de trabajo más eficiente.
 
 #### Flujo de Trabajo
 1. **Cargar un Preset**: En modo VOICE, selecciona un preset de la biblioteca
-2. **Ajustar Algoritmo**: En modo ALGORITHM, elige la configuración FM
-3. **Editar Operadores**: En modo OPERATOR, selecciona 1-6 y ajusta parámetros
-4. **🆕 Configurar LFO**: En modo LFO, ajusta modulación y efectos expresivos
-5. **Aplicar Voice Init**: Usa el botón VOICE INIT para resetear a sonido básico
+2. **Ajustar Algoritmo y Operadores**: En modo OPERATOR, selecciona algoritmo FM en la parte superior y edita operadores 1-6
+3. **🆕 Configurar LFO**: En modo LFO, ajusta modulación y efectos expresivos
+4. **Aplicar Voice Init**: Usa el botón VOICE INIT para resetear a sonido básico
 
 #### 🆕 Uso del LFO
 1. **Acceder al LFO**: Presiona el botón **LFO** en la interfaz principal
