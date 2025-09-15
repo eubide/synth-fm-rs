@@ -140,10 +140,10 @@ impl Operator {
         let detuned_freq = actual_freq * (1.0 + self.detune / 100.0);
 
         // CRITICAL: Bounds check all inputs to prevent numerical issues
-        if detuned_freq.is_finite() 
-            && detuned_freq >= 0.1 
+        if detuned_freq.is_finite()
+            && detuned_freq >= 0.1
             && detuned_freq <= 20000.0  // Above human hearing range
-            && self.sample_rate > 0.0 
+            && self.sample_rate > 0.0
             && self.sample_rate.is_finite()
         {
             self.phase_increment = (2.0 * PI * detuned_freq) / self.sample_rate;
@@ -155,6 +155,12 @@ impl Operator {
         } else {
             self.phase_increment = 0.0; // Silence for malformed frequency
         }
+    }
+
+    // Update only frequency without resetting phase - for real-time frequency changes
+    pub fn update_frequency_only(&mut self, frequency: f32) {
+        self.base_frequency = frequency;
+        self.update_frequency();
     }
 
     pub fn set_frequency_ratio(&mut self, ratio: f32) {
@@ -178,6 +184,7 @@ impl Operator {
 
         let env_value = self.envelope.process();
 
+
         if env_value == 0.0 {
             return 0.0;
         }
@@ -194,16 +201,19 @@ impl Operator {
         let total_modulation = modulation + feedback_mod;
 
         // Generate output with phase modulation and apply all cached scaling factors
-        let output = OPTIMIZATION_TABLES.fast_sin(self.phase + total_modulation)
+        let sin_result = OPTIMIZATION_TABLES.fast_sin(self.phase + total_modulation);
+        let output = sin_result
             * env_value
             * self.cached_values.level_amplitude
             * self.cached_values.velocity_factor
             * self.cached_values.key_scale_level_factor;
 
+
         // Update phase for next sample with numerical bounds checking
         // CRITICAL: Prevent phase explosion from malformed data
         if self.phase_increment.is_finite() && self.phase_increment.abs() < 100.0 {
             self.phase += self.phase_increment;
+
 
             // Efficient phase wrapping using modulo instead of while loop
             if self.phase >= 2.0 * PI {

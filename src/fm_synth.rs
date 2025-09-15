@@ -178,9 +178,9 @@ impl Voice {
         let lfo_pitch_factor = 2.0_f32.powf(lfo_pitch_semitones / 12.0);
         let final_frequency = bent_frequency * lfo_pitch_factor;
 
-        // Update operator frequencies
+        // Update operator frequencies without resetting phase
         for op in &mut self.operators {
-            op.trigger(final_frequency, self.velocity, self.note);
+            op.update_frequency_only(final_frequency);
         }
 
         // Process using direct hardcoded algorithms
@@ -350,6 +350,7 @@ impl FmSynthesizer {
                 );
                 output += voice_output;
                 _active_voices += 1;
+
             }
         }
 
