@@ -19,6 +19,11 @@ pub struct Envelope {
     velocity: f32,
     sample_rate: f32,
     key_scale_factor: f32,
+
+    // Smoothing variables for click reduction
+    rate_smoother: f32,
+    target_rate: f32,
+    smoothing_samples: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -50,6 +55,11 @@ impl Envelope {
             velocity: 1.0,
             sample_rate,
             key_scale_factor: 1.0,
+
+            // Initialize smoothing system
+            rate_smoother: 0.0,
+            target_rate: 0.0,
+            smoothing_samples: sample_rate * 0.005, // 5ms smoothing time
         }
     }
 
@@ -58,16 +68,20 @@ impl Envelope {
         self.key_scale_factor = key_scale_factor;
         self.stage = EnvelopeStage::Stage1;
         self.target_level = self.level1 / 99.0;
-        self.rate = self.calculate_rate(self.rate1) * self.key_scale_factor;
-        // Debug: println!("Envelope triggered: velocity {:.2}, target {:.2}, rate {:.4}",
-        //          velocity, self.target_level, self.rate);
+
+        // Initialize smooth rate transition
+        let new_rate = self.calculate_rate(self.rate1) * self.key_scale_factor;
+        self.set_target_rate(new_rate);
     }
 
     pub fn release(&mut self) {
         if self.stage != EnvelopeStage::Idle {
             self.stage = EnvelopeStage::Stage4;
             self.target_level = self.level4 / 99.0;
-            self.rate = self.calculate_rate(self.rate4) * self.key_scale_factor;
+
+            // Smooth transition to release rate
+            let new_rate = self.calculate_rate(self.rate4) * self.key_scale_factor;
+            self.set_target_rate(new_rate);
         }
     }
 
@@ -77,21 +91,26 @@ impl Envelope {
             _ => {}
         }
 
-        if self.current_level < self.target_level {
-            self.current_level += self.rate;
-            if self.current_level >= self.target_level {
-                self.current_level = self.target_level;
-                self.advance_stage();
-            }
-        } else if self.current_level > self.target_level {
-            self.current_level -= self.rate;
-            if self.current_level <= self.target_level {
+        // Smooth rate transitions to reduce clicks
+        self.update_rate_smoothing();
+
+        // Use exponential approach instead of linear for more natural sound
+        let distance = self.target_level - self.current_level;
+        if distance.abs() > 0.0001 {
+            // Exponential approach with smooth rate
+            let approach_factor = (self.rate * 2.0).min(0.1);
+            self.current_level += distance * approach_factor;
+
+            // Check if we're close enough to target to advance stage
+            if distance.abs() < 0.001 {
                 self.current_level = self.target_level;
                 self.advance_stage();
             }
         }
 
-        self.current_level * self.velocity
+        // Apply soft knee to velocity response for smoother dynamics
+        let velocity_curve = self.velocity * self.velocity * (3.0 - 2.0 * self.velocity);
+        self.current_level * velocity_curve
     }
 
     fn advance_stage(&mut self) {
@@ -99,12 +118,14 @@ impl Envelope {
             EnvelopeStage::Stage1 => {
                 self.stage = EnvelopeStage::Stage2;
                 self.target_level = self.level2 / 99.0;
-                self.rate = self.calculate_rate(self.rate2) * self.key_scale_factor;
+                let new_rate = self.calculate_rate(self.rate2) * self.key_scale_factor;
+                self.set_target_rate(new_rate);
             }
             EnvelopeStage::Stage2 => {
                 self.stage = EnvelopeStage::Stage3;
                 self.target_level = self.level3 / 99.0;
-                self.rate = self.calculate_rate(self.rate3) * self.key_scale_factor;
+                let new_rate = self.calculate_rate(self.rate3) * self.key_scale_factor;
+                self.set_target_rate(new_rate);
             }
             EnvelopeStage::Stage3 => {
                 // Sustain stage - stay here until release() is called
@@ -112,6 +133,9 @@ impl Envelope {
             EnvelopeStage::Stage4 => {
                 self.stage = EnvelopeStage::Idle;
                 self.current_level = 0.0;
+                self.rate = 0.0;
+                self.rate_smoother = 0.0;
+                self.target_rate = 0.0;
             }
             EnvelopeStage::Idle => {}
         }
@@ -134,5 +158,34 @@ impl Envelope {
     pub fn reset(&mut self) {
         self.current_level = 0.0;
         self.stage = EnvelopeStage::Idle;
+        self.rate = 0.0;
+        self.rate_smoother = 0.0;
+        self.target_rate = 0.0;
+    }
+
+    // Set target rate for smooth transitions
+    fn set_target_rate(&mut self, new_rate: f32) {
+        self.target_rate = new_rate;
+
+        // If we're starting from zero rate, set immediately
+        if self.rate == 0.0 {
+            self.rate = new_rate;
+            self.rate_smoother = new_rate;
+        }
+    }
+
+    // Smooth rate interpolation to reduce clicks at stage transitions
+    fn update_rate_smoothing(&mut self) {
+        if (self.rate - self.target_rate).abs() > 0.0001 {
+            let rate_diff = self.target_rate - self.rate;
+            let smoothing_factor = 1.0 / self.smoothing_samples;
+
+            self.rate += rate_diff * smoothing_factor;
+
+            // Snap to target when close enough
+            if rate_diff.abs() < 0.0001 {
+                self.rate = self.target_rate;
+            }
+        }
     }
 }

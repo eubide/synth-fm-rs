@@ -42,9 +42,9 @@ impl Voice {
             Operator::new(sample_rate),
         ];
 
-        // Set up a DX7 E.Piano-like patch (Algorithm 5)
+        // Set up a DX7 E.Piano-like patch (Algorithm 5) with reduced levels
         let ratios = [1.0, 1.0, 7.0, 1.0, 14.0, 1.0]; // Classic E.Piano ratios
-        let levels = [99.0, 85.0, 45.0, 60.0, 25.0, 70.0]; // Balanced levels
+        let levels = [75.0, 65.0, 35.0, 45.0, 20.0, 55.0]; // Reduced levels to prevent overload
 
         for (i, op) in operators.iter_mut().enumerate() {
             op.frequency_ratio = ratios[i];
@@ -317,6 +317,7 @@ impl FmSynthesizer {
 
     pub fn process(&mut self) -> f32 {
         let mut output = 0.0;
+        let mut active_voice_count = 0;
 
         // Get lock-free parameters (real-time safe)
         let params = self.lock_free_params.get_global_params();
@@ -345,12 +346,22 @@ impl FmSynthesizer {
                     lfo_amp_mod,
                 );
                 output += voice_output;
+                active_voice_count += 1;
             }
         }
 
-        let final_output = output * params.master_volume;
+        // Apply automatic gain scaling based on active voices to prevent overload
+        let voice_scaling = if active_voice_count > 1 {
+            // Scale down as more voices become active (logarithmic scaling)
+            1.0 / (1.0 + (active_voice_count as f32 - 1.0) * 0.15)
+        } else {
+            1.0
+        };
 
-        final_output
+        let scaled_output = output * voice_scaling * params.master_volume;
+
+        // Apply final soft limiting
+        self.soft_limit(scaled_output)
     }
 
     pub fn set_algorithm(&mut self, algorithm: u8) {
@@ -613,5 +624,26 @@ impl FmSynthesizer {
 
     pub fn get_portamento_time(&self) -> f32 {
         self.lock_free_params.get_global_params().portamento_time
+    }
+
+    /// Soft limiting for final output
+    fn soft_limit(&self, sample: f32) -> f32 {
+        const THRESHOLD: f32 = 0.7;  // Lower threshold for synth output
+        const KNEE: f32 = 0.15;     // Gentler knee
+
+        if sample.abs() <= THRESHOLD {
+            sample
+        } else {
+            let sign = sample.signum();
+            let abs_sample = sample.abs();
+
+            // Smooth compression above threshold
+            let excess = abs_sample - THRESHOLD;
+            let compressed_excess = excess / (1.0 + excess / KNEE);
+            let limited = THRESHOLD + compressed_excess;
+
+            // Final hard limit with more headroom
+            sign * limited.min(0.85)
+        }
     }
 }

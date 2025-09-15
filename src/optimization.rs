@@ -55,9 +55,11 @@ impl OptimizationTables {
         }
     }
 
-    // Fast sine lookup with linear interpolation for better accuracy
+    // Optimized sine lookup with cubic interpolation for smoother audio
     pub fn fast_sin(&self, phase: f32) -> f32 {
-        let normalized = (phase / (2.0 * PI)).fract();
+        // Use multiplication instead of division for better performance
+        const INV_TWO_PI: f32 = 1.0 / (2.0 * std::f32::consts::PI);
+        let normalized = (phase * INV_TWO_PI).fract();
         let normalized = if normalized < 0.0 {
             normalized + 1.0
         } else {
@@ -68,11 +70,24 @@ impl OptimizationTables {
         let index = index_f as usize;
         let frac = index_f - index as f32;
 
-        let val0 = self.sine_table[index & 4095];
-        let val1 = self.sine_table[(index + 1) & 4095];
+        // Get 4 points for cubic interpolation
+        let i0 = (index + 4095) & 4095; // index - 1
+        let i1 = index & 4095;
+        let i2 = (index + 1) & 4095;
+        let i3 = (index + 2) & 4095;
 
-        // Linear interpolation for smoother result
-        val0 + frac * (val1 - val0)
+        let y0 = self.sine_table[i0];
+        let y1 = self.sine_table[i1];
+        let y2 = self.sine_table[i2];
+        let y3 = self.sine_table[i3];
+
+        // Cubic interpolation (Catmull-Rom spline)
+        let a = -0.5 * y0 + 1.5 * y1 - 1.5 * y2 + 0.5 * y3;
+        let b = y0 - 2.5 * y1 + 2.0 * y2 - 0.5 * y3;
+        let c = -0.5 * y0 + 0.5 * y2;
+        let d = y1;
+
+        ((a * frac + b) * frac + c) * frac + d
     }
 
     // Fast exponential lookup for envelope values

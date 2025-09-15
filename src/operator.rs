@@ -202,11 +202,14 @@ impl Operator {
         if self.phase_increment.is_finite() && self.phase_increment.abs() < 100.0 {
             self.phase += self.phase_increment;
 
-            // Wrap phase to [0, 2π]
-            if self.phase >= 2.0 * PI {
-                self.phase = self.phase % (2.0 * PI);
-            } else if self.phase < 0.0 {
-                self.phase = self.phase % (2.0 * PI) + 2.0 * PI;
+            // Optimized phase wrapping using conditional subtraction
+            // Much faster than modulo operations
+            const TWO_PI: f32 = 2.0 * PI;
+            while self.phase >= TWO_PI {
+                self.phase -= TWO_PI;
+            }
+            while self.phase < 0.0 {
+                self.phase += TWO_PI;
             }
         } else {
             self.phase = 0.0;
@@ -215,12 +218,8 @@ impl Operator {
 
         self.last_output = output;
 
-        // Apply soft clipping only when necessary
-        if output.abs() > 1.0 {
-            output.tanh()
-        } else {
-            output
-        }
+        // Apply gentle soft clipping for operators
+        self.soft_clip_operator(output)
     }
 
     pub fn is_active(&self) -> bool {
@@ -250,6 +249,25 @@ impl Operator {
             1.0 / (1.0 + (-distance as f32 * self.key_scale_rate / 7.0 / 24.0))
         } else {
             1.0
+        }
+    }
+
+    /// Gentle soft clipping for operator output
+    fn soft_clip_operator(&self, sample: f32) -> f32 {
+        const THRESHOLD: f32 = 0.9;  // Higher threshold for operators
+        const SOFTNESS: f32 = 0.1;  // Gentle softening
+
+        if sample.abs() <= THRESHOLD {
+            sample
+        } else {
+            let sign = sample.signum();
+            let abs_sample = sample.abs();
+
+            // Gentle compression for operator clipping
+            let excess = abs_sample - THRESHOLD;
+            let softened = excess / (1.0 + excess / SOFTNESS);
+
+            sign * (THRESHOLD + softened).min(1.0)
         }
     }
 }
