@@ -119,10 +119,7 @@ fn algorithm_5(ops: &mut [Operator; 6]) -> f32 {
     let op6_out = ops[5].process(ops[5].get_feedback_output() * 0.7);
     let op5_out = ops[4].process(op6_out);
 
-    let result = (op1_out + op3_out + op5_out) / 1.7;
-
-
-    result
+    (op1_out + op3_out + op5_out) / 1.7
 }
 
 /// Algorithm 6: Three + Feedback

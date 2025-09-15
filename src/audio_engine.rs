@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 
 pub struct AudioEngine {
     _stream: cpal::Stream,
-    _underrun_counter: Arc<AtomicUsize>, // Track buffer underruns for debugging
+    _underrun_counter: Arc<AtomicUsize>,
 }
 
 impl AudioEngine {
@@ -92,8 +92,7 @@ impl AudioEngine {
             .build_output_stream(
                 config,
                 move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
-                    // CRITICAL FIX: Use try_lock instead of blocking lock
-                    // If GUI is updating parameters, skip this buffer to avoid dropouts
+                    // Use try_lock to avoid blocking the audio thread
                     match synthesizer.try_lock() {
                         Ok(mut synth) => {
                             for frame in data.chunks_mut(channels) {
@@ -106,16 +105,15 @@ impl AudioEngine {
                             }
                         }
                         Err(_) => {
-                            // CRITICAL: Buffer underrun protection
-                            // Lock contention detected - fill with silence to prevent dropouts
+                            // Buffer underrun protection: fill with silence when locked
                             let underrun_count = underrun_counter.fetch_add(1, Ordering::Relaxed);
-                            
-                            // Log periodic warnings for debugging (every 1000 underruns)
+
                             if underrun_count % 1000 == 0 {
-                                eprintln!("AUDIO WARNING: {} buffer underruns detected (GUI blocking audio thread)", underrun_count);
+                                eprintln!(
+                                    "AUDIO WARNING: {} buffer underruns detected",
+                                    underrun_count
+                                );
                             }
-                            
-                            // Fill buffer with silence instead of audio glitches
                             for frame in data.chunks_mut(channels) {
                                 let value = T::from_sample(0.0);
                                 for channel_sample in frame.iter_mut() {

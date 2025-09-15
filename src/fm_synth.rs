@@ -17,8 +17,8 @@ pub struct Voice {
     pub release_time: f32,
     pub current_frequency: f32, // For portamento
     pub target_frequency: f32,  // For portamento
-    sample_rate: f32,           // Store sample rate for calculations
-    // Graceful voice stealing
+    sample_rate: f32,
+    // Voice stealing fade state
     fade_state: VoiceFadeState,
     fade_gain: f32, // 0.0 to 1.0 for fade in/out
     fade_rate: f32, // Rate per sample
@@ -83,7 +83,6 @@ impl Voice {
     }
 
     pub fn steal_voice(&mut self) {
-        // Start graceful fade-out for voice stealing
         self.fade_state = VoiceFadeState::FadeOut;
         self.fade_rate = 1.0 / (self.sample_rate * 0.002); // 2ms fade-out
     }
@@ -225,8 +224,8 @@ pub struct FmSynthesizer {
     pub voices: Vec<Voice>,
     pub held_notes: HashMap<u8, usize>,
     pub preset_name: String,
-    pub lfo: LFO,                        // Global LFO instance
-    pub lock_free_params: LockFreeSynth, // Real-time safe parameters
+    pub lfo: LFO,
+    pub lock_free_params: LockFreeSynth,
 }
 
 impl FmSynthesizer {
@@ -244,7 +243,7 @@ impl FmSynthesizer {
             voices,
             held_notes: HashMap::new(),
             preset_name: "Init Voice".to_string(),
-            lfo: LFO::new(sample_rate), // Initialize global LFO with real sample rate
+            lfo: LFO::new(sample_rate),
             lock_free_params,
         }
     }
@@ -297,10 +296,8 @@ impl FmSynthesizer {
                 .map(|(i, _)| i)
                 .unwrap_or(0);
 
-            // CRITICAL: Graceful voice stealing instead of abrupt cutoff
+            // Voice stealing with fade-out
             self.voices[oldest_voice].steal_voice();
-            // Wait for fade-out to complete naturally in process() before triggering new note
-            // For immediate response, trigger new note but it will fade in gracefully
             self.voices[oldest_voice].trigger(note, velocity_f, params.master_tune, false);
 
             self.held_notes.retain(|_, &mut v| v != oldest_voice);
@@ -320,7 +317,6 @@ impl FmSynthesizer {
 
     pub fn process(&mut self) -> f32 {
         let mut output = 0.0;
-        let mut _active_voices = 0;
 
         // Get lock-free parameters (real-time safe)
         let params = self.lock_free_params.get_global_params();
@@ -349,8 +345,6 @@ impl FmSynthesizer {
                     lfo_amp_mod,
                 );
                 output += voice_output;
-                _active_voices += 1;
-
             }
         }
 

@@ -71,7 +71,6 @@ impl OptimizationTables {
         let val0 = self.sine_table[index & 4095];
         let val1 = self.sine_table[(index + 1) & 4095];
 
-
         // Linear interpolation for smoother result
         val0 + frac * (val1 - val0)
     }

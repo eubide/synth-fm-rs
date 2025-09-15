@@ -638,12 +638,12 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
             name: "CHAOS",
             algorithm: 32, // All operators as carriers for maximum chaos
             operators: [
-                (1.0, 99.0, 0.0, 7.0),     // Op1: Fundamental with max feedback
-                (1.618, 95.0, 15.7, 7.0),  // Op2: Golden ratio with max feedback + extreme detune
+                (1.0, 99.0, 0.0, 7.0),                   // Op1: Fundamental with max feedback
+                (1.618, 95.0, 15.7, 7.0), // Op2: Golden ratio with max feedback + extreme detune
                 (2.414, 90.0, -23.1, 7.0), // Op3: Square root of 6 with max feedback
-                (std::f32::consts::PI, 85.0, 31.4, 7.0),  // Op4: Pi ratio with max feedback
+                (std::f32::consts::PI, 85.0, 31.4, 7.0), // Op4: Pi ratio with max feedback
                 (5.196, 80.0, -18.9, 7.0), // Op5: Fibonacci ratio with max feedback
-                (7.777, 75.0, 42.0, 7.0),  // Op6: High inharmonic ratio with max feedback
+                (7.777, 75.0, 42.0, 7.0), // Op6: High inharmonic ratio with max feedback
             ],
             envelopes: [
                 (99.0, 99.0, 5.0, 99.0, 99.0, 90.0, 80.0, 0.0), // Op1: Sharp attack, harsh decay
@@ -690,12 +690,12 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
             name: "STAB",
             algorithm: 23, // Complex algorithm with multiple feedback paths
             operators: [
-                (1.0, 99.0, 0.0, 0.0),     // Op1: Fundamental
-                (11.73, 85.0, 0.0, 0.0),   // Op2: High inharmonic
-                (17.32, 75.0, 13.5, 0.0),  // Op3: Very high inharmonic with detune
-                (23.89, 65.0, -19.2, 0.0), // Op4: Extreme inharmonic
-                (1.0, 90.0, 0.0, 6.0),     // Op5: Fundamental with high feedback
-                (std::f32::consts::E, 80.0, 0.0, 7.0),   // Op6: E ratio with max feedback
+                (1.0, 99.0, 0.0, 0.0),                 // Op1: Fundamental
+                (11.73, 85.0, 0.0, 0.0),               // Op2: High inharmonic
+                (17.32, 75.0, 13.5, 0.0),              // Op3: Very high inharmonic with detune
+                (23.89, 65.0, -19.2, 0.0),             // Op4: Extreme inharmonic
+                (1.0, 90.0, 0.0, 6.0),                 // Op5: Fundamental with high feedback
+                (std::f32::consts::E, 80.0, 0.0, 7.0), // Op6: E ratio with max feedback
             ],
             envelopes: [
                 (99.0, 99.0, 3.0, 99.0, 99.0, 30.0, 5.0, 0.0), // Op1: Metallic stab
