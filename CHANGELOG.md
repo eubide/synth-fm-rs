@@ -2,7 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased] - 2025-09-12
+## [Unreleased] - 2025-09-16
+
+### Fixed
+- **MIDI Pitch Bend Operator Precedence**: Fixed critical bug in pitch bend calculation
+  - Corrected operator precedence: `(msb << 7) | lsb - 8192` → `((msb << 7) | lsb) - 8192`
+  - Ensures proper 14-bit MIDI pitch bend range (±8192 values)
+  - Location: `src/midi_handler.rs:116`
+
+## [0.2.0] - 2025-09-12
 
 ### 🎵 Major Feature: Complete LFO System Implementation
 - **Authentic DX7 LFO Module** (`src/lfo.rs`): Full-featured low frequency oscillator
