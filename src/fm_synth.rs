@@ -17,8 +17,8 @@ pub struct Voice {
     pub release_time: f32,
     pub current_frequency: f32, // For portamento
     pub target_frequency: f32,  // For portamento
-    sample_rate: f32,           // Store sample rate for calculations
-    // Graceful voice stealing
+    sample_rate: f32,
+    // Voice stealing fade state
     fade_state: VoiceFadeState,
     fade_gain: f32, // 0.0 to 1.0 for fade in/out
     fade_rate: f32, // Rate per sample
@@ -42,9 +42,9 @@ impl Voice {
             Operator::new(sample_rate),
         ];
 
-        // Set up a DX7 E.Piano-like patch (Algorithm 5)
+        // Set up a DX7 E.Piano-like patch (Algorithm 5) with reduced levels
         let ratios = [1.0, 1.0, 7.0, 1.0, 14.0, 1.0]; // Classic E.Piano ratios
-        let levels = [99.0, 85.0, 45.0, 60.0, 25.0, 70.0]; // Balanced levels
+        let levels = [75.0, 65.0, 35.0, 45.0, 20.0, 55.0]; // Reduced levels to prevent overload
 
         for (i, op) in operators.iter_mut().enumerate() {
             op.frequency_ratio = ratios[i];
@@ -83,7 +83,6 @@ impl Voice {
     }
 
     pub fn steal_voice(&mut self) {
-        // Start graceful fade-out for voice stealing
         self.fade_state = VoiceFadeState::FadeOut;
         self.fade_rate = 1.0 / (self.sample_rate * 0.002); // 2ms fade-out
     }
@@ -225,8 +224,8 @@ pub struct FmSynthesizer {
     pub voices: Vec<Voice>,
     pub held_notes: HashMap<u8, usize>,
     pub preset_name: String,
-    pub lfo: LFO,                        // Global LFO instance
-    pub lock_free_params: LockFreeSynth, // Real-time safe parameters
+    pub lfo: LFO,
+    pub lock_free_params: LockFreeSynth,
 }
 
 impl FmSynthesizer {
@@ -244,7 +243,7 @@ impl FmSynthesizer {
             voices,
             held_notes: HashMap::new(),
             preset_name: "Init Voice".to_string(),
-            lfo: LFO::new(sample_rate), // Initialize global LFO with real sample rate
+            lfo: LFO::new(sample_rate),
             lock_free_params,
         }
     }
@@ -297,10 +296,8 @@ impl FmSynthesizer {
                 .map(|(i, _)| i)
                 .unwrap_or(0);
 
-            // CRITICAL: Graceful voice stealing instead of abrupt cutoff
+            // Voice stealing with fade-out
             self.voices[oldest_voice].steal_voice();
-            // Wait for fade-out to complete naturally in process() before triggering new note
-            // For immediate response, trigger new note but it will fade in gracefully
             self.voices[oldest_voice].trigger(note, velocity_f, params.master_tune, false);
 
             self.held_notes.retain(|_, &mut v| v != oldest_voice);
@@ -320,7 +317,7 @@ impl FmSynthesizer {
 
     pub fn process(&mut self) -> f32 {
         let mut output = 0.0;
-        let mut _active_voices = 0;
+        let mut active_voice_count = 0;
 
         // Get lock-free parameters (real-time safe)
         let params = self.lock_free_params.get_global_params();
@@ -349,14 +346,22 @@ impl FmSynthesizer {
                     lfo_amp_mod,
                 );
                 output += voice_output;
-                _active_voices += 1;
-
+                active_voice_count += 1;
             }
         }
 
-        let final_output = output * params.master_volume;
+        // Apply automatic gain scaling based on active voices to prevent overload
+        let voice_scaling = if active_voice_count > 1 {
+            // Scale down as more voices become active (logarithmic scaling)
+            1.0 / (1.0 + (active_voice_count as f32 - 1.0) * 0.15)
+        } else {
+            1.0
+        };
 
-        final_output
+        let scaled_output = output * voice_scaling * params.master_volume;
+
+        // Apply final soft limiting
+        self.soft_limit(scaled_output)
     }
 
     pub fn set_algorithm(&mut self, algorithm: u8) {
@@ -619,5 +624,26 @@ impl FmSynthesizer {
 
     pub fn get_portamento_time(&self) -> f32 {
         self.lock_free_params.get_global_params().portamento_time
+    }
+
+    /// Soft limiting for final output
+    fn soft_limit(&self, sample: f32) -> f32 {
+        const THRESHOLD: f32 = 0.7;  // Lower threshold for synth output
+        const KNEE: f32 = 0.15;     // Gentler knee
+
+        if sample.abs() <= THRESHOLD {
+            sample
+        } else {
+            let sign = sample.signum();
+            let abs_sample = sample.abs();
+
+            // Smooth compression above threshold
+            let excess = abs_sample - THRESHOLD;
+            let compressed_excess = excess / (1.0 + excess / KNEE);
+            let limited = THRESHOLD + compressed_excess;
+
+            // Final hard limit with more headroom
+            sign * limited.min(0.85)
+        }
     }
 }

@@ -1,0 +1,369 @@
+[
+  {
+    "algorithm": 1,
+    "name": "1: Two Stacks",
+    "carriers": [1, 3],
+    "connections": [
+      {"from": 2, "to": 1},
+      {"from": 4, "to": 3},
+      {"from": 5, "to": 4},
+      {"from": 6, "to": 5},
+      {"from": 6, "to": 6}
+    ]
+  },
+  {
+    "algorithm": 2,
+    "name": "2: Stack + Self",
+    "carriers": [1, 3],
+    "connections": [
+      {"from": 2, "to": 1},
+      {"from": 4, "to": 3},
+      {"from": 5, "to": 4},
+      {"from": 6, "to": 5},
+      {"from": 2, "to": 2}
+    ]
+  },
+  {
+    "algorithm": 3,
+    "name": "3: Dual Stacks",
+    "carriers": [1, 4],
+    "connections": [
+      {"from": 2, "to": 1},
+      {"from": 3, "to": 2},
+      {"from": 5, "to": 4},
+      {"from": 6, "to": 5},
+      {"from": 6, "to": 6}
+    ]
+  },
+  {
+    "algorithm": 4,
+    "name": "4: Stack Loop",
+    "carriers": [1, 4],
+    "connections": [
+      {"from": 2, "to": 1},
+      {"from": 3, "to": 2},
+      {"from": 5, "to": 4},
+      {"from": 6, "to": 5},
+      {"from": 4, "to": 6}
+    ]
+  },
+  {
+    "algorithm": 5,
+    "name": "5: Triple Output",
+    "carriers": [1, 3, 4],
+    "connections": [
+      {"from": 6, "to": 2},
+      {"from": 2, "to": 1},
+      {"from": 5, "to": 3},
+      {"from": 6, "to": 6}
+    ]
+  },
+    {
+    "algorithm": 6,
+    "name": "6: Triple Split",
+    "carriers": [1, 3, 4],
+    "connections": [
+      {"from": 6, "to": 2},
+      {"from": 2, "to": 1},
+      {"from": 5, "to": 3},
+      {"from": 5, "to": 6}
+    ]
+  },
+  {
+    "algorithm": 7,
+    "name": "7: Dual + Stack",
+    "carriers": [1, 3],
+    "connections": [
+      {"from": 2, "to": 1},
+      {"from": 4, "to": 3},
+      {"from": 5, "to": 3},
+      {"from": 6, "to": 5},
+      {"from": 6, "to": 6}
+    ]
+  },
+  {
+    "algorithm": 8,
+    "name": "8: Dual Split",
+    "carriers": [1, 3],
+    "connections": [
+      {"from": 2, "to": 1},
+      {"from": 4, "to": 3},
+      {"from": 5, "to": 3},
+      {"from": 6, "to": 5},
+      {"from": 4, "to": 4}
+    ]
+  },
+    {
+    "algorithm": 9,
+    "name": "9: Dual + Self",
+    "carriers": [1, 3],
+    "connections": [
+      {"from": 2, "to": 1},
+      {"from": 4, "to": 3},
+      {"from": 5, "to": 3},
+      {"from": 6, "to": 5},
+      {"from": 2, "to": 2}
+    ]
+  },
+  {
+    "algorithm": 10,
+    "name": "10: Split Stack",
+    "carriers": [1, 4],
+    "connections": [
+      {"from": 5, "to": 4},
+      {"from": 6, "to": 4},
+      {"from": 3, "to": 2},
+      {"from": 2, "to": 1},
+      {"from": 3, "to": 3}
+    ]
+  },
+  {
+    "algorithm": 11,
+    "name": "11: Stack + Dual",
+    "carriers": [1, 4],
+    "connections": [
+      {"from": 2, "to": 1},
+      {"from": 3, "to": 2},
+      {"from": 5, "to": 4},
+      {"from": 6, "to": 4},
+      {"from": 6, "to": 6}
+    ]
+  },
+  {
+    "algorithm": 12,
+    "name": "12: Triple Mod",
+    "carriers": [1, 3],
+    "connections": [
+      {"from": 2, "to": 1},
+      {"from": 4, "to": 3},
+      {"from": 5, "to": 3},
+      {"from": 6, "to": 3},
+      {"from": 2, "to": 2}
+    ]
+  },
+  {
+    "algorithm": 13,
+    "name": "13: Triple Fan",
+    "carriers": [3, 1],
+    "connections": [
+      {"from": 2, "to": 1},
+      {"from": 4, "to": 3},
+      {"from": 5, "to": 3},
+      {"from": 6, "to": 3},
+      {"from": 6, "to": 6}
+    ]
+  },
+  {
+    "algorithm": 14,
+    "name": "14: Dual Stack",
+    "carriers": [1, 3],
+    "connections": [
+      {"from": 2, "to": 1},
+      {"from": 4, "to": 3},
+      {"from": 5, "to": 4},
+      {"from": 6, "to": 4},
+      {"from": 6, "to": 6}
+    ]
+  },
+    {
+    "algorithm": 15,
+    "name": "15: Stack + Self",
+    "carriers": [1, 3],
+    "connections": [
+      {"from": 2, "to": 1},
+      {"from": 4, "to": 3},
+      {"from": 5, "to": 4},
+      {"from": 6, "to": 4},
+      {"from": 2, "to": 2}
+    ]
+  },
+  {
+    "algorithm": 16,
+    "name": "16: Tree + Self",
+    "carriers": [1],
+    "connections": [
+      {"from": 2, "to": 1},
+      {"from": 3, "to": 1},
+      {"from": 5, "to": 1},
+      {"from": 4, "to": 3},
+      {"from": 6, "to": 5},
+      {"from": 6, "to": 6}
+    ]
+  },
+  {
+    "algorithm": 17,
+    "name": "17: Tree Mod",
+    "carriers": [1],
+    "connections": [
+      {"from": 2, "to": 1},
+      {"from": 3, "to": 1},
+      {"from": 5, "to": 1},
+      {"from": 4, "to": 3},
+      {"from": 6, "to": 5},
+      {"from": 2, "to": 2}
+    ]
+  },
+  {
+    "algorithm": 18,
+    "name": "18: Quad + Stack",
+    "carriers": [1],
+    "connections": [
+      {"from": 2, "to": 1},
+      {"from": 3, "to": 1},
+      {"from": 4, "to": 1},
+      {"from": 5, "to": 4},
+      {"from": 6, "to": 5},
+      {"from": 3, "to": 3}
+    ]
+  },
+  {
+    "algorithm": 19,
+    "name": "19: Triple + Tree",
+    "carriers": [1, 4, 5],
+    "connections": [
+      {"from": 2, "to": 1},
+      {"from": 3, "to": 1},
+      {"from": 4, "to": 1},
+      {"from": 5, "to": 4},
+      {"from": 6, "to": 5},
+      {"from": 3, "to": 3}
+    ]
+  },
+  {
+    "algorithm": 20,
+    "name": "20: Triple + Dual",
+    "carriers": [1, 2, 4],
+    "connections": [
+      {"from": 3, "to": 1},
+      {"from": 3, "to": 2},
+      {"from": 5, "to": 4},
+      {"from": 6, "to": 4},
+      {"from": 3, "to": 3}
+    ]
+  },
+  {
+    "algorithm": 21,
+    "name": "21: Quad + Dual",
+    "carriers": [1, 2, 4, 5],
+    "connections": [
+      {"from": 3, "to": 1},
+      {"from": 3, "to": 2},
+      {"from": 6, "to": 4},
+      {"from": 6, "to": 5},
+      {"from": 3, "to": 3}
+    ]
+  },
+  {
+    "algorithm": 22,
+    "name": "22: Quad + Stack",
+    "carriers": [1, 3, 4, 5],
+    "connections": [
+      {"from": 2, "to": 1},
+      {"from": 6, "to": 3},
+      {"from": 6, "to": 4},
+      {"from": 6, "to": 5},
+      {"from": 6, "to": 6}
+    ]
+  },
+  {
+    "algorithm": 23,
+    "name": "23: Quad + Self",
+    "carriers": [1, 2, 4, 5],
+    "connections": [
+      {"from": 3, "to": 2},
+      {"from": 6, "to": 4},
+      {"from": 6, "to": 5},
+      {"from": 6, "to": 6}
+    ]
+  },
+  {
+    "algorithm": 24,
+    "name": "24: Penta + Self",
+    "carriers": [1, 2, 3, 4, 5],
+    "connections": [
+      {"from": 6, "to": 3},
+      {"from": 6, "to": 4},
+      {"from": 6, "to": 5},
+      {"from": 6, "to": 6}
+    ]
+  },
+  {
+    "algorithm": 25,
+    "name": "25: Penta + Dual",
+    "carriers": [1, 2, 3, 4, 5],
+    "connections": [
+      {"from": 6, "to": 4},
+      {"from": 6, "to": 5},
+      {"from": 6, "to": 6}
+    ]
+  },
+  {
+    "algorithm": 26,
+    "name": "26: Triple + Self",
+    "carriers": [1, 2, 4],
+    "connections": [
+      {"from": 3, "to": 2},
+      {"from": 5, "to": 4},
+      {"from": 6, "to": 4},
+      {"from": 6, "to": 6}
+    ]
+  },
+  {
+    "algorithm": 27,
+    "name": "27: Triple Split",
+    "carriers": [1, 2, 4],
+    "connections": [
+      {"from": 3, "to": 2},
+      {"from": 5, "to": 4},
+      {"from": 6, "to": 4},
+      {"from": 3, "to": 3}
+    ]
+  },
+    {
+    "algorithm": 28,
+    "name": "28: Triple + Stack",
+    "carriers": [1, 3, 6],
+    "connections": [
+      {"from": 2, "to": 1},
+      {"from": 4, "to": 3},
+      {"from": 5, "to": 4},
+      {"from": 5, "to": 5}
+    ]
+  },
+    {
+    "algorithm": 29,
+    "name": "29: Quad + Stack",
+    "carriers": [1, 2, 3, 5],
+    "connections": [
+      {"from": 4, "to": 3},
+      {"from": 6, "to": 5},
+      {"from": 6, "to": 6}
+    ]
+  },
+      {
+    "algorithm": 30,
+    "name": "30: Quad + Self",
+    "carriers": [1, 2, 3, 6],
+    "connections": [
+      {"from": 4, "to": 3},
+      {"from": 5, "to": 4},
+      {"from": 5, "to": 5}
+    ]
+  },
+        {
+    "algorithm": 31,
+    "name": "31: Six Operators",
+    "carriers": [1, 2, 3, 4, 5, 6],
+    "connections": [
+      {"from": 6, "to": 6}
+    ]
+  },
+        {
+    "algorithm": 32,
+    "name": "32: All Carriers",
+    "carriers": [1, 2, 3, 4, 5, 6],
+    "connections": [
+      {"from": 6, "to": 6}
+    ]
+  }
+]

@@ -1213,7 +1213,6 @@ impl Dx7App {
         op_idx == 5
     }
 
-
     fn draw_lfo_panel(&mut self, ui: &mut egui::Ui) {
         ui.group(|ui| {
             ui.vertical(|ui| {

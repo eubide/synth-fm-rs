@@ -129,35 +129,31 @@ impl Operator {
         self.envelope.release();
     }
 
-    // Update frequency when parameters change
     pub fn update_frequency(&mut self) {
-        let actual_freq = if let Some(fixed) = self.frequency_fixed {
-            fixed
-        } else {
-            self.base_frequency * self.frequency_ratio
-        };
-
+        let actual_freq = self
+            .frequency_fixed
+            .unwrap_or(self.base_frequency * self.frequency_ratio);
         let detuned_freq = actual_freq * (1.0 + self.detune / 100.0);
 
-        // CRITICAL: Bounds check all inputs to prevent numerical issues
+        // Validate frequency range
         if detuned_freq.is_finite()
             && detuned_freq >= 0.1
-            && detuned_freq <= 20000.0  // Above human hearing range
+            && detuned_freq <= 20000.0
             && self.sample_rate > 0.0
             && self.sample_rate.is_finite()
         {
             self.phase_increment = (2.0 * PI * detuned_freq) / self.sample_rate;
 
-            // Additional safety check on phase_increment
+            // Validate phase increment
             if !self.phase_increment.is_finite() || self.phase_increment.abs() > 100.0 {
-                self.phase_increment = 0.0; // Silence if calculation fails
+                self.phase_increment = 0.0;
             }
         } else {
-            self.phase_increment = 0.0; // Silence for malformed frequency
+            self.phase_increment = 0.0;
         }
     }
 
-    // Update only frequency without resetting phase - for real-time frequency changes
+    /// Update frequency without resetting phase - used for real-time modulation
     pub fn update_frequency_only(&mut self, frequency: f32) {
         self.base_frequency = frequency;
         self.update_frequency();
@@ -179,28 +175,22 @@ impl Operator {
     }
 
     pub fn process(&mut self, modulation: f32) -> f32 {
-        // Update cached values if parameters changed
         self.update_cached_values();
 
         let env_value = self.envelope.process();
-
-
         if env_value == 0.0 {
             return 0.0;
         }
 
-        // Feedback: DX7 uses previous output as phase modulation
-        // Feedback range 0-7 maps to 0-π radians of modulation
+        // Apply feedback modulation (DX7: 0-7 maps to 0-π radians)
         let feedback_mod = if self.feedback > 0.0 {
             self.last_output * self.feedback * PI / 7.0
         } else {
             0.0
         };
 
-        // Total phase modulation
+        // Generate output with phase modulation
         let total_modulation = modulation + feedback_mod;
-
-        // Generate output with phase modulation and apply all cached scaling factors
         let sin_result = OPTIMIZATION_TABLES.fast_sin(self.phase + total_modulation);
         let output = sin_result
             * env_value
@@ -208,34 +198,28 @@ impl Operator {
             * self.cached_values.velocity_factor
             * self.cached_values.key_scale_level_factor;
 
-
-        // Update phase for next sample with numerical bounds checking
-        // CRITICAL: Prevent phase explosion from malformed data
+        // Update phase with bounds checking
         if self.phase_increment.is_finite() && self.phase_increment.abs() < 100.0 {
             self.phase += self.phase_increment;
 
-
-            // Efficient phase wrapping using modulo instead of while loop
-            if self.phase >= 2.0 * PI {
-                self.phase = self.phase % (2.0 * PI);
-            } else if self.phase < 0.0 {
-                self.phase = self.phase % (2.0 * PI) + 2.0 * PI;
+            // Optimized phase wrapping using conditional subtraction
+            // Much faster than modulo operations
+            const TWO_PI: f32 = 2.0 * PI;
+            while self.phase >= TWO_PI {
+                self.phase -= TWO_PI;
+            }
+            while self.phase < 0.0 {
+                self.phase += TWO_PI;
             }
         } else {
-            // Reset phase if increment is malformed (NaN, infinite, or too large)
             self.phase = 0.0;
             self.phase_increment = 0.0;
         }
 
-        // Store for feedback
         self.last_output = output;
 
-        // FIXED: Only apply soft clipping if signal is actually clipping (> ±1.0)
-        if output.abs() > 1.0 {
-            output.tanh() // Soft clipping only when needed
-        } else {
-            output // Clean signal for normal levels
-        }
+        // Apply gentle soft clipping for operators
+        self.soft_clip_operator(output)
     }
 
     pub fn is_active(&self) -> bool {
@@ -265,6 +249,25 @@ impl Operator {
             1.0 / (1.0 + (-distance as f32 * self.key_scale_rate / 7.0 / 24.0))
         } else {
             1.0
+        }
+    }
+
+    /// Gentle soft clipping for operator output
+    fn soft_clip_operator(&self, sample: f32) -> f32 {
+        const THRESHOLD: f32 = 0.9;  // Higher threshold for operators
+        const SOFTNESS: f32 = 0.1;  // Gentle softening
+
+        if sample.abs() <= THRESHOLD {
+            sample
+        } else {
+            let sign = sample.signum();
+            let abs_sample = sample.abs();
+
+            // Gentle compression for operator clipping
+            let excess = abs_sample - THRESHOLD;
+            let softened = excess / (1.0 + excess / SOFTNESS);
+
+            sign * (THRESHOLD + softened).min(1.0)
         }
     }
 }
