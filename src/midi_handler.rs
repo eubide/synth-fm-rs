@@ -113,7 +113,7 @@ impl MidiHandler {
                 if message.len() >= 3 {
                     let lsb = message[1] as i16;
                     let msb = message[2] as i16;
-                    let value = (msb << 7) | lsb - 8192;
+                    let value = ((msb << 7) | lsb) - 8192;
                     println!(
                         "Pitch Bend Ch{} Value:{} (14-bit: LSB:{} MSB:{})",
                         channel + 1,
