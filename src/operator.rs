@@ -41,9 +41,9 @@ pub struct Operator {
     phase_increment: f32,
     last_output: f32,
     sample_rate: f32,
-    base_frequency: f32,   // Store base frequency for real-time updates
-    current_velocity: f32, // Store velocity for real-time updates
-    current_note: u8,      // Store MIDI note for key scaling
+    base_frequency: f32,         // Store base frequency for real-time updates
+    current_velocity: f32,       // Store velocity for real-time updates
+    current_note: u8,            // Store MIDI note for key scaling
     cached_values: CachedValues, // Cached calculations for performance
 }
 
@@ -94,7 +94,7 @@ impl Operator {
         }
 
         // Cache level amplitude using optimized lookup
-        self.cached_values.level_amplitude = 
+        self.cached_values.level_amplitude =
             OPTIMIZATION_TABLES.dx7_level_to_amplitude(self.output_level as u8);
 
         // Cache velocity factor (exponential curve for natural response)
@@ -138,16 +138,16 @@ impl Operator {
         };
 
         let detuned_freq = actual_freq * (1.0 + self.detune / 100.0);
-        
+
         // CRITICAL: Bounds check all inputs to prevent numerical issues
         if detuned_freq.is_finite() 
             && detuned_freq >= 0.1 
             && detuned_freq <= 20000.0  // Above human hearing range
             && self.sample_rate > 0.0 
-            && self.sample_rate.is_finite() 
+            && self.sample_rate.is_finite()
         {
             self.phase_increment = (2.0 * PI * detuned_freq) / self.sample_rate;
-            
+
             // Additional safety check on phase_increment
             if !self.phase_increment.is_finite() || self.phase_increment.abs() > 100.0 {
                 self.phase_increment = 0.0; // Silence if calculation fails
@@ -175,7 +175,7 @@ impl Operator {
     pub fn process(&mut self, modulation: f32) -> f32 {
         // Update cached values if parameters changed
         self.update_cached_values();
-        
+
         let env_value = self.envelope.process();
 
         if env_value == 0.0 {
@@ -204,7 +204,7 @@ impl Operator {
         // CRITICAL: Prevent phase explosion from malformed data
         if self.phase_increment.is_finite() && self.phase_increment.abs() < 100.0 {
             self.phase += self.phase_increment;
-            
+
             // Efficient phase wrapping using modulo instead of while loop
             if self.phase >= 2.0 * PI {
                 self.phase = self.phase % (2.0 * PI);

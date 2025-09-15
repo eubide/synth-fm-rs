@@ -1,4 +1,4 @@
-use crate::algorithm_matrix::AlgorithmMatrix;
+use crate::algorithms;
 use crate::audio_engine::AudioEngine;
 use crate::fm_synth::FmSynthesizer;
 use crate::midi_handler::MidiHandler;
@@ -17,9 +17,6 @@ pub struct Dx7App {
     current_octave: i32,
     presets: Vec<Dx7Preset>,
     selected_preset: usize,
-    // Cache for algorithm diagrams
-    cached_algorithm: Option<u8>,
-    cached_diagram: Option<crate::algorithm_matrix::AlgorithmGraph>,
 }
 
 #[derive(PartialEq)]
@@ -56,12 +53,15 @@ impl Dx7App {
             current_octave: 4,
             presets,
             selected_preset: 0,
-            cached_algorithm: None,
-            cached_diagram: None,
         }
     }
 
-    fn lock_synth(&self) -> Result<std::sync::MutexGuard<FmSynthesizer>, std::sync::PoisonError<std::sync::MutexGuard<FmSynthesizer>>> {
+    fn lock_synth(
+        &self,
+    ) -> Result<
+        std::sync::MutexGuard<FmSynthesizer>,
+        std::sync::PoisonError<std::sync::MutexGuard<FmSynthesizer>>,
+    > {
         self.synthesizer.lock()
     }
 
@@ -96,7 +96,11 @@ impl Dx7App {
                 let sub_text = match self.display_mode {
                     DisplayMode::Voice => {
                         if let Ok(synth) = self.lock_synth() {
-                            format!("VOICE: {} | ALG: {:02}", synth.preset_name, synth.get_algorithm())
+                            format!(
+                                "VOICE: {} | ALG: {:02}",
+                                synth.preset_name,
+                                synth.get_algorithm()
+                            )
                         } else {
                             "VOICE: ERROR".to_string()
                         }
@@ -107,11 +111,7 @@ impl Dx7App {
                     DisplayMode::Algorithm => {
                         if let Ok(synth) = self.lock_synth() {
                             let current_alg = synth.get_algorithm();
-                            let alg_name = if let Some(matrix) = synth.algorithm_library.get(current_alg) {
-                                matrix.name.clone()
-                            } else {
-                                format!("Algorithm {}", current_alg)
-                            };
+                            let alg_name = algorithms::get_algorithm_name(current_alg).to_string();
                             format!("ALG {} - {}", current_alg, alg_name)
                         } else {
                             "ALGORITHM: ERROR".to_string()
@@ -120,10 +120,12 @@ impl Dx7App {
                     DisplayMode::LFO => {
                         if let Ok(synth) = self.lock_synth() {
                             let waveform_name = synth.get_lfo_waveform().name();
-                            format!("LFO: {} | Rate: {:.0} | Mod: {:.0}%", 
-                                waveform_name, 
+                            format!(
+                                "LFO: {} | Rate: {:.0} | Mod: {:.0}%",
+                                waveform_name,
                                 synth.get_lfo_rate(),
-                                synth.get_mod_wheel() * 100.0)
+                                synth.get_mod_wheel() * 100.0
+                            )
                         } else {
                             "LFO: ERROR".to_string()
                         }
@@ -141,21 +143,40 @@ impl Dx7App {
 
                 // Always display current status information
                 let synth = self.synthesizer.lock().unwrap();
-                let mode_text = if synth.get_mono_mode() { "MONO" } else { "POLY" };
-                let midi_text = if self._midi_handler.is_some() { "MIDI OK" } else { "NO MIDI" };
-                
+                let mode_text = if synth.get_mono_mode() {
+                    "MONO"
+                } else {
+                    "POLY"
+                };
+                let midi_text = if self._midi_handler.is_some() {
+                    "MIDI OK"
+                } else {
+                    "NO MIDI"
+                };
+
                 let status_line = if synth.get_mono_mode() {
                     // Show portamento only in MONO mode
-                    let porta_text = if synth.get_portamento_enable() { "ON" } else { "OFF" };
+                    let porta_text = if synth.get_portamento_enable() {
+                        "ON"
+                    } else {
+                        "OFF"
+                    };
                     format!(
                         "VOICE: {} | ALG: {:02} | MODE: {} | PORTA: {} | {}",
-                        synth.preset_name, synth.get_algorithm(), mode_text, porta_text, midi_text
+                        synth.preset_name,
+                        synth.get_algorithm(),
+                        mode_text,
+                        porta_text,
+                        midi_text
                     )
                 } else {
                     // In POLY mode, don't show portamento
                     format!(
                         "VOICE: {} | ALG: {:02} | MODE: {} | {}",
-                        synth.preset_name, synth.get_algorithm(), mode_text, midi_text
+                        synth.preset_name,
+                        synth.get_algorithm(),
+                        mode_text,
+                        midi_text
                     )
                 };
 
@@ -173,17 +194,17 @@ impl Dx7App {
             // Light gray background for global panel
             ui.style_mut().visuals.widgets.noninteractive.bg_fill =
                 egui::Color32::from_rgb(245, 245, 245);
-            
+
             let available_width = ui.available_width();
             let is_narrow = available_width < 800.0;
-            
+
             ui.set_min_height(if is_narrow { 100.0 } else { 60.0 });
-            
+
             if is_narrow {
                 // Vertical layout for narrow windows
                 ui.vertical(|ui| {
                     ui.label(egui::RichText::new("GLOBAL CONTROLS").size(10.0).strong());
-                    
+
                     // First row: Volume and Mode
                     ui.horizontal(|ui| {
                         // Volume section
@@ -196,27 +217,30 @@ impl Dx7App {
                                         egui::Layout::left_to_right(egui::Align::Center),
                                         |ui| {
                                             let mut volume = synth.get_master_volume();
-                                            if ui.add(
-                                                egui::Slider::new(&mut volume, 0.0..=1.0)
-                                                    .show_value(false)
-                                            ).changed() {
+                                            if ui
+                                                .add(
+                                                    egui::Slider::new(&mut volume, 0.0..=1.0)
+                                                        .show_value(false),
+                                                )
+                                                .changed()
+                                            {
                                                 synth.set_master_volume(volume);
                                             }
-                                        }
+                                        },
                                     );
                                     ui.label(format!("{:.0}", synth.get_master_volume() * 100.0));
                                 }
                             });
                         });
-                        
+
                         ui.separator();
-                        
+
                         // Mode section
                         ui.vertical(|ui| {
                             self.draw_mode_controls_compact(ui);
                         });
                     });
-                    
+
                     // Second row: Tune and utilities
                     ui.horizontal(|ui| {
                         self.draw_tune_and_utilities_compact(ui);
@@ -226,7 +250,7 @@ impl Dx7App {
                 // Horizontal layout for wide windows
                 ui.vertical(|ui| {
                     ui.label(egui::RichText::new("GLOBAL CONTROLS").size(10.0).strong());
-                    
+
                     // First row: Volume, Tuning, Mode, Panic/Init
                     ui.horizontal(|ui| {
                         // Left section: Volume
@@ -240,13 +264,16 @@ impl Dx7App {
                                         egui::Layout::left_to_right(egui::Align::Center),
                                         |ui| {
                                             let mut volume = synth.get_master_volume();
-                                            if ui.add(
-                                                egui::Slider::new(&mut volume, 0.0..=1.0)
-                                                    .show_value(false)
-                                            ).changed() {
+                                            if ui
+                                                .add(
+                                                    egui::Slider::new(&mut volume, 0.0..=1.0)
+                                                        .show_value(false),
+                                                )
+                                                .changed()
+                                            {
                                                 synth.set_master_volume(volume);
                                             }
-                                        }
+                                        },
                                     );
                                     ui.label(format!("{:.0}", synth.get_master_volume() * 100.0));
                                 }
@@ -255,7 +282,7 @@ impl Dx7App {
 
                         ui.separator();
 
-                        // Center-left section: Tuning controls  
+                        // Center-left section: Tuning controls
                         ui.vertical(|ui| {
                             ui.set_min_width(180.0);
                             if let Ok(mut synth) = self.lock_synth() {
@@ -267,21 +294,27 @@ impl Dx7App {
                                         egui::vec2(70.0, 20.0),
                                         egui::Layout::left_to_right(egui::Align::Center),
                                         |ui| {
-                                            if ui.add(
-                                                egui::Slider::new(&mut master_tune, -150.0..=150.0)
-                                                    .show_value(false)
-                                            ).changed() {
+                                            if ui
+                                                .add(
+                                                    egui::Slider::new(
+                                                        &mut master_tune,
+                                                        -150.0..=150.0,
+                                                    )
+                                                    .show_value(false),
+                                                )
+                                                .changed()
+                                            {
                                                 synth.set_master_tune(master_tune);
                                             }
-                                        }
+                                        },
                                     );
                                     ui.label(format!("{:.0}c", master_tune));
-                                    
+
                                     if ui.small_button("RST").clicked() {
                                         synth.set_master_tune(0.0);
                                     }
                                 });
-                                
+
                                 // Pitch Bend Range
                                 ui.horizontal(|ui| {
                                     ui.label("PITCH BEND:");
@@ -290,13 +323,16 @@ impl Dx7App {
                                         egui::vec2(50.0, 20.0),
                                         egui::Layout::left_to_right(egui::Align::Center),
                                         |ui| {
-                                            if ui.add(
-                                                egui::Slider::new(&mut pb_range, 0.0..=12.0)
-                                                    .show_value(false)
-                                            ).changed() {
+                                            if ui
+                                                .add(
+                                                    egui::Slider::new(&mut pb_range, 0.0..=12.0)
+                                                        .show_value(false),
+                                                )
+                                                .changed()
+                                            {
                                                 synth.set_pitch_bend_range(pb_range);
                                             }
-                                        }
+                                        },
                                     );
                                     ui.label(format!("{:.0}", pb_range));
                                 });
@@ -311,22 +347,28 @@ impl Dx7App {
                             if let Ok(mut synth) = self.lock_synth() {
                                 ui.horizontal(|ui| {
                                     ui.label("MODE:");
-                                    
+
                                     let was_mono = synth.get_mono_mode();
-                                    
-                                    if ui.selectable_value(&mut synth.get_mono_mode(), false, "POLY").clicked() {
+
+                                    if ui
+                                        .selectable_value(&mut synth.get_mono_mode(), false, "POLY")
+                                        .clicked()
+                                    {
                                         if was_mono {
                                             synth.set_mono_mode(false);
                                         }
                                     }
-                                    
-                                    if ui.selectable_value(&mut synth.get_mono_mode(), true, "MONO").clicked() {
+
+                                    if ui
+                                        .selectable_value(&mut synth.get_mono_mode(), true, "MONO")
+                                        .clicked()
+                                    {
                                         if !was_mono {
                                             synth.set_mono_mode(true);
                                         }
                                     }
                                 });
-                                
+
                                 // Portamento (only visible in MONO mode)
                                 if synth.get_mono_mode() {
                                     ui.horizontal(|ui| {
@@ -335,7 +377,7 @@ impl Dx7App {
                                         if ui.checkbox(&mut porta_on, "").changed() {
                                             synth.set_portamento_enable(porta_on);
                                         }
-                                        
+
                                         if synth.get_portamento_enable() {
                                             ui.label("TIME:");
                                             let mut porta_time = synth.get_portamento_time();
@@ -343,13 +385,19 @@ impl Dx7App {
                                                 egui::vec2(50.0, 20.0),
                                                 egui::Layout::left_to_right(egui::Align::Center),
                                                 |ui| {
-                                                    if ui.add(
-                                                        egui::Slider::new(&mut porta_time, 0.0..=99.0)
-                                                            .show_value(false)
-                                                    ).changed() {
+                                                    if ui
+                                                        .add(
+                                                            egui::Slider::new(
+                                                                &mut porta_time,
+                                                                0.0..=99.0,
+                                                            )
+                                                            .show_value(false),
+                                                        )
+                                                        .changed()
+                                                    {
                                                         synth.set_portamento_time(porta_time);
                                                     }
-                                                }
+                                                },
                                             );
                                             ui.label(format!("{:.0}", porta_time));
                                         }
@@ -369,7 +417,7 @@ impl Dx7App {
                                         synth.panic();
                                     }
                                 }
-                                
+
                                 if ui.small_button("INIT").clicked() {
                                     if let Ok(mut synth) = self.lock_synth() {
                                         synth.voice_initialize();
@@ -378,32 +426,37 @@ impl Dx7App {
                             });
                         });
                     });
-                    
                 });
             };
         });
     }
-    
+
     fn draw_mode_controls_compact(&mut self, ui: &mut egui::Ui) {
         if let Ok(mut synth) = self.lock_synth() {
             ui.horizontal(|ui| {
                 ui.label("MODE:");
-                
+
                 let was_mono = synth.get_mono_mode();
-                
-                if ui.selectable_value(&mut synth.get_mono_mode(), false, "POLY").clicked() {
+
+                if ui
+                    .selectable_value(&mut synth.get_mono_mode(), false, "POLY")
+                    .clicked()
+                {
                     if was_mono {
                         synth.set_mono_mode(false);
                     }
                 }
-                
-                if ui.selectable_value(&mut synth.get_mono_mode(), true, "MONO").clicked() {
+
+                if ui
+                    .selectable_value(&mut synth.get_mono_mode(), true, "MONO")
+                    .clicked()
+                {
                     if !was_mono {
                         synth.set_mono_mode(true);
                     }
                 }
             });
-            
+
             // Portamento (only visible in MONO mode)
             if synth.get_mono_mode() {
                 ui.horizontal(|ui| {
@@ -412,7 +465,7 @@ impl Dx7App {
                     if ui.checkbox(&mut porta_on, "").changed() {
                         synth.set_portamento_enable(porta_on);
                     }
-                    
+
                     if synth.get_portamento_enable() {
                         ui.label("TIME:");
                         let mut porta_time = synth.get_portamento_time();
@@ -420,13 +473,16 @@ impl Dx7App {
                             egui::vec2(40.0, 20.0),
                             egui::Layout::left_to_right(egui::Align::Center),
                             |ui| {
-                                if ui.add(
-                                    egui::Slider::new(&mut porta_time, 0.0..=99.0)
-                                        .show_value(false)
-                                ).changed() {
+                                if ui
+                                    .add(
+                                        egui::Slider::new(&mut porta_time, 0.0..=99.0)
+                                            .show_value(false),
+                                    )
+                                    .changed()
+                                {
                                     synth.set_portamento_time(porta_time);
                                 }
-                            }
+                            },
                         );
                         ui.label(format!("{:.0}", porta_time));
                     }
@@ -434,7 +490,7 @@ impl Dx7App {
             }
         }
     }
-    
+
     fn draw_tune_and_utilities_compact(&mut self, ui: &mut egui::Ui) {
         if let Ok(mut synth) = self.lock_synth() {
             // First row: Master Tune
@@ -445,21 +501,24 @@ impl Dx7App {
                     egui::vec2(50.0, 20.0),
                     egui::Layout::left_to_right(egui::Align::Center),
                     |ui| {
-                        if ui.add(
-                            egui::Slider::new(&mut master_tune, -150.0..=150.0)
-                                .show_value(false)
-                        ).changed() {
+                        if ui
+                            .add(
+                                egui::Slider::new(&mut master_tune, -150.0..=150.0)
+                                    .show_value(false),
+                            )
+                            .changed()
+                        {
                             synth.set_master_tune(master_tune);
                         }
-                    }
+                    },
                 );
                 ui.label(format!("{:.0}c", master_tune));
-                
+
                 if ui.small_button("RST").clicked() {
                     synth.set_master_tune(0.0);
                 }
             });
-            
+
             // Second row: Pitch Bend and utilities
             ui.horizontal(|ui| {
                 ui.label("BEND:");
@@ -468,22 +527,22 @@ impl Dx7App {
                     egui::vec2(40.0, 20.0),
                     egui::Layout::left_to_right(egui::Align::Center),
                     |ui| {
-                        if ui.add(
-                            egui::Slider::new(&mut pb_range, 0.0..=12.0)
-                                .show_value(false)
-                        ).changed() {
+                        if ui
+                            .add(egui::Slider::new(&mut pb_range, 0.0..=12.0).show_value(false))
+                            .changed()
+                        {
                             synth.set_pitch_bend_range(pb_range);
                         }
-                    }
+                    },
                 );
                 ui.label(format!("{:.0}", pb_range));
-                
+
                 ui.separator();
-                
+
                 if ui.small_button("PANIC").clicked() {
                     synth.panic();
                 }
-                
+
                 if ui.small_button("INIT").clicked() {
                     synth.voice_initialize();
                 }
@@ -495,12 +554,14 @@ impl Dx7App {
         ui.group(|ui| {
             ui.horizontal(|ui| {
                 ui.spacing_mut().button_padding = egui::vec2(12.0, 6.0);
-                
+
                 // Make buttons more DX7-like with consistent sizing
                 let button_size = egui::vec2(85.0, 25.0);
 
                 let voice_button = if self.display_mode == DisplayMode::Voice {
-                    egui::Button::new("VOICE").fill(egui::Color32::from_rgb(180, 200, 220)).min_size(button_size)
+                    egui::Button::new("VOICE")
+                        .fill(egui::Color32::from_rgb(180, 200, 220))
+                        .min_size(button_size)
                 } else {
                     egui::Button::new("VOICE").min_size(button_size)
                 };
@@ -511,7 +572,9 @@ impl Dx7App {
                 }
 
                 let algorithm_button = if self.display_mode == DisplayMode::Algorithm {
-                    egui::Button::new("ALGORITHM").fill(egui::Color32::from_rgb(180, 200, 220)).min_size(button_size)
+                    egui::Button::new("ALGORITHM")
+                        .fill(egui::Color32::from_rgb(180, 200, 220))
+                        .min_size(button_size)
                 } else {
                     egui::Button::new("ALGORITHM").min_size(button_size)
                 };
@@ -522,7 +585,9 @@ impl Dx7App {
                 }
 
                 let op_select_button = if self.display_mode == DisplayMode::Operator {
-                    egui::Button::new("OPERATOR").fill(egui::Color32::from_rgb(180, 200, 220)).min_size(button_size)
+                    egui::Button::new("OPERATOR")
+                        .fill(egui::Color32::from_rgb(180, 200, 220))
+                        .min_size(button_size)
                 } else {
                     egui::Button::new("OPERATOR").min_size(button_size)
                 };
@@ -533,7 +598,9 @@ impl Dx7App {
                 }
 
                 let lfo_button = if self.display_mode == DisplayMode::LFO {
-                    egui::Button::new("LFO").fill(egui::Color32::from_rgb(180, 200, 220)).min_size(button_size)
+                    egui::Button::new("LFO")
+                        .fill(egui::Color32::from_rgb(180, 200, 220))
+                        .min_size(button_size)
                 } else {
                     egui::Button::new("LFO").min_size(button_size)
                 };
@@ -744,11 +811,12 @@ impl Dx7App {
                 let button_spacing = 10.0;
                 let min_columns = 2;
                 let max_columns = 6;
-                
+
                 // Calculate how many columns fit, with padding for margins
                 let padding = 40.0; // Account for group padding and margins
                 let usable_width = available_width - padding;
-                let columns_that_fit = ((usable_width + button_spacing) / (button_width + button_spacing)) as usize;
+                let columns_that_fit =
+                    ((usable_width + button_spacing) / (button_width + button_spacing)) as usize;
                 let optimal_columns = columns_that_fit.clamp(min_columns, max_columns);
 
                 // Display presets in a responsive grid
@@ -765,7 +833,8 @@ impl Dx7App {
                                     .fill(egui::Color32::from_rgb(180, 200, 220))
                                     .min_size(egui::vec2(button_width, 30.0))
                             } else {
-                                egui::Button::new(preset.name).min_size(egui::vec2(button_width, 30.0))
+                                egui::Button::new(preset.name)
+                                    .min_size(egui::vec2(button_width, 30.0))
                             };
 
                             if ui.add(button).clicked() {
@@ -783,7 +852,7 @@ impl Dx7App {
                                 ui.end_row();
                             }
                         }
-                        
+
                         // Handle the last row if it's incomplete
                         let total_presets = self.presets.len();
                         let last_row_items = total_presets % optimal_columns;
@@ -980,22 +1049,14 @@ impl Dx7App {
 
                 let mut synth = self.synthesizer.lock().unwrap();
                 let current_alg = synth.get_algorithm();
-                let current_name = if let Some(matrix) = synth.algorithm_library.get(current_alg) {
-                    matrix.name.clone()
-                } else {
-                    format!("Algorithm {}", current_alg)
-                };
+                let current_name = algorithms::get_algorithm_name(current_alg).to_string();
 
                 egui::ComboBox::from_label("")
                     .selected_text(format!("{:02} - {}", current_alg, current_name))
                     .show_ui(ui, |ui| {
                         for i in 1..=35 {
-                            let alg_name = if let Some(matrix) = synth.algorithm_library.get(i) {
-                                matrix.name.clone()
-                            } else {
-                                format!("Algorithm {}", i)
-                            };
-                            
+                            let alg_name = algorithms::get_algorithm_name(i).to_string();
+
                             if ui
                                 .selectable_value(
                                     &mut current_alg.clone(),
@@ -1013,7 +1074,6 @@ impl Dx7App {
             });
         });
     }
-
 
     fn handle_keyboard_input(&mut self, ctx: &egui::Context) {
         use egui::Key;
@@ -1090,7 +1150,7 @@ impl eframe::App for Dx7App {
 
             // DX7 LCD Display
             self.draw_dx7_display(ui);
-            
+
             ui.add_space(8.0);
 
             // Global Controls Panel (always visible)
@@ -1108,16 +1168,7 @@ impl eframe::App for Dx7App {
                     self.draw_preset_selector(ui);
                 }
                 DisplayMode::Algorithm => {
-                    // Algorithm controls + visualization
-                    ui.horizontal(|ui| {
-                        ui.vertical(|ui| {
-                            self.draw_algorithm_selector(ui);
-                        });
-                        ui.separator();
-                        ui.vertical(|ui| {
-                            self.draw_algorithm_diagram(ui);
-                        });
-                    });
+                    self.draw_algorithm_selector(ui);
                 }
                 DisplayMode::Operator => {
                     // Show operator controls and envelope in two columns
@@ -1126,8 +1177,8 @@ impl eframe::App for Dx7App {
                         columns[0].vertical(|ui| {
                             self.draw_operator_panel(ui);
                         });
-                        
-                        // Right column: Envelope parameters  
+
+                        // Right column: Envelope parameters
                         columns[1].vertical(|ui| {
                             self.draw_envelope_panel(ui);
                         });
@@ -1157,378 +1208,11 @@ impl eframe::App for Dx7App {
 
 impl Dx7App {
     fn operator_has_feedback(&self, op_idx: usize) -> bool {
-        let synth = self.synthesizer.lock().unwrap();
-        let current_algorithm = synth.get_algorithm();
-        drop(synth);
-        
-        if let Ok(synth) = self.lock_synth() {
-            if let Some(matrix) = synth.algorithm_library.get(current_algorithm) {
-                // Check if this operator has self-feedback
-                matrix.connections[op_idx][op_idx] > 0.0
-            } else {
-                false
-            }
-        } else {
-            false
-        }
+        // Feedback detection will be implemented later with algorithm analysis
+        // For now, assume only operator 6 (index 5) has feedback in most algorithms
+        op_idx == 5
     }
 
-    fn draw_algorithm_diagram(&mut self, ui: &mut egui::Ui) {
-        ui.group(|ui| {
-            ui.vertical(|ui| {
-                ui.label("ALGORITHM DIAGRAM");
-
-                let synth = self.synthesizer.lock().unwrap();
-                let current_algorithm = synth.get_algorithm();
-                drop(synth);
-
-                // Check if we need to regenerate the diagram
-                let positioned_graph = if self.cached_algorithm != Some(current_algorithm) {
-                    let graph_result = if let Ok(synth) = self.lock_synth() {
-                        if let Some(matrix) = synth.algorithm_library.get(current_algorithm) {
-                            let graph = matrix.create_algorithm_graph();
-                            let canvas_size = (400.0, 280.0);
-                            Some(AlgorithmMatrix::calculate_layout(graph, canvas_size))
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    };
-                    
-                    if let Some(positioned) = graph_result {
-                        self.cached_algorithm = Some(current_algorithm);
-                        self.cached_diagram = Some(positioned.clone());
-                        positioned
-                    } else {
-                        // Return empty graph for error cases
-                        crate::algorithm_matrix::AlgorithmGraph {
-                            operators: vec![],
-                            connections: vec![]
-                        }
-                    }
-                } else if let Some(ref cached) = self.cached_diagram {
-                    cached.clone()
-                } else {
-                    // Fallback - try to create from current algorithm
-                    if let Ok(synth) = self.lock_synth() {
-                        if let Some(matrix) = synth.algorithm_library.get(current_algorithm) {
-                            let graph = matrix.create_algorithm_graph();
-                            let canvas_size = (400.0, 280.0);
-                            AlgorithmMatrix::calculate_layout(graph, canvas_size)
-                        } else {
-                            crate::algorithm_matrix::AlgorithmGraph {
-                                operators: vec![],
-                                connections: vec![]
-                            }
-                        }
-                    } else {
-                        crate::algorithm_matrix::AlgorithmGraph {
-                            operators: vec![],
-                            connections: vec![]
-                        }
-                    }
-                };
-
-                // Create drawing area (centered)
-                let canvas_size = (400.0, 280.0);
-
-                let (response, painter) = ui
-                    .allocate_ui_with_layout(
-                        egui::Vec2::new(ui.available_width(), canvas_size.1),
-                        egui::Layout::top_down(egui::Align::Center),
-                        |ui| {
-                            ui.allocate_painter(
-                                egui::Vec2::new(canvas_size.0, canvas_size.1),
-                                egui::Sense::hover(),
-                            )
-                        },
-                    )
-                    .inner;
-
-                let rect = response.rect;
-
-                // Background
-                painter.rect_filled(
-                    rect,
-                    egui::Rounding::same(5.0),
-                    egui::Color32::from_gray(20),
-                );
-                painter.rect_stroke(
-                    rect,
-                    egui::Rounding::same(5.0),
-                    egui::Stroke::new(1.0, egui::Color32::from_gray(100)),
-                );
-
-                // Draw carrier sum line first (at the bottom)
-                let carriers: Vec<_> = positioned_graph
-                    .operators
-                    .iter()
-                    .filter(|op| op.is_carrier)
-                    .collect();
-                if carriers.len() > 1 {
-                    // Draw horizontal line connecting all carriers at the bottom
-                    let carrier_y = carriers
-                        .iter()
-                        .map(|op| op.position.1)
-                        .fold(f32::NEG_INFINITY, f32::max);
-                    let sum_y = rect.top() + carrier_y + 35.0;
-
-                    let min_x = carriers
-                        .iter()
-                        .map(|op| op.position.0)
-                        .fold(f32::INFINITY, f32::min);
-                    let max_x = carriers
-                        .iter()
-                        .map(|op| op.position.0)
-                        .fold(f32::NEG_INFINITY, f32::max);
-
-                    // Main sum line (thinner)
-                    painter.line_segment(
-                        [
-                            egui::Pos2::new(rect.left() + min_x, sum_y),
-                            egui::Pos2::new(rect.left() + max_x, sum_y),
-                        ],
-                        egui::Stroke::new(2.0, egui::Color32::from_rgb(255, 200, 100)),
-                    );
-
-                    // Vertical lines from each carrier to sum line (thinner)
-                    for carrier in &carriers {
-                        let carrier_pos = egui::Pos2::new(
-                            rect.left() + carrier.position.0,
-                            rect.top() + carrier.position.1,
-                        );
-                        let sum_connection =
-                            egui::Pos2::new(rect.left() + carrier.position.0, sum_y);
-
-                        painter.line_segment(
-                            [carrier_pos, sum_connection],
-                            egui::Stroke::new(1.5, egui::Color32::from_rgb(255, 200, 100)),
-                        );
-                    }
-
-                    // Smaller output label
-                    painter.text(
-                        egui::Pos2::new(rect.left() + (min_x + max_x) / 2.0, sum_y + 10.0),
-                        egui::Align2::CENTER_CENTER,
-                        "OUT",
-                        egui::FontId::proportional(9.0),
-                        egui::Color32::from_rgb(255, 200, 100),
-                    );
-                }
-
-                // Draw connections (behind operators)
-                for connection in &positioned_graph.connections {
-                    if let (Some(from_op), Some(to_op)) = (
-                        positioned_graph
-                            .operators
-                            .iter()
-                            .find(|op| op.id == connection.from),
-                        positioned_graph
-                            .operators
-                            .iter()
-                            .find(|op| op.id == connection.to),
-                    ) {
-                        let from_pos = egui::Pos2::new(
-                            rect.left() + from_op.position.0,
-                            rect.top() + from_op.position.1,
-                        );
-                        let to_pos = egui::Pos2::new(
-                            rect.left() + to_op.position.0,
-                            rect.top() + to_op.position.1,
-                        );
-
-                        if connection.is_feedback {
-                            let color = egui::Color32::from_rgb(255, 150, 150);
-
-                            // Check if this is a self-loop (from == to)
-                            if connection.from == connection.to {
-                                // Draw external horizontal feedback line for self-loops
-                                self.draw_self_loop_feedback(&painter, from_pos, color);
-                            } else {
-                                // Draw curved line for cross-operator feedback (legacy)
-                                let op_radius = 12.5; // Half of op_size (25.0)
-                                let (from_edge, to_edge) = self
-                                    .calculate_edge_connection_points(from_pos, to_pos, op_radius);
-
-                                let curve_offset = 20.0; // Smaller curve
-                                let control1 = egui::Pos2::new(
-                                    from_edge.x + curve_offset,
-                                    from_edge.y - curve_offset,
-                                );
-                                let control2 = egui::Pos2::new(
-                                    to_edge.x - curve_offset,
-                                    to_edge.y - curve_offset,
-                                );
-
-                                // Approximate curve with fewer segments
-                                let segments = 8;
-                                for i in 0..segments {
-                                    let t1 = i as f32 / segments as f32;
-                                    let t2 = (i + 1) as f32 / segments as f32;
-
-                                    let p1 =
-                                        bezier_point(from_edge, control1, control2, to_edge, t1);
-                                    let p2 =
-                                        bezier_point(from_edge, control1, control2, to_edge, t2);
-
-                                    painter.line_segment([p1, p2], egui::Stroke::new(1.5, color));
-                                }
-
-                                // Smaller arrow head for feedback
-                                self.draw_arrow_head(
-                                    &painter,
-                                    bezier_point(from_edge, control1, control2, to_edge, 0.9),
-                                    bezier_point(from_edge, control1, control2, to_edge, 1.0),
-                                    color,
-                                );
-                            }
-                        } else {
-                            // Regular connection (thinner) - connect at edges
-                            let color = egui::Color32::from_rgb(150, 150, 255);
-                            let op_radius = 12.5; // Half of op_size (25.0)
-                            let (from_edge, to_edge) =
-                                self.calculate_edge_connection_points(from_pos, to_pos, op_radius);
-
-                            painter
-                                .line_segment([from_edge, to_edge], egui::Stroke::new(1.5, color));
-
-                            // Smaller arrow head at the edge
-                            self.draw_arrow_head(&painter, from_edge, to_edge, color);
-                        }
-                    }
-                }
-
-                // Draw operators
-                for op in &positioned_graph.operators {
-                    let pos =
-                        egui::Pos2::new(rect.left() + op.position.0, rect.top() + op.position.1);
-
-                    let op_size = 25.0;
-                    let op_rect = egui::Rect::from_center_size(pos, egui::Vec2::splat(op_size));
-
-                    // Color based on type
-                    let (fill_color, text_color) = if op.is_carrier {
-                        (egui::Color32::from_rgb(100, 150, 255), egui::Color32::WHITE)
-                    // Blue for carriers
-                    } else {
-                        (egui::Color32::from_rgb(120, 120, 120), egui::Color32::WHITE)
-                        // Gray for modulators
-                    };
-
-                    // Draw operator box
-                    painter.rect_filled(op_rect, egui::Rounding::same(5.0), fill_color);
-                    painter.rect_stroke(
-                        op_rect,
-                        egui::Rounding::same(5.0),
-                        egui::Stroke::new(2.0, egui::Color32::WHITE),
-                    );
-
-                    // Draw operator number
-                    let text = op.id.to_string();
-                    painter.text(
-                        pos,
-                        egui::Align2::CENTER_CENTER,
-                        text,
-                        egui::FontId::proportional(12.0),
-                        text_color,
-                    );
-                }
-
-                // Legend (centered)
-                ui.allocate_ui_with_layout(
-                    egui::Vec2::new(ui.available_width(), 20.0),
-                    egui::Layout::top_down(egui::Align::Center),
-                    |ui| {
-                        ui.horizontal(|ui| {
-                            ui.colored_label(egui::Color32::from_rgb(100, 150, 255), "■");
-                            ui.label("Carriers");
-                            ui.add_space(15.0);
-                            ui.colored_label(egui::Color32::from_rgb(120, 120, 120), "■");
-                            ui.label("Modulators");
-                            ui.add_space(15.0);
-                            ui.colored_label(egui::Color32::from_rgb(255, 150, 150), "→");
-                            ui.label("Feedback");
-                            ui.add_space(15.0);
-                            ui.colored_label(egui::Color32::from_rgb(255, 200, 100), "━");
-                            ui.label("Output Sum");
-                        });
-                    },
-                );
-            });
-        });
-    }
-
-    fn draw_arrow_head(
-        &self,
-        painter: &egui::Painter,
-        from: egui::Pos2,
-        to: egui::Pos2,
-        color: egui::Color32,
-    ) {
-        let direction = (to - from).normalized();
-        let perpendicular = egui::Vec2::new(-direction.y, direction.x);
-
-        let arrow_size = 5.0; // Smaller arrow
-        let arrow_tip = to - direction * 3.0; // Smaller offset
-
-        let arrow_left = arrow_tip - direction * arrow_size + perpendicular * (arrow_size * 0.4);
-        let arrow_right = arrow_tip - direction * arrow_size - perpendicular * (arrow_size * 0.4);
-
-        painter.line_segment([arrow_left, arrow_tip], egui::Stroke::new(1.5, color));
-        painter.line_segment([arrow_right, arrow_tip], egui::Stroke::new(1.5, color));
-    }
-
-    fn calculate_edge_connection_points(
-        &self,
-        from_center: egui::Pos2,
-        to_center: egui::Pos2,
-        op_radius: f32,
-    ) -> (egui::Pos2, egui::Pos2) {
-        let direction = (to_center - from_center).normalized();
-
-        // Calculate edge points
-        let from_edge = from_center + direction * op_radius;
-        let to_edge = to_center - direction * op_radius;
-
-        (from_edge, to_edge)
-    }
-
-    fn draw_self_loop_feedback(
-        &self,
-        painter: &egui::Painter,
-        op_pos: egui::Pos2,
-        color: egui::Color32,
-    ) {
-        let op_radius = 12.5; // Half of op_size (25.0)
-        let feedback_line_length = 40.0; // Length of horizontal feedback line
-        let external_offset = 25.0; // Distance from operator edge to feedback line
-
-        // Position the horizontal line to the right of the operator, at external offset
-        let line_start_x = op_pos.x + op_radius + external_offset;
-        let line_end_x = line_start_x + feedback_line_length;
-        let line_y = op_pos.y; // Same Y level as operator
-
-        let line_start = egui::Pos2::new(line_start_x, line_y);
-        let line_end = egui::Pos2::new(line_end_x, line_y);
-
-        // Draw the main horizontal feedback line
-        painter.line_segment([line_start, line_end], egui::Stroke::new(1.5, color));
-
-        // Draw connector from operator to feedback line
-        let connector_start = egui::Pos2::new(op_pos.x + op_radius, op_pos.y);
-        painter.line_segment([connector_start, line_start], egui::Stroke::new(1.5, color));
-
-        // Draw return connector from feedback line back to operator
-        let return_connector_end = egui::Pos2::new(op_pos.x + op_radius, op_pos.y - 8.0); // Slightly above
-        painter.line_segment(
-            [line_end, return_connector_end],
-            egui::Stroke::new(1.5, color),
-        );
-
-        // Draw arrow head at the return point
-        self.draw_arrow_head(painter, line_end, return_connector_end, color);
-    }
 
     fn draw_lfo_panel(&mut self, ui: &mut egui::Ui) {
         ui.group(|ui| {
@@ -1563,7 +1247,7 @@ impl Dx7App {
                     // Left column: Rate and Delay
                     columns[0].vertical(|ui| {
                         ui.label("TIMING");
-                        
+
                         ui.columns(2, |cols| {
                             cols[0].label("Rate:");
                             if cols[1]
@@ -1609,7 +1293,7 @@ impl Dx7App {
                     // Right column: Depths and Waveform
                     columns[1].vertical(|ui| {
                         ui.label("MODULATION");
-                        
+
                         ui.columns(2, |cols| {
                             cols[0].label("Pitch Depth:");
                             if cols[1]
@@ -1643,7 +1327,7 @@ impl Dx7App {
                         });
 
                         ui.separator();
-                        
+
                         // Waveform selector
                         ui.horizontal(|ui| {
                             ui.label("Waveform:");
@@ -1695,26 +1379,4 @@ impl Dx7App {
             });
         });
     }
-}
-
-// Helper function for cubic Bezier curves
-fn bezier_point(
-    p0: egui::Pos2,
-    p1: egui::Pos2,
-    p2: egui::Pos2,
-    p3: egui::Pos2,
-    t: f32,
-) -> egui::Pos2 {
-    let u = 1.0 - t;
-    let tt = t * t;
-    let uu = u * u;
-    let uuu = uu * u;
-    let ttt = tt * t;
-
-    let mut point = p0.to_vec2() * uuu;
-    point += p1.to_vec2() * (3.0 * uu * t);
-    point += p2.to_vec2() * (3.0 * u * tt);
-    point += p3.to_vec2() * ttt;
-
-    egui::Pos2::new(point.x, point.y)
 }

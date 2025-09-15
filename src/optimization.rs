@@ -15,14 +15,14 @@ impl OptimizationTables {
             exp_table: [0.0; 256],
             midi_frequencies: [0.0; 128],
         };
-        
+
         tables.init_sine_table();
         tables.init_exp_table();
         tables.init_midi_frequencies();
-        
+
         tables
     }
-    
+
     // Initialize sine table with 4096 entries (12-bit precision like original DX7)
     fn init_sine_table(&mut self) {
         for i in 0..4096 {
@@ -30,7 +30,7 @@ impl OptimizationTables {
             self.sine_table[i] = phase.sin();
         }
     }
-    
+
     // Initialize exponential table for envelope scaling
     fn init_exp_table(&mut self) {
         for i in 0..256 {
@@ -44,7 +44,7 @@ impl OptimizationTables {
             };
         }
     }
-    
+
     // Pre-calculate MIDI note frequencies (A4 = 440Hz)
     fn init_midi_frequencies(&mut self) {
         for midi_note in 0..128 {
@@ -54,30 +54,34 @@ impl OptimizationTables {
             self.midi_frequencies[midi_note] = frequency;
         }
     }
-    
+
     // Fast sine lookup with linear interpolation for better accuracy
     pub fn fast_sin(&self, phase: f32) -> f32 {
         let normalized = (phase / (2.0 * PI)).fract();
-        let normalized = if normalized < 0.0 { normalized + 1.0 } else { normalized };
-        
+        let normalized = if normalized < 0.0 {
+            normalized + 1.0
+        } else {
+            normalized
+        };
+
         let index_f = normalized * 4096.0;
         let index = index_f as usize;
         let frac = index_f - index as f32;
-        
+
         let val0 = self.sine_table[index & 4095];
         let val1 = self.sine_table[(index + 1) & 4095];
-        
+
         // Linear interpolation for smoother result
         val0 + frac * (val1 - val0)
     }
-    
+
     // Fast exponential lookup for envelope values
     pub fn fast_exp(&self, value: f32) -> f32 {
         let clamped = value.clamp(0.0, 1.0);
         let index = (clamped * 255.0) as usize;
         self.exp_table[index.min(255)]
     }
-    
+
     // Get pre-calculated MIDI frequency
     pub fn get_midi_frequency(&self, midi_note: u8) -> f32 {
         if midi_note < 128 {
@@ -86,7 +90,7 @@ impl OptimizationTables {
             440.0 // Fallback to A4
         }
     }
-    
+
     // Convert DX7 level (0-99) to linear amplitude with exponential curve
     pub fn dx7_level_to_amplitude(&self, level: u8) -> f32 {
         if level == 0 {
@@ -97,7 +101,7 @@ impl OptimizationTables {
             self.fast_exp(normalized)
         }
     }
-    
+
     // Convert DX7 rate (0-99) to time multiplier
     pub fn dx7_rate_to_multiplier(&self, rate: u8) -> f32 {
         if rate == 0 {

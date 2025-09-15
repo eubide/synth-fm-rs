@@ -32,7 +32,7 @@ impl LFOWaveform {
         match self {
             LFOWaveform::Triangle => "Triangle",
             LFOWaveform::SawDown => "Saw Down",
-            LFOWaveform::SawUp => "Saw Up", 
+            LFOWaveform::SawUp => "Saw Up",
             LFOWaveform::Square => "Square",
             LFOWaveform::Sine => "Sine",
             LFOWaveform::SampleHold => "S&H",
@@ -43,29 +43,29 @@ impl LFOWaveform {
 #[derive(Debug, Clone)]
 pub struct LFO {
     // DX7-style parameters (0-99 range)
-    pub rate: f32,           // LFO speed
-    pub delay: f32,          // Delay before LFO starts
-    pub pitch_depth: f32,    // Pitch modulation depth
-    pub amp_depth: f32,      // Amplitude modulation depth
+    pub rate: f32,        // LFO speed
+    pub delay: f32,       // Delay before LFO starts
+    pub pitch_depth: f32, // Pitch modulation depth
+    pub amp_depth: f32,   // Amplitude modulation depth
     pub waveform: LFOWaveform,
-    pub key_sync: bool,      // Restart LFO on key press
+    pub key_sync: bool, // Restart LFO on key press
 
     // Internal state
-    phase: f32,              // Current phase (0.0 to 1.0)
-    delay_counter: f32,      // Delay countdown in seconds
+    phase: f32,         // Current phase (0.0 to 1.0)
+    delay_counter: f32, // Delay countdown in seconds
     sample_rate: f32,
-    last_sample_hold: f32,   // For sample & hold waveform
-    sh_phase_trigger: f32,   // Trigger point for S&H
-    is_delayed: bool,        // Whether LFO is still in delay phase
+    last_sample_hold: f32, // For sample & hold waveform
+    sh_phase_trigger: f32, // Trigger point for S&H
+    is_delayed: bool,      // Whether LFO is still in delay phase
 }
 
 impl LFO {
     pub fn new(sample_rate: f32) -> Self {
         Self {
-            rate: 50.0,          // Medium rate
-            delay: 0.0,          // No delay by default
-            pitch_depth: 25.0,   // Moderate pitch modulation for testing
-            amp_depth: 15.0,     // Moderate amplitude modulation for testing
+            rate: 50.0,        // Medium rate
+            delay: 0.0,        // No delay by default
+            pitch_depth: 25.0, // Moderate pitch modulation for testing
+            amp_depth: 15.0,   // Moderate amplitude modulation for testing
             waveform: LFOWaveform::Triangle,
             key_sync: false,
 
@@ -104,7 +104,7 @@ impl LFO {
             self.phase = 0.0;
             self.sh_phase_trigger = 0.0;
         }
-        
+
         if self.delay > 0.0 {
             self.delay_counter = Self::dx7_delay_to_seconds(self.delay);
             self.is_delayed = true;
@@ -117,36 +117,44 @@ impl LFO {
     fn generate_waveform(&mut self, phase: f32) -> f32 {
         match self.waveform {
             LFOWaveform::Sine => (phase * 2.0 * PI).sin(),
-            
+
             LFOWaveform::Triangle => {
                 if phase < 0.5 {
-                    4.0 * phase - 1.0  // Rising: -1 to +1
+                    4.0 * phase - 1.0 // Rising: -1 to +1
                 } else {
-                    3.0 - 4.0 * phase  // Falling: +1 to -1
+                    3.0 - 4.0 * phase // Falling: +1 to -1
                 }
-            },
-            
+            }
+
             LFOWaveform::Square => {
-                if phase < 0.5 { -1.0 } else { 1.0 }
-            },
-            
+                if phase < 0.5 {
+                    -1.0
+                } else {
+                    1.0
+                }
+            }
+
             LFOWaveform::SawUp => {
-                2.0 * phase - 1.0  // Linear rise from -1 to +1
-            },
-            
+                2.0 * phase - 1.0 // Linear rise from -1 to +1
+            }
+
             LFOWaveform::SawDown => {
-                1.0 - 2.0 * phase  // Linear fall from +1 to -1
-            },
-            
+                1.0 - 2.0 * phase // Linear fall from +1 to -1
+            }
+
             LFOWaveform::SampleHold => {
                 // Sample & hold: change value at specific phase points
                 if phase >= self.sh_phase_trigger && phase < self.sh_phase_trigger + 0.01 {
                     // Generate new random value when crossing trigger point
                     self.last_sample_hold = (rand::random::<f32>() * 2.0) - 1.0;
-                    self.sh_phase_trigger = if self.sh_phase_trigger < 0.5 { 0.5 } else { 0.0 };
+                    self.sh_phase_trigger = if self.sh_phase_trigger < 0.5 {
+                        0.5
+                    } else {
+                        0.0
+                    };
                 }
                 self.last_sample_hold
-            },
+            }
         }
     }
 
@@ -169,10 +177,10 @@ impl LFO {
         }
 
         let phase_increment = frequency_hz / self.sample_rate;
-        
+
         // Generate waveform
         let lfo_value = self.generate_waveform(self.phase);
-        
+
         // Update phase for next sample
         self.phase += phase_increment;
         while self.phase >= 1.0 {
@@ -182,7 +190,7 @@ impl LFO {
         // Calculate modulation amounts
         // Mod wheel scales the depth (0.0 to 1.0)
         let depth_scale = mod_wheel;
-        
+
         // Convert DX7 depth (0-99) to modulation percentage
         let pitch_mod = (self.pitch_depth / 99.0) * lfo_value * depth_scale;
         let amp_mod = (self.amp_depth / 99.0) * lfo_value * depth_scale;

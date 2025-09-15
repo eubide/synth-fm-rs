@@ -1,5 +1,4 @@
-use crate::algorithm_matrix::{AlgorithmMatrix, AlgorithmLibrary};
-use crate::algorithm_migration::AlgorithmMigrator;
+use crate::algorithms;
 use crate::lfo::LFO;
 use crate::lock_free::LockFreeSynth;
 use crate::operator::Operator;
@@ -7,7 +6,6 @@ use crate::optimization::OPTIMIZATION_TABLES;
 use std::collections::HashMap;
 
 const MAX_VOICES: usize = 16;
-const SAMPLE_RATE: f32 = 44100.0;
 
 #[derive(Clone)]
 pub struct Voice {
@@ -22,22 +20,18 @@ pub struct Voice {
     sample_rate: f32,           // Store sample rate for calculations
     // Graceful voice stealing
     fade_state: VoiceFadeState,
-    fade_gain: f32,             // 0.0 to 1.0 for fade in/out
-    fade_rate: f32,             // Rate per sample
+    fade_gain: f32, // 0.0 to 1.0 for fade in/out
+    fade_rate: f32, // Rate per sample
 }
 
 #[derive(Clone, Debug, PartialEq)]
 enum VoiceFadeState {
-    Normal,     // Regular playing
-    FadeOut,    // Being stolen, fading out
-    FadeIn,     // New note, fading in
+    Normal,  // Regular playing
+    FadeOut, // Being stolen, fading out
+    FadeIn,  // New note, fading in
 }
 
 impl Voice {
-    pub fn new() -> Self {
-        Self::new_with_sample_rate(SAMPLE_RATE)
-    }
-    
     pub fn new_with_sample_rate(sample_rate: f32) -> Self {
         let mut operators = [
             Operator::new(sample_rate),
@@ -93,7 +87,7 @@ impl Voice {
         self.fade_state = VoiceFadeState::FadeOut;
         self.fade_rate = 1.0 / (self.sample_rate * 0.002); // 2ms fade-out
     }
-    
+
     pub fn trigger(&mut self, note: u8, velocity: f32, master_tune: f32, portamento_enable: bool) {
         self.note = note;
         // Apply master_tune in cents (±150 cents = ±1.5 semitones)
@@ -150,7 +144,7 @@ impl Voice {
 
     pub fn process(
         &mut self,
-        algorithm_matrix: &AlgorithmMatrix,
+        algorithm_number: u8,
         pitch_bend: f32,
         pitch_bend_range: f32,
         portamento_time: f32,
@@ -189,8 +183,8 @@ impl Voice {
             op.trigger(final_frequency, self.velocity, self.note);
         }
 
-        // Process using the new matrix algorithm system
-        let output = algorithm_matrix.process(&mut self.operators);
+        // Process using direct hardcoded algorithms
+        let output = algorithms::process_algorithm(algorithm_number, &mut self.operators);
 
         // Apply LFO amplitude modulation
         let lfo_amp_factor = 1.0 + (lfo_amp_mod * 0.5);
@@ -211,7 +205,7 @@ impl Voice {
                     self.fade_state = VoiceFadeState::Normal;
                 }
                 modulated_output * self.fade_gain
-            },
+            }
             VoiceFadeState::FadeOut => {
                 self.fade_gain -= self.fade_rate;
                 if self.fade_gain <= 0.0 {
@@ -219,29 +213,23 @@ impl Voice {
                     self.active = false;
                 }
                 modulated_output * self.fade_gain
-            },
+            }
             VoiceFadeState::Normal => modulated_output,
         };
 
         final_output * 0.8
     }
-
 }
 
 pub struct FmSynthesizer {
     pub voices: Vec<Voice>,
     pub held_notes: HashMap<u8, usize>,
     pub preset_name: String,
-    pub lfo: LFO,               // Global LFO instance
+    pub lfo: LFO,                        // Global LFO instance
     pub lock_free_params: LockFreeSynth, // Real-time safe parameters
-    pub algorithm_library: AlgorithmLibrary, // Matrix-based algorithm system
 }
 
 impl FmSynthesizer {
-    pub fn new() -> Self {
-        Self::new_with_sample_rate(SAMPLE_RATE)
-    }
-    
     pub fn new_with_sample_rate(sample_rate: f32) -> Self {
         let mut voices = Vec::with_capacity(MAX_VOICES);
         for _ in 0..MAX_VOICES {
@@ -251,9 +239,6 @@ impl FmSynthesizer {
         }
 
         let lock_free_params = LockFreeSynth::new();
-        
-        // Initialize algorithm library with all DX7 algorithms
-        let algorithm_library = AlgorithmMigrator::create_full_dx7_library();
 
         Self {
             voices,
@@ -261,7 +246,6 @@ impl FmSynthesizer {
             preset_name: "Init Voice".to_string(),
             lfo: LFO::new(sample_rate), // Initialize global LFO with real sample rate
             lock_free_params,
-            algorithm_library,
         }
     }
 
@@ -278,7 +262,12 @@ impl FmSynthesizer {
 
             // In mono mode, always trigger the first voice
             // Portamento will be handled inside trigger() based on portamento settings
-            self.voices[0].trigger(note, velocity_f, params.master_tune, params.portamento_enable);
+            self.voices[0].trigger(
+                note,
+                velocity_f,
+                params.master_tune,
+                params.portamento_enable,
+            );
             self.held_notes.insert(note, 0);
         } else {
             // Poly mode: original logic
@@ -335,7 +324,7 @@ impl FmSynthesizer {
 
         // Get lock-free parameters (real-time safe)
         let params = self.lock_free_params.get_global_params();
-        
+
         // Check for panic request
         if self.lock_free_params.check_panic_request() {
             for voice in &mut self.voices {
@@ -348,68 +337,33 @@ impl FmSynthesizer {
         // Generate global LFO modulation values
         let (lfo_pitch_mod, lfo_amp_mod) = self.lfo.process(params.mod_wheel);
 
-        // Process voices using matrix-based algorithm system
-        if let Some(algorithm_matrix) = self.algorithm_library.get(params.algorithm) {
-            for voice in &mut self.voices {
-                if voice.active {
-                    let voice_output = voice.process(
-                        algorithm_matrix,
-                        params.pitch_bend,
-                        params.pitch_bend_range,
-                        params.portamento_time,
-                        lfo_pitch_mod,
-                        lfo_amp_mod,
-                    );
-                    output += voice_output;
-                    _active_voices += 1;
-                }
+        // Process voices using direct hardcoded algorithms
+        for voice in &mut self.voices {
+            if voice.active {
+                let voice_output = voice.process(
+                    params.algorithm,
+                    params.pitch_bend,
+                    params.pitch_bend_range,
+                    params.portamento_time,
+                    lfo_pitch_mod,
+                    lfo_amp_mod,
+                );
+                output += voice_output;
+                _active_voices += 1;
             }
         }
 
         let final_output = output * params.master_volume;
 
-        // Debug output occasionally (disabled)
-        // static mut SAMPLE_COUNT: u32 = 0;
-        // unsafe {
-        //     SAMPLE_COUNT += 1;
-        //     if SAMPLE_COUNT % 44100 == 0 && final_output.abs() > 0.001 {
-        //         println!("Process: {} active voices, output: {:.3}", active_voices, final_output);
-        //     }
-        // }
-
         final_output
     }
 
     pub fn set_algorithm(&mut self, algorithm: u8) {
-        if algorithm >= 1 && algorithm <= 32 {
+        if (1..=32).contains(&algorithm) {
             // Update lock-free parameters
             let mut params = self.lock_free_params.get_global_params().clone();
             params.algorithm = algorithm;
             self.lock_free_params.set_global_param(params);
-
-            // Configure feedback based on self-loops in the algorithm
-            self.configure_algorithm_feedback(algorithm);
-        }
-    }
-
-    fn configure_algorithm_feedback(&mut self, algorithm: u8) {
-        if let Some(matrix) = self.algorithm_library.get(algorithm) {
-            // First, reset all feedback to 0
-            for voice in &mut self.voices {
-                for op in &mut voice.operators {
-                    op.feedback = 0.0;
-                }
-            }
-
-            // Then configure feedback for operators with self-loops
-            for from in 0..6 {
-                if matrix.connections[from][from] > 0.0 {
-                    // Self-feedback found - configure feedback for this operator
-                    for voice in &mut self.voices {
-                        voice.operators[from].feedback = 4.0; // Moderate feedback
-                    }
-                }
-            }
         }
     }
 
@@ -532,7 +486,7 @@ impl FmSynthesizer {
     pub fn voice_initialize(&mut self) {
         // Reset all voices to basic DX7 init voice settings
         self.preset_name = "Init Voice".to_string();
-        
+
         // Set algorithm to 1 using lock-free parameters
         let mut params = self.lock_free_params.get_global_params().clone();
         params.algorithm = 1; // Basic algorithm
@@ -556,14 +510,14 @@ impl FmSynthesizer {
                 op.key_scale_level = 0.0;
                 op.key_scale_rate = 0.0;
 
-                // Basic envelope (slow attack, moderate decay/release)
+                // Basic envelope (fast attack, sustain)
                 op.envelope.rate1 = 95.0; // Attack
                 op.envelope.rate2 = 25.0; // Decay
                 op.envelope.rate3 = 25.0; // Sustain
                 op.envelope.rate4 = 67.0; // Release
                 op.envelope.level1 = 99.0; // Attack level
                 op.envelope.level2 = 75.0; // Decay level
-                op.envelope.level3 = 0.0; // Sustain level
+                op.envelope.level3 = 50.0; // Sustain level (must be > 0 for sustained sound)
                 op.envelope.level4 = 0.0; // Release level
             }
         }
@@ -626,46 +580,42 @@ impl FmSynthesizer {
     pub fn get_lfo_delay_seconds(&self) -> f32 {
         self.lfo.get_delay_seconds()
     }
-    
+
     // Lock-free parameter getters for GUI
     pub fn get_algorithm(&self) -> u8 {
         self.lock_free_params.get_global_params().algorithm
     }
-    
+
     pub fn get_master_volume(&self) -> f32 {
         self.lock_free_params.get_global_params().master_volume
     }
-    
+
     pub fn set_master_volume(&mut self, volume: f32) {
         let mut params = self.lock_free_params.get_global_params().clone();
         params.master_volume = volume.clamp(0.0, 1.0);
         self.lock_free_params.set_global_param(params);
     }
-    
-    pub fn get_pitch_bend(&self) -> f32 {
-        self.lock_free_params.get_global_params().pitch_bend
-    }
-    
+
     pub fn get_mod_wheel(&self) -> f32 {
         self.lock_free_params.get_global_params().mod_wheel
     }
-    
+
     pub fn get_master_tune(&self) -> f32 {
         self.lock_free_params.get_global_params().master_tune
     }
-    
+
     pub fn get_mono_mode(&self) -> bool {
         self.lock_free_params.get_global_params().mono_mode
     }
-    
+
     pub fn get_pitch_bend_range(&self) -> f32 {
         self.lock_free_params.get_global_params().pitch_bend_range
     }
-    
+
     pub fn get_portamento_enable(&self) -> bool {
         self.lock_free_params.get_global_params().portamento_enable
     }
-    
+
     pub fn get_portamento_time(&self) -> f32 {
         self.lock_free_params.get_global_params().portamento_time
     }

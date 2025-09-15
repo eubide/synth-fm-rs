@@ -1,7 +1,7 @@
 use crate::fm_synth::FmSynthesizer;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
 pub struct AudioEngine {
     _stream: cpal::Stream,
@@ -20,16 +20,16 @@ impl AudioEngine {
             .expect("Failed to get default output config");
 
         let sample_rate = config.sample_rate().0 as f32;
-        
+
         // Create synthesizer with correct sample rate
         let synthesizer = Arc::new(Mutex::new(FmSynthesizer::new_with_sample_rate(sample_rate)));
-        
+
         let underrun_counter = Arc::new(AtomicUsize::new(0));
         let audio_engine = Self::new(synthesizer.clone(), underrun_counter.clone());
-        
+
         (audio_engine, synthesizer)
     }
-    
+
     pub fn new(synthesizer: Arc<Mutex<FmSynthesizer>>, underrun_counter: Arc<AtomicUsize>) -> Self {
         let host = cpal::default_host();
         let device = host
@@ -43,15 +43,24 @@ impl AudioEngine {
         let sample_rate = config.sample_rate().0;
 
         let stream = match config.sample_format() {
-            cpal::SampleFormat::F32 => {
-                Self::build_stream::<f32>(&device, &config.into(), synthesizer, underrun_counter.clone())
-            }
-            cpal::SampleFormat::I16 => {
-                Self::build_stream::<i16>(&device, &config.into(), synthesizer, underrun_counter.clone())
-            }
-            cpal::SampleFormat::U16 => {
-                Self::build_stream::<u16>(&device, &config.into(), synthesizer, underrun_counter.clone())
-            }
+            cpal::SampleFormat::F32 => Self::build_stream::<f32>(
+                &device,
+                &config.into(),
+                synthesizer,
+                underrun_counter.clone(),
+            ),
+            cpal::SampleFormat::I16 => Self::build_stream::<i16>(
+                &device,
+                &config.into(),
+                synthesizer,
+                underrun_counter.clone(),
+            ),
+            cpal::SampleFormat::U16 => Self::build_stream::<u16>(
+                &device,
+                &config.into(),
+                synthesizer,
+                underrun_counter.clone(),
+            ),
             _ => panic!("Unsupported sample format"),
         };
 
@@ -62,7 +71,7 @@ impl AudioEngine {
             sample_rate
         );
 
-        Self { 
+        Self {
             _stream: stream,
             _underrun_counter: underrun_counter,
         }

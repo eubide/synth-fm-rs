@@ -1,7 +1,8 @@
 use eframe::egui;
+use std::thread;
+use std::time::Duration;
 
-mod algorithm_matrix;
-mod algorithm_migration;
+mod algorithms;
 mod audio_engine;
 mod envelope;
 mod fm_synth;
@@ -14,8 +15,33 @@ mod optimization;
 mod presets;
 
 use audio_engine::AudioEngine;
+use fm_synth::FmSynthesizer;
 use gui::Dx7App;
 use midi_handler::MidiHandler;
+
+fn play_startup_melody(synth: std::sync::Arc<std::sync::Mutex<FmSynthesizer>>) {
+    thread::spawn(move || {
+        thread::sleep(Duration::from_millis(500));
+
+        let notes = [60, 64, 67]; // C4, E4, G4 - simple C major triad
+        let note_duration = Duration::from_millis(800);
+        let note_gap = Duration::from_millis(100);
+
+        for &note in &notes {
+            if let Ok(mut synth_guard) = synth.lock() {
+                synth_guard.note_on(note, 80);
+            }
+
+            thread::sleep(note_duration);
+
+            if let Ok(mut synth_guard) = synth.lock() {
+                synth_guard.note_off(note);
+            }
+
+            thread::sleep(note_gap);
+        }
+    });
+}
 
 fn main() -> Result<(), eframe::Error> {
     // Initialize logging system
@@ -43,6 +69,9 @@ fn main() -> Result<(), eframe::Error> {
             None
         }
     };
+
+    // Play startup melody
+    play_startup_melody(synth.clone());
 
     eframe::run_native(
         "Yamaha DX7 Emulator",

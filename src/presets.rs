@@ -66,12 +66,12 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
             name: "E.PIANO 1",
             algorithm: 5,
             operators: [
-                (1.0, 99.0, 0.0, 0.0),    // Op1: Carrier - fundamental
-                (1.0, 45.0, 8.5, 0.0),    // Op2: Modulator -> Op1 (aggressive bell texture)
-                (1.0, 85.0, -12.3, 0.0),  // Op3: Carrier - detuned bright tone
-                (1.0, 75.0, 0.0, 0.0),    // Op4: Carrier - body
-                (14.7, 60.0, 0.0, 0.0),   // Op5: High modulator -> Op3 (extreme metallic ring)
-                (1.0, 55.0, 0.0, 4.5),    // Op6: Modulator -> Op2 + high feedback (warm distortion)
+                (1.0, 99.0, 0.0, 0.0),   // Op1: Carrier - fundamental
+                (1.0, 45.0, 8.5, 0.0),   // Op2: Modulator -> Op1 (aggressive bell texture)
+                (1.0, 85.0, -12.3, 0.0), // Op3: Carrier - detuned bright tone
+                (1.0, 75.0, 0.0, 0.0),   // Op4: Carrier - body
+                (14.7, 60.0, 0.0, 0.0),  // Op5: High modulator -> Op3 (extreme metallic ring)
+                (1.0, 55.0, 0.0, 4.5),   // Op6: Modulator -> Op2 + high feedback (warm distortion)
             ],
             envelopes: [
                 (99.0, 85.0, 70.0, 75.0, 99.0, 85.0, 60.0, 0.0), // Op1
@@ -92,12 +92,12 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
             name: "BASS 1",
             algorithm: 1,
             operators: [
-                (1.0, 99.0, 0.0, 0.0),     // Op1: Carrier - fundamental bass
-                (2.0, 65.0, 0.0, 0.0),     // Op2: Modulator -> Op1 (aggressive punch/attack)
-                (1.0, 90.0, 4.2, 0.0),     // Op3: Carrier - detuned bass body
-                (2.0, 50.0, 0.0, 0.0),     // Op4: Modulator -> Op3 (strong harmonic)
-                (3.0, 40.0, 0.0, 0.0),     // Op5: Modulator -> Op4 (upper harmonic)
-                (1.0, 70.0, 0.0, 6.5),     // Op6: Modulator -> Op5 + extreme feedback (grit)
+                (1.0, 99.0, 0.0, 0.0), // Op1: Carrier - fundamental bass
+                (2.0, 65.0, 0.0, 0.0), // Op2: Modulator -> Op1 (aggressive punch/attack)
+                (1.0, 90.0, 4.2, 0.0), // Op3: Carrier - detuned bass body
+                (2.0, 50.0, 0.0, 0.0), // Op4: Modulator -> Op3 (strong harmonic)
+                (3.0, 40.0, 0.0, 0.0), // Op5: Modulator -> Op4 (upper harmonic)
+                (1.0, 70.0, 0.0, 6.5), // Op6: Modulator -> Op5 + extreme feedback (grit)
             ],
             envelopes: [
                 (99.0, 75.0, 40.0, 70.0, 99.0, 80.0, 70.0, 0.0), // Op1
@@ -134,7 +134,7 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
                 (99.0, 80.0, 20.0, 70.0, 99.0, 30.0, 10.0, 0.0), // Op6
             ],
             master_tune: None,
-            mono_mode: Some(false), // POLY mode
+            mono_mode: Some(false),      // POLY mode
             pitch_bend_range: Some(2.0), // Small pitch bend for bells
             portamento_enable: Some(false),
             portamento_time: None,
@@ -144,12 +144,12 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
             name: "BRASS 1",
             algorithm: 16,
             operators: [
-                (1.0, 99.0, 0.0, 0.0),    // Op1: Carrier - main brass sound
-                (1.0, 75.0, 11.2, 0.0),   // Op2: Modulator -> Op1 (extreme brightness)
-                (2.0, 65.0, -8.7, 0.0),   // Op3: Modulator -> Op1 (aggressive bite)
-                (3.0, 55.0, 0.0, 0.0),    // Op4: Modulator -> Op3 (strong harmonic texture)
-                (4.0, 70.0, 0.0, 0.0),    // Op5: Modulator -> Op1 (enhanced brass richness)
-                (1.0, 60.0, 0.0, 7.0),    // Op6: Modulator -> Op5 + max feedback (extreme growl)
+                (1.0, 99.0, 0.0, 0.0),  // Op1: Carrier - main brass sound
+                (1.0, 75.0, 11.2, 0.0), // Op2: Modulator -> Op1 (extreme brightness)
+                (2.0, 65.0, -8.7, 0.0), // Op3: Modulator -> Op1 (aggressive bite)
+                (3.0, 55.0, 0.0, 0.0),  // Op4: Modulator -> Op3 (strong harmonic texture)
+                (4.0, 70.0, 0.0, 0.0),  // Op5: Modulator -> Op1 (enhanced brass richness)
+                (1.0, 60.0, 0.0, 7.0),  // Op6: Modulator -> Op5 + max feedback (extreme growl)
             ],
             envelopes: [
                 (85.0, 80.0, 60.0, 70.0, 99.0, 90.0, 80.0, 0.0), // Op1: More aggressive
@@ -160,7 +160,7 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
                 (85.0, 80.0, 60.0, 70.0, 99.0, 90.0, 80.0, 0.0), // Op6
             ],
             master_tune: None,
-            mono_mode: Some(true), // MONO mode for brass
+            mono_mode: Some(true),       // MONO mode for brass
             pitch_bend_range: Some(3.0), // Good pitch bend for brass
             portamento_enable: Some(true),
             portamento_time: None,
@@ -186,7 +186,7 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
                 (60.0, 70.0, 40.0, 60.0, 99.0, 70.0, 50.0, 0.0), // Op6
             ],
             master_tune: None,
-            mono_mode: Some(false), // POLY mode
+            mono_mode: Some(false),        // POLY mode
             pitch_bend_range: Some(2.0),   // Standard pitch bend
             portamento_enable: Some(true), // Smooth string glides
             portamento_time: Some(35.0),
@@ -290,7 +290,7 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
                 (99.0, 75.0, 40.0, 65.0, 99.0, 70.0, 50.0, 0.0), // Op6
             ],
             master_tune: None,
-            mono_mode: Some(false), // POLY mode
+            mono_mode: Some(false),      // POLY mode
             pitch_bend_range: Some(4.0), // Guitar needs good pitch bend
             portamento_enable: Some(false),
             portamento_time: None,
@@ -368,7 +368,7 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
                 (99.0, 75.0, 15.0, 65.0, 99.0, 25.0, 10.0, 0.0), // Op6
             ],
             master_tune: None,
-            mono_mode: Some(false), // POLY mode
+            mono_mode: Some(false),      // POLY mode
             pitch_bend_range: Some(2.0), // Small pitch bend for mallet instruments
             portamento_enable: Some(false),
             portamento_time: None,
@@ -394,7 +394,7 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
                 (99.0, 95.0, 15.0, 85.0, 99.0, 20.0, 10.0, 0.0), // Op6
             ],
             master_tune: None,
-            mono_mode: Some(false), // POLY mode
+            mono_mode: Some(false),      // POLY mode
             pitch_bend_range: Some(2.0), // Small pitch bend for mallet instruments
             portamento_enable: Some(false),
             portamento_time: None,
@@ -420,7 +420,7 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
                 (99.0, 99.0, 20.0, 95.0, 99.0, 15.0, 5.0, 0.0),  // Op6
             ],
             master_tune: None,
-            mono_mode: Some(false), // POLY mode
+            mono_mode: Some(false),      // POLY mode
             pitch_bend_range: Some(2.0), // Small pitch bend for keyboard instruments
             portamento_enable: Some(false),
             portamento_time: None,
@@ -446,7 +446,7 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
                 (99.0, 99.0, 5.0, 99.0, 60.0, 5.0, 0.0, 0.0),   // Op6
             ],
             master_tune: None,
-            mono_mode: Some(false), // POLY mode
+            mono_mode: Some(false),      // POLY mode
             pitch_bend_range: Some(1.0), // Very small pitch bend for percussion
             portamento_enable: Some(false),
             portamento_time: None,
@@ -472,7 +472,7 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
                 (99.0, 90.0, 10.0, 80.0, 99.0, 20.0, 15.0, 0.0), // Op6
             ],
             master_tune: None,
-            mono_mode: Some(false), // POLY mode
+            mono_mode: Some(false),      // POLY mode
             pitch_bend_range: Some(2.0), // Small pitch bend for mallet instruments
             portamento_enable: Some(false),
             portamento_time: None,
@@ -602,8 +602,8 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
                 (45.0, 55.0, 45.0, 50.0, 99.0, 65.0, 60.0, 0.0), // Op6
             ],
             master_tune: None,
-            mono_mode: Some(false), // POLY mode
-            pitch_bend_range: Some(4.0), // Wide pitch bend for ethereal effects
+            mono_mode: Some(false),        // POLY mode
+            pitch_bend_range: Some(4.0),   // Wide pitch bend for ethereal effects
             portamento_enable: Some(true), // Smooth pad transitions
             portamento_time: Some(40.0),
         },
@@ -612,12 +612,12 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
             name: "GAMELAN",
             algorithm: 13,
             operators: [
-                (1.0, 99.0, 0.0, 0.0),   // Op1: Fundamental
-                (std::f32::consts::PI, 75.0, 0.0, 0.0),  // Op2: Inharmonic
-                (5.67, 65.0, 0.0, 0.0),  // Op3: Inharmonic
-                (8.23, 55.0, 0.0, 0.0),  // Op4: Inharmonic
-                (11.41, 45.0, 0.0, 0.0), // Op5: Inharmonic
-                (1.0, 85.0, 0.0, 1.0),   // Op6: Fundamental with feedback
+                (1.0, 99.0, 0.0, 0.0),                  // Op1: Fundamental
+                (std::f32::consts::PI, 75.0, 0.0, 0.0), // Op2: Inharmonic
+                (5.67, 65.0, 0.0, 0.0),                 // Op3: Inharmonic
+                (8.23, 55.0, 0.0, 0.0),                 // Op4: Inharmonic
+                (11.41, 45.0, 0.0, 0.0),                // Op5: Inharmonic
+                (1.0, 85.0, 0.0, 1.0),                  // Op6: Fundamental with feedback
             ],
             envelopes: [
                 (99.0, 40.0, 25.0, 30.0, 99.0, 80.0, 70.0, 0.0), // Op1
@@ -628,7 +628,7 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
                 (99.0, 40.0, 25.0, 30.0, 99.0, 80.0, 70.0, 0.0), // Op6
             ],
             master_tune: None,
-            mono_mode: Some(false), // POLY mode
+            mono_mode: Some(false),      // POLY mode
             pitch_bend_range: Some(1.0), // Very small pitch bend for metallic percussion
             portamento_enable: Some(false),
             portamento_time: None,
@@ -638,23 +638,23 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
             name: "CHAOS",
             algorithm: 32, // All operators as carriers for maximum chaos
             operators: [
-                (1.0, 99.0, 0.0, 7.0),      // Op1: Fundamental with max feedback
-                (1.618, 95.0, 15.7, 7.0),   // Op2: Golden ratio with max feedback + extreme detune
-                (2.414, 90.0, -23.1, 7.0),  // Op3: Square root of 6 with max feedback
-                (3.141, 85.0, 31.4, 7.0),   // Op4: Pi ratio with max feedback
-                (5.196, 80.0, -18.9, 7.0),  // Op5: Fibonacci ratio with max feedback  
-                (7.777, 75.0, 42.0, 7.0),   // Op6: High inharmonic ratio with max feedback
+                (1.0, 99.0, 0.0, 7.0),     // Op1: Fundamental with max feedback
+                (1.618, 95.0, 15.7, 7.0),  // Op2: Golden ratio with max feedback + extreme detune
+                (2.414, 90.0, -23.1, 7.0), // Op3: Square root of 6 with max feedback
+                (std::f32::consts::PI, 85.0, 31.4, 7.0),  // Op4: Pi ratio with max feedback
+                (5.196, 80.0, -18.9, 7.0), // Op5: Fibonacci ratio with max feedback
+                (7.777, 75.0, 42.0, 7.0),  // Op6: High inharmonic ratio with max feedback
             ],
             envelopes: [
-                (99.0, 99.0, 5.0, 99.0, 99.0, 90.0, 80.0, 0.0),  // Op1: Sharp attack, harsh decay
-                (99.0, 95.0, 8.0, 95.0, 99.0, 85.0, 70.0, 0.0),  // Op2: Slightly softer
+                (99.0, 99.0, 5.0, 99.0, 99.0, 90.0, 80.0, 0.0), // Op1: Sharp attack, harsh decay
+                (99.0, 95.0, 8.0, 95.0, 99.0, 85.0, 70.0, 0.0), // Op2: Slightly softer
                 (99.0, 90.0, 12.0, 90.0, 99.0, 80.0, 60.0, 0.0), // Op3
                 (99.0, 85.0, 15.0, 85.0, 99.0, 75.0, 50.0, 0.0), // Op4
                 (99.0, 80.0, 20.0, 80.0, 99.0, 70.0, 40.0, 0.0), // Op5
                 (99.0, 75.0, 25.0, 75.0, 99.0, 65.0, 30.0, 0.0), // Op6
             ],
-            master_tune: Some(7.3), // Slightly detuned for extra chaos
-            mono_mode: Some(false), // POLY for maximum chaos
+            master_tune: Some(7.3),       // Slightly detuned for extra chaos
+            mono_mode: Some(false),       // POLY for maximum chaos
             pitch_bend_range: Some(12.0), // Full octave bend
             portamento_enable: Some(false),
             portamento_time: None,
@@ -664,12 +664,12 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
             name: "WOBBLE",
             algorithm: 4, // Complex feedback algorithm
             operators: [
-                (1.0, 99.0, 0.0, 0.0),     // Op1: Fundamental carrier
-                (0.25, 99.0, 0.0, 6.5),    // Op2: Sub-bass with high feedback (wobble generator)
-                (2.0, 80.0, 7.3, 0.0),     // Op3: Octave modulator with detune
-                (1.0, 85.0, -11.7, 0.0),   // Op4: Detuned carrier
-                (4.0, 70.0, 0.0, 0.0),     // Op5: High harmonic modulator
-                (8.0, 60.0, 0.0, 5.5),     // Op6: Very high modulator with feedback
+                (1.0, 99.0, 0.0, 0.0),   // Op1: Fundamental carrier
+                (0.25, 99.0, 0.0, 6.5),  // Op2: Sub-bass with high feedback (wobble generator)
+                (2.0, 80.0, 7.3, 0.0),   // Op3: Octave modulator with detune
+                (1.0, 85.0, -11.7, 0.0), // Op4: Detuned carrier
+                (4.0, 70.0, 0.0, 0.0),   // Op5: High harmonic modulator
+                (8.0, 60.0, 0.0, 5.5),   // Op6: Very high modulator with feedback
             ],
             envelopes: [
                 (99.0, 60.0, 80.0, 50.0, 99.0, 90.0, 85.0, 0.0), // Op1: Sustained bass
@@ -690,23 +690,23 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
             name: "STAB",
             algorithm: 23, // Complex algorithm with multiple feedback paths
             operators: [
-                (1.0, 99.0, 0.0, 0.0),      // Op1: Fundamental
-                (11.73, 85.0, 0.0, 0.0),    // Op2: High inharmonic
-                (17.32, 75.0, 13.5, 0.0),   // Op3: Very high inharmonic with detune
-                (23.89, 65.0, -19.2, 0.0),  // Op4: Extreme inharmonic
-                (1.0, 90.0, 0.0, 6.0),      // Op5: Fundamental with high feedback
-                (2.718, 80.0, 0.0, 7.0),    // Op6: E ratio with max feedback
+                (1.0, 99.0, 0.0, 0.0),     // Op1: Fundamental
+                (11.73, 85.0, 0.0, 0.0),   // Op2: High inharmonic
+                (17.32, 75.0, 13.5, 0.0),  // Op3: Very high inharmonic with detune
+                (23.89, 65.0, -19.2, 0.0), // Op4: Extreme inharmonic
+                (1.0, 90.0, 0.0, 6.0),     // Op5: Fundamental with high feedback
+                (std::f32::consts::E, 80.0, 0.0, 7.0),   // Op6: E ratio with max feedback
             ],
             envelopes: [
-                (99.0, 99.0, 3.0, 99.0, 99.0, 30.0, 5.0, 0.0),   // Op1: Metallic stab
-                (99.0, 99.0, 2.0, 99.0, 99.0, 25.0, 3.0, 0.0),   // Op2: Sharp metallic
-                (99.0, 99.0, 1.5, 99.0, 99.0, 20.0, 2.0, 0.0),   // Op3: Very sharp
-                (99.0, 99.0, 1.0, 99.0, 99.0, 15.0, 1.0, 0.0),   // Op4: Extremely sharp
-                (99.0, 99.0, 3.0, 99.0, 99.0, 30.0, 5.0, 0.0),   // Op5: Match fundamental
-                (99.0, 99.0, 4.0, 99.0, 99.0, 35.0, 8.0, 0.0),   // Op6: Slightly longer
+                (99.0, 99.0, 3.0, 99.0, 99.0, 30.0, 5.0, 0.0), // Op1: Metallic stab
+                (99.0, 99.0, 2.0, 99.0, 99.0, 25.0, 3.0, 0.0), // Op2: Sharp metallic
+                (99.0, 99.0, 1.5, 99.0, 99.0, 20.0, 2.0, 0.0), // Op3: Very sharp
+                (99.0, 99.0, 1.0, 99.0, 99.0, 15.0, 1.0, 0.0), // Op4: Extremely sharp
+                (99.0, 99.0, 3.0, 99.0, 99.0, 30.0, 5.0, 0.0), // Op5: Match fundamental
+                (99.0, 99.0, 4.0, 99.0, 99.0, 35.0, 8.0, 0.0), // Op6: Slightly longer
             ],
             master_tune: None,
-            mono_mode: Some(false), // POLY for chords
+            mono_mode: Some(false),      // POLY for chords
             pitch_bend_range: Some(1.0), // Small bend for metallic
             portamento_enable: Some(false),
             portamento_time: None,
@@ -716,12 +716,12 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
             name: "CHOIR",
             algorithm: 28, // All carriers algorithm
             operators: [
-                (1.0, 99.0, 0.0, 3.5),      // Op1: Fundamental with some feedback
-                (1.007, 95.0, 0.0, 0.0),    // Op2: Slightly detuned (beat frequency)
-                (0.993, 90.0, 0.0, 0.0),    // Op3: Slightly detuned opposite
-                (2.0, 75.0, 0.0, 2.5),      // Op4: Octave with feedback
-                (3.0, 60.0, 8.4, 0.0),      // Op5: Third harmonic with detune
-                (1.5, 70.0, -12.7, 4.0),    // Op6: Perfect fifth with detune and feedback
+                (1.0, 99.0, 0.0, 3.5),   // Op1: Fundamental with some feedback
+                (1.007, 95.0, 0.0, 0.0), // Op2: Slightly detuned (beat frequency)
+                (0.993, 90.0, 0.0, 0.0), // Op3: Slightly detuned opposite
+                (2.0, 75.0, 0.0, 2.5),   // Op4: Octave with feedback
+                (3.0, 60.0, 8.4, 0.0),   // Op5: Third harmonic with detune
+                (1.5, 70.0, -12.7, 4.0), // Op6: Perfect fifth with detune and feedback
             ],
             envelopes: [
                 (15.0, 25.0, 80.0, 20.0, 99.0, 95.0, 90.0, 0.0), // Op1: Slow ethereal attack
@@ -732,7 +732,7 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
                 (12.0, 22.0, 85.0, 18.0, 99.0, 97.0, 92.0, 0.0), // Op6: Fastest ethereal entry
             ],
             master_tune: Some(-3.7), // Slightly flat for mysterious effect
-            mono_mode: Some(false), // POLY for chord pads
+            mono_mode: Some(false),  // POLY for chord pads
             pitch_bend_range: Some(7.0), // Wide bend for expression
             portamento_enable: Some(true), // Smooth pad glides
             portamento_time: Some(50.0), // Very slow glide
