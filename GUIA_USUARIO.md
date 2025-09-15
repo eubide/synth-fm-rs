@@ -6,24 +6,25 @@ El Yamaha DX7 utiliza **síntesis FM (Frecuencia Modulada)**, diferente a los si
 
 ## 🎮 Modos de Interfaz
 
-El emulador tiene 4 modos principales, igual que el DX7 original:
+El emulador tiene 3 modos principales, con interfaz optimizada:
 
 ### 🎵 VOICE Mode
 - **Función**: Selección y carga de presets
 - **Controles**: Grid de presets con botones clickeables
 - **Uso**: Elige entre E.Piano, Bass, Brass, Strings, etc.
 
-### ⚙️ ALGORITHM Mode  
-- **Función**: Configuración del algoritmo FM y volumen maestro
-- **Controles**: ComboBox con 32 algoritmos + slider de volumen
-- **Uso**: Selecciona cómo se conectan los 6 operadores
-
 ### 🔧 OPERATOR Mode
-- **Función**: Edición detallada de operadores individuales  
-- **Controles**: Botones 1-6 + controles por operador + envolventes
-- **Uso**: Ajusta frequency ratio, levels, detune, feedback, envolventes
+- **Función**: Edición detallada de operadores y selección de algoritmo
+- **Controles**: Selector de algoritmo (parte superior) + botones 1-6 + controles por operador + envolventes
+- **Uso**: Selecciona algoritmo FM (32 opciones) y ajusta frequency ratio, levels, detune, feedback, envolventes
+- **🆕 Mejora**: Algoritmo y operadores en el mismo modo para flujo más eficiente
 
-### ⚡ FUNCTION Mode
+### 🎵 LFO Mode
+- **Función**: Control completo del oscilador de baja frecuencia
+- **Controles**: Rate, Delay, Pitch/Amp Depth, Waveform, Key Sync
+- **Uso**: Configuración de vibrato y tremolo con 6 formas de onda DX7
+
+### ⚡ FUNCTION Mode (Controles Globales - Siempre Visibles)
 - **Función**: Parámetros globales del sintetizador
 - **Controles**: Master Tune, Poly/Mono, Pitch Bend, Portamento, Voice Init
 - **Uso**: Configuración general del instrumento
