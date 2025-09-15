@@ -24,16 +24,32 @@ fn play_startup_melody(synth: std::sync::Arc<std::sync::Mutex<FmSynthesizer>>) {
         thread::sleep(Duration::from_millis(500));
 
         let notes = [60, 64, 67]; // C4, E4, G4 - simple C major triad
-        let note_duration = Duration::from_millis(800);
+        let _note_duration = Duration::from_millis(800);
         let note_gap = Duration::from_millis(100);
 
         for &note in &notes {
+            println!("Playing note {} (velocity 80)", note);
             if let Ok(mut synth_guard) = synth.lock() {
                 synth_guard.note_on(note, 80);
+                // Test if synth is producing output
+                let output = synth_guard.process();
+                println!("Initial synth output: {:.6}", output);
+            } else {
+                println!("Failed to lock synth for note_on");
             }
 
-            thread::sleep(note_duration);
+            // Sample synth output during note duration
+            for i in 0..10 {
+                thread::sleep(Duration::from_millis(80));
+                if let Ok(mut synth_guard) = synth.lock() {
+                    let output = synth_guard.process();
+                    if i == 0 || i == 9 || output.abs() > 0.001 {
+                        println!("Sample {}: {:.6}", i, output);
+                    }
+                }
+            }
 
+            println!("Releasing note {}", note);
             if let Ok(mut synth_guard) = synth.lock() {
                 synth_guard.note_off(note);
             }
