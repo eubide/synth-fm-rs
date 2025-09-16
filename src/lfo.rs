@@ -1,3 +1,4 @@
+use crate::optimization::OPTIMIZATION_TABLES;
 use std::f32::consts::PI;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -57,6 +58,10 @@ pub struct LFO {
     last_sample_hold: f32, // For sample & hold waveform
     sh_phase_trigger: f32, // Trigger point for S&H
     is_delayed: bool,      // Whether LFO is still in delay phase
+
+    // Cached values for performance
+    cached_rate_hz: f32,
+    last_rate: f32,
 }
 
 impl LFO {
@@ -75,16 +80,22 @@ impl LFO {
             last_sample_hold: 0.0,
             sh_phase_trigger: 0.0,
             is_delayed: false,
+            cached_rate_hz: 0.0,
+            last_rate: -1.0, // Initialize to -1 to force first calculation
         }
     }
 
-    /// Convert DX7 rate (0-99) to Hz using authentic exponential curve
+    /// Convert DX7 rate (0-99) to Hz using optimized exponential lookup
     fn dx7_rate_to_hz(rate: f32) -> f32 {
         if rate <= 0.0 {
             0.0
         } else {
-            // Exponential curve matching DX7: approximately 0.062Hz to 20Hz
-            0.062 * (rate / 99.0 * 6.0).exp()
+            // Use optimized exponential lookup table
+            // Map rate to exponential curve: approximately 0.062Hz to 20Hz
+            let normalized = (rate / 99.0).clamp(0.0, 1.0);
+            // Scale normalized value for exponential range (6.0 gives ~20Hz max)
+            let exp_input = normalized; // Already 0-1 for fast_exp
+            0.062 * (1.0 + OPTIMIZATION_TABLES.fast_exp(exp_input) * 320.0)
         }
     }
 
@@ -116,7 +127,7 @@ impl LFO {
     /// Generate waveform value for current phase (-1.0 to 1.0)
     fn generate_waveform(&mut self, phase: f32) -> f32 {
         match self.waveform {
-            LFOWaveform::Sine => (phase * 2.0 * PI).sin(),
+            LFOWaveform::Sine => OPTIMIZATION_TABLES.fast_sin(phase * 2.0 * PI),
 
             LFOWaveform::Triangle => {
                 if phase < 0.5 {
@@ -170,8 +181,14 @@ impl LFO {
             }
         }
 
-        // Calculate frequency and phase increment
-        let frequency_hz = Self::dx7_rate_to_hz(self.rate);
+        // Calculate frequency and phase increment with caching
+        let frequency_hz = if (self.rate - self.last_rate).abs() > 0.01 {
+            self.last_rate = self.rate;
+            self.cached_rate_hz = Self::dx7_rate_to_hz(self.rate);
+            self.cached_rate_hz
+        } else {
+            self.cached_rate_hz
+        };
         if frequency_hz <= 0.0 {
             return (0.0, 0.0); // No modulation if rate is 0
         }

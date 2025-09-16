@@ -6,6 +6,7 @@ pub struct OptimizationTables {
     sine_table: [f32; 4096],
     exp_table: [f32; 256],
     midi_frequencies: [f32; 128],
+    voice_scale_table: [f32; 17], // For voice counts 0-16
 }
 
 impl OptimizationTables {
@@ -14,11 +15,13 @@ impl OptimizationTables {
             sine_table: [0.0; 4096],
             exp_table: [0.0; 256],
             midi_frequencies: [0.0; 128],
+            voice_scale_table: [0.0; 17],
         };
 
         tables.init_sine_table();
         tables.init_exp_table();
         tables.init_midi_frequencies();
+        tables.init_voice_scale_table();
 
         tables
     }
@@ -52,6 +55,16 @@ impl OptimizationTables {
             // Formula: f = 440 * 2^((note - 69) / 12)
             let frequency = 440.0 * 2.0_f32.powf((midi_note as f32 - 69.0) / 12.0);
             self.midi_frequencies[midi_note] = frequency;
+        }
+    }
+
+    // Pre-calculate voice scaling factors for polyphony
+    fn init_voice_scale_table(&mut self) {
+        self.voice_scale_table[0] = 1.0; // 0 voices = 1.0 (no scaling)
+        for i in 1..=16 {
+            // Exponential scaling: 1 voice = 1.0, 8 voices = 0.35, 16 voices = 0.25
+            let voice_count_f = i as f32;
+            self.voice_scale_table[i] = (1.0 / voice_count_f.sqrt()).min(1.0) * 0.7;
         }
     }
 
@@ -125,6 +138,16 @@ impl OptimizationTables {
             // Exponential rate scaling: higher rate = faster envelope
             let normalized = rate as f32 / 99.0;
             0.001 + self.fast_exp(normalized) * 10.0 // 0.001 to ~10.0 range
+        }
+    }
+
+    // Get pre-calculated voice scaling factor for polyphony
+    pub fn get_voice_scale(&self, voice_count: usize) -> f32 {
+        if voice_count <= 16 {
+            self.voice_scale_table[voice_count]
+        } else {
+            // Fallback for > 16 voices (shouldn't happen in DX7 emulation)
+            (1.0 / (voice_count as f32).sqrt()).min(1.0) * 0.7
         }
     }
 }

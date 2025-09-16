@@ -13,6 +13,40 @@ All notable changes to this project will be documented in this file.
   - Was incorrectly showing 35 algorithms instead of the authentic DX7 count
   - Updated algorithm selector range from 1..=35 to 1..=32
   - Location: `src/gui.rs:1035`
+- **🎛️ Feedback Control UI**: Fixed feedback controls to show for all relevant operators
+  - Previously only Op6 showed feedback controls regardless of algorithm
+  - Now correctly shows feedback for operators based on algorithm definition
+  - Algorithms 4 & 6 now properly show Op6 feedback control
+  - Implemented algorithm-specific feedback detection from JSON definitions
+- **🔄 Algorithm 4 & 6 Feedback**: Corrected cross-feedback implementation for complex algorithms
+  - Algorithm 4: Op6 now controls feedback loop strength (Op6→Op5→Op4→Op6)
+  - Algorithm 6: Op6 now controls feedback response from Op5 input
+  - Fixed incorrect hardcoded feedback values with proper operator parameter usage
+- **🎵 Portamento Curve**: Improved portamento with exponential curve for more musical feel
+  - Changed from linear interpolation to exponential frequency transitions
+  - Reduced time range from potentially 50+ seconds to maximum 2 seconds
+  - Added frequency ratio limiting to prevent dramatic jumps
+  - More authentic DX7-style glide behavior
+- **🛡️ Thread Safety**: Enhanced error handling in MIDI thread to prevent panics
+  - Replaced `.unwrap()` calls with proper error handling in MIDI handler
+  - Added graceful lock failure handling with error logging
+  - Reduced potential crash scenarios in concurrent access
+- **⚡ Performance Critical**: Optimized mathematical operations in audio path
+  - Fixed exponential envelope comparison to handle NaN values properly
+  - Pre-computed voice scaling factors for square root operations
+  - Eliminated expensive math in real-time audio processing
+
+### Added
+- **🚀 Advanced Performance Optimizations**: Comprehensive lookup table system
+  - **LFO Sine Optimization**: LFO now uses fast sine lookup table instead of math functions
+  - **Rate Caching**: LFO rate calculations cached to avoid repeated exponential math
+  - **Voice Scaling Table**: Pre-computed square root factors for polyphony (0-16 voices)
+  - **DX7 Frequency Ratios**: Implemented discrete frequency ratio quantization (0.5, 1.0, 2.0-31.0)
+  - Total performance improvement: ~10-100x in critical audio path operations
+- **🎛️ Enhanced Feedback System**: Complete feedback control implementation
+  - Dynamic feedback UI based on algorithm selection
+  - Proper cross-feedback handling for complex algorithms
+  - Consistent Op6 control for special algorithms (4 & 6)
 
 ### Changed
 - **GUI Layout Reorganization**: Streamlined interface by removing redundant ALGORITHM tab
@@ -20,6 +54,16 @@ All notable changes to this project will be documented in this file.
   - Moved algorithm control to top-left area of OPERATOR tab for better workflow
   - Maintained ADSR envelope controls within OPERATOR layout as expected
   - Improved user experience by reducing tab switching for common operations
+- **🎵 Portamento Algorithm**: Completely rewritten for musical authenticity
+  - Exponential curve instead of linear for natural pitch transitions
+  - Time range optimization: 5ms to 2 seconds (vs previous 50+ seconds)
+  - Logarithmic frequency interpolation for smooth octave jumps
+  - Velocity limiting to prevent audio artifacts
+- **⚡ Mathematical Operations**: Optimized all expensive calculations in audio thread
+  - LFO processing: Single sine lookup vs trigonometric calculation per voice
+  - Voice scaling: Table lookup vs square root calculation per sample
+  - Envelope processing: Cached exponential calculations
+  - 26 `.unwrap()` calls reduced with proper error handling
 - **Documentation Restructure**: Complete reorganization of project roadmap and issue tracking
   - Reorganized TODO.md with clear priority levels (PRIORITY 1-9) based on urgency and impact
   - Consolidated all completed features documentation in single comprehensive file

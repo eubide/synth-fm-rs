@@ -4,6 +4,7 @@ use std::time::Duration;
 
 mod algorithms;
 mod audio_engine;
+mod dx7_frequency;
 mod envelope;
 mod fm_synth;
 mod gui;

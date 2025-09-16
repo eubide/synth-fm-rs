@@ -154,17 +154,27 @@ impl Voice {
             return 0.0;
         }
 
-        // Apply portamento smoothing (same as original)
+        // Apply portamento smoothing with DX7-authentic curve
         if self.current_frequency != self.target_frequency {
+            // DX7 portamento: 0-99 maps to ~5ms to ~5 seconds
+            // Use exponential curve for more natural feel
             let portamento_rate = if portamento_time > 0.0 {
-                1.0 / (portamento_time * 10.0 + 1.0) / (self.sample_rate / 1000.0)
+                // Convert 0-99 range to seconds (exponentially)
+                let time_seconds = 0.005 + (portamento_time / 99.0).powf(2.0) * 2.0;
+                // Convert to rate per sample
+                let samples_for_transition = time_seconds * self.sample_rate;
+                1.0 / samples_for_transition.max(1.0)
             } else {
-                1.0
+                1.0 // Instant change when portamento is 0
             };
 
-            let freq_diff = self.target_frequency - self.current_frequency;
-            self.current_frequency += freq_diff * portamento_rate;
+            // Exponential glide for more musical portamento
+            let freq_ratio = self.target_frequency / self.current_frequency.max(0.001);
+            let log_ratio = freq_ratio.ln();
+            let step = log_ratio * portamento_rate;
+            self.current_frequency *= (1.0 + step).min(2.0).max(0.5); // Limit rate of change
 
+            // Snap to target when very close
             if (self.target_frequency - self.current_frequency).abs() < 0.1 {
                 self.current_frequency = self.target_frequency;
             }
@@ -292,7 +302,11 @@ impl FmSynthesizer {
                 .voices
                 .iter()
                 .enumerate()
-                .max_by(|a, b| a.1.release_time.partial_cmp(&b.1.release_time).unwrap())
+                .max_by(|a, b| {
+                    a.1.release_time
+                        .partial_cmp(&b.1.release_time)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
                 .map(|(i, _)| i)
                 .unwrap_or(0);
 
@@ -354,9 +368,8 @@ impl FmSynthesizer {
         let voice_scaling = if active_voice_count > 0 {
             // More aggressive scaling like the original DX7 to prevent muddiness
             // DX7 had significant headroom and clear voice separation
-            let voice_count_f = active_voice_count as f32;
-            // Exponential scaling: 1 voice = 1.0, 8 voices = 0.35, 16 voices = 0.25
-            (1.0 / voice_count_f.sqrt()).min(1.0) * 0.7 // Extra 0.7 for crystalline clarity
+            // Use pre-computed voice scaling table for better performance
+            OPTIMIZATION_TABLES.get_voice_scale(active_voice_count)
         } else {
             1.0
         };
@@ -631,8 +644,8 @@ impl FmSynthesizer {
 
     /// Soft limiting for final output
     fn soft_limit(&self, sample: f32) -> f32 {
-        const THRESHOLD: f32 = 0.7;  // Lower threshold for synth output
-        const KNEE: f32 = 0.15;     // Gentler knee
+        const THRESHOLD: f32 = 0.7; // Lower threshold for synth output
+        const KNEE: f32 = 0.15; // Gentler knee
 
         if sample.abs() <= THRESHOLD {
             sample

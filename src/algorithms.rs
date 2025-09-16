@@ -97,7 +97,8 @@ fn algorithm_4(ops: &mut [Operator; 6]) -> f32 {
     let op1_out = ops[0].process(op2_out);
 
     // Stack 2 with loop: Op6 -> Op5 -> Op4, Op4 -> Op6
-    let op6_out = ops[5].process(ops[3].get_feedback_output() * 0.5);
+    // Use Op6's feedback parameter for the feedback loop strength
+    let op6_out = ops[5].process(ops[5].get_feedback_output() * 0.7);
     let op5_out = ops[4].process(op6_out);
     let op4_out = ops[3].process(op5_out);
 
@@ -127,22 +128,22 @@ fn algorithm_5(ops: &mut [Operator; 6]) -> f32 {
 /// Algorithm 6: Triple Split
 /// Carriers: [1, 3, 4] - Connections: [(6,2), (2,1), (5,3), (5,6)]
 fn algorithm_6(ops: &mut [Operator; 6]) -> f32 {
-    // Op5 modulates Op6 (cross feedback) and Op3
-    let op5_out = ops[4].process(ops[5].get_feedback_output() * 0.5);
-    let op6_out = ops[5].process(op5_out);
+    // Op5 generates output (no modulation input)
+    let op5_out = ops[4].process(0.0);
 
-    // Op6 modulates Op2
-    let op2_out = ops[1].process(op6_out);
-
-    // Op2 modulates Op1
-    let op1_out = ops[0].process(op2_out);
-
-    // Op5 also modulates Op3
+    // Op5 modulates Op6 and Op3
+    // Op6 uses feedback to control its response
+    let op6_out = ops[5].process(op5_out + ops[5].get_feedback_output() * 0.5);
     let op3_out = ops[2].process(op5_out);
+
+    // Op6 modulates Op2, Op2 modulates Op1
+    let op2_out = ops[1].process(op6_out);
+    let op1_out = ops[0].process(op2_out);
 
     // Op4 is carrier (no modulation)
     let op4_out = ops[3].process(0.0);
 
+    // Only carriers contribute to output: Op1, Op3, Op4
     (op1_out + op3_out + op4_out) / 1.7
 }
 

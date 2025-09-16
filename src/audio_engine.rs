@@ -135,7 +135,7 @@ impl AudioEngine {
     /// Gentle soft limiting to preserve DX7 crystalline character
     fn soft_limit(sample: f32) -> f32 {
         const THRESHOLD: f32 = 0.95; // Much higher threshold - preserve dynamics
-        const KNEE: f32 = 0.05;      // Gentler knee for transparent limiting
+        const KNEE: f32 = 0.05; // Gentler knee for transparent limiting
 
         if sample.abs() <= THRESHOLD {
             sample
