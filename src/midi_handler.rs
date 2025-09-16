@@ -67,11 +67,14 @@ impl MidiHandler {
                         println!("Note OFF Ch{} Note:{} (via vel=0)", channel + 1, note);
                     }
 
-                    let mut synth = synthesizer.lock().unwrap();
-                    if velocity > 0 {
-                        synth.note_on(note, velocity);
+                    if let Ok(mut synth) = synthesizer.lock() {
+                        if velocity > 0 {
+                            synth.note_on(note, velocity);
+                        } else {
+                            synth.note_off(note);
+                        }
                     } else {
-                        synth.note_off(note);
+                        eprintln!("Failed to acquire synth lock for note on/off");
                     }
                 }
             }
@@ -80,8 +83,11 @@ impl MidiHandler {
                 if message.len() >= 3 {
                     let note = message[1];
                     println!("Note OFF Ch{} Note:{}", channel + 1, note);
-                    let mut synth = synthesizer.lock().unwrap();
-                    synth.note_off(note);
+                    if let Ok(mut synth) = synthesizer.lock() {
+                        synth.note_off(note);
+                    } else {
+                        eprintln!("Failed to acquire synth lock for note off");
+                    }
                 }
             }
 
@@ -104,8 +110,11 @@ impl MidiHandler {
                         cc_name,
                         value
                     );
-                    let mut synth = synthesizer.lock().unwrap();
-                    synth.control_change(controller, value);
+                    if let Ok(mut synth) = synthesizer.lock() {
+                        synth.control_change(controller, value);
+                    } else {
+                        eprintln!("Failed to acquire synth lock for control change");
+                    }
                 }
             }
 
@@ -121,8 +130,11 @@ impl MidiHandler {
                         lsb,
                         msb
                     );
-                    let mut synth = synthesizer.lock().unwrap();
-                    synth.pitch_bend(value);
+                    if let Ok(mut synth) = synthesizer.lock() {
+                        synth.pitch_bend(value);
+                    } else {
+                        eprintln!("Failed to acquire synth lock for pitch bend");
+                    }
                 }
             }
 

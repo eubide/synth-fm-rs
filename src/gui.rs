@@ -561,7 +561,6 @@ impl Dx7App {
                     self.display_text = "VOICE SELECT".to_string();
                 }
 
-
                 let op_select_button = if self.display_mode == DisplayMode::Operator {
                     egui::Button::new("OPERATOR")
                         .fill(egui::Color32::from_rgb(180, 200, 220))
@@ -649,18 +648,28 @@ impl Dx7App {
 
                 ui.columns(2, |columns| {
                     columns[0].label("Frequency Ratio:");
+
+                    // Use DX7 discrete frequency ratios
                     if columns[1]
                         .add(
-                            egui::Slider::new(&mut freq_ratio, 0.5..=15.0)
-                                .step_by(0.5)
+                            egui::Slider::new(&mut freq_ratio, 0.5..=31.0)
+                                .step_by(1.0)
+                                .custom_formatter(|n, _| {
+                                    let q =
+                                        crate::dx7_frequency::quantize_frequency_ratio(n as f32);
+                                    format!("{:.2}", q)
+                                })
                                 .show_value(true),
                         )
                         .changed()
                     {
-                        self.synthesizer
-                            .lock()
-                            .unwrap()
-                            .set_operator_param(op_idx, "ratio", freq_ratio);
+                        let quantized_value =
+                            crate::dx7_frequency::quantize_frequency_ratio(freq_ratio);
+                        self.synthesizer.lock().unwrap().set_operator_param(
+                            op_idx,
+                            "ratio",
+                            quantized_value,
+                        );
                     }
                 });
 
@@ -1187,9 +1196,50 @@ impl eframe::App for Dx7App {
 
 impl Dx7App {
     fn operator_has_feedback(&self, op_idx: usize) -> bool {
-        // Feedback detection will be implemented later with algorithm analysis
-        // For now, assume only operator 6 (index 5) has feedback in most algorithms
-        op_idx == 5
+        // Determine which operators have feedback based on the current algorithm
+        // Feedback is defined as self-connections in the algorithm
+        let current_algorithm = self.synthesizer.lock().unwrap().get_algorithm();
+
+        // Map algorithm number to operators that have feedback (1-indexed)
+        // Based on analysis of algorithms.json
+        let feedback_ops = match current_algorithm {
+            1 => vec![6],
+            2 => vec![2],
+            3 => vec![6],
+            4 => vec![6], // Op6 controls feedback in the loop
+            5 => vec![6],
+            6 => vec![6], // Op6 controls feedback from Op5
+            7 => vec![6],
+            8 => vec![4],
+            9 => vec![2],
+            10 => vec![3],
+            11 => vec![6],
+            12 => vec![2],
+            13 => vec![6],
+            14 => vec![6],
+            15 => vec![2],
+            16 => vec![6],
+            17 => vec![2],
+            18 => vec![3],
+            19 => vec![3],
+            20 => vec![3],
+            21 => vec![3],
+            22 => vec![6],
+            23 => vec![6],
+            24 => vec![6],
+            25 => vec![6],
+            26 => vec![6],
+            27 => vec![3],
+            28 => vec![5],
+            29 => vec![6],
+            30 => vec![5],
+            31 => vec![6],
+            32 => vec![6],
+            _ => vec![6], // Default fallback
+        };
+
+        // Convert to 0-indexed and check
+        feedback_ops.contains(&(op_idx + 1))
     }
 
     fn draw_lfo_panel(&mut self, ui: &mut egui::Ui) {

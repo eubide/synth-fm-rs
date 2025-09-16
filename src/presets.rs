@@ -66,12 +66,12 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
             name: "E.PIANO 1",
             algorithm: 5,
             operators: [
-                (1.0, 85.0, 0.0, 0.0),    // Op1: Carrier - rich fundamental
-                (2.0, 65.0, 3.2, 0.0),    // Op2: Modulator -> Op1 (harmonic brightness)
-                (1.0, 78.0, -7.1, 0.0),   // Op3: Carrier - subtle detuned warmth
-                (4.0, 45.0, 0.0, 0.0),    // Op4: Carrier - upper harmonic body
-                (8.0, 28.0, 1.7, 0.0),    // Op5: Bell-like modulator (authentic DX7 ratio)
-                (1.0, 42.0, 0.0, 2.8),    // Op6: Modulator -> Op2 + gentle feedback
+                (1.0, 85.0, 0.0, 0.0),  // Op1: Carrier - rich fundamental
+                (2.0, 65.0, 3.2, 0.0),  // Op2: Modulator -> Op1 (harmonic brightness)
+                (1.0, 78.0, -7.1, 0.0), // Op3: Carrier - subtle detuned warmth
+                (4.0, 45.0, 0.0, 0.0),  // Op4: Carrier - upper harmonic body
+                (8.0, 28.0, 1.7, 0.0),  // Op5: Bell-like modulator (authentic DX7 ratio)
+                (1.0, 42.0, 0.0, 2.8),  // Op6: Modulator -> Op2 + gentle feedback
             ],
             envelopes: [
                 (95.0, 75.0, 65.0, 70.0, 99.0, 90.0, 75.0, 0.0), // Op1: Natural piano decay

@@ -254,8 +254,8 @@ impl Operator {
 
     /// Gentle soft clipping for operator output
     fn soft_clip_operator(&self, sample: f32) -> f32 {
-        const THRESHOLD: f32 = 0.9;  // Higher threshold for operators
-        const SOFTNESS: f32 = 0.1;  // Gentle softening
+        const THRESHOLD: f32 = 0.9; // Higher threshold for operators
+        const SOFTNESS: f32 = 0.1; // Gentle softening
 
         if sample.abs() <= THRESHOLD {
             sample
