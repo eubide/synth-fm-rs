@@ -132,8 +132,14 @@ impl AudioEngine {
             .expect("Failed to build output stream")
     }
 
-    /// Final safety limiter - only engages at extreme levels
+    /// Final safety limiter with double limiting strategy
+    /// First: hard clamp for extreme protection
+    /// Second: soft limiting for musical compression
     fn soft_limit(sample: f32) -> f32 {
+        // First pass: hard clamp for safety (should never engage in normal operation)
+        let sample = sample.clamp(-1.0, 1.0);
+
+        // Second pass: soft limiting for musical compression
         const THRESHOLD: f32 = 0.98; // Maximum threshold - preserve DX7 clarity
         const KNEE: f32 = 0.02; // Very gentle knee for transparent limiting
 
