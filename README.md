@@ -155,7 +155,7 @@ El DX7 incluye 32 algoritmos que definen cómo se conectan los 6 operadores:
 ### Comandos de Desarrollo
 ```bash
 # Compilar y ejecutar
-cargo build --release          # Build optimizado
+cargo build --release         # Build optimizado
 cargo run --release           # Ejecutar el emulador
 RUST_LOG=debug cargo run      # Ejecutar con debug logging
 

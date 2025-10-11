@@ -130,7 +130,7 @@ All notable changes to this project will be documented in this file.
   - Clean vertical lines for feedback connections
   - No more overlapping or intersecting connection lines
 
-### Changed  
+### Changed
 - **Algorithm Layout Architecture**: Migrated from layer-centric to column-centric approach
   - Simplified code from ~180 lines to ~135 lines
   - Modular functions: `build_columns()`, `assign_columns()`, `find_column_position()`

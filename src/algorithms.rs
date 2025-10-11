@@ -53,7 +53,7 @@ fn algorithm_1(ops: &mut [Operator; 6]) -> f32 {
     let op4_out = ops[3].process(op5_out);
     let op3_out = ops[2].process(op4_out);
 
-    (op1_out + op3_out) * 0.7
+    (op1_out + op3_out) * 0.71 // √2 = 1.41, inverse = 0.71
 }
 
 /// Algorithm 2: Stack + Self
@@ -69,7 +69,7 @@ fn algorithm_2(ops: &mut [Operator; 6]) -> f32 {
     let op4_out = ops[3].process(op5_out);
     let op3_out = ops[2].process(op4_out);
 
-    (op1_out + op3_out) * 0.7
+    (op1_out + op3_out) * 0.71 // √2 = 1.41, inverse = 0.71
 }
 
 /// Algorithm 3: Dual Stacks
@@ -85,7 +85,7 @@ fn algorithm_3(ops: &mut [Operator; 6]) -> f32 {
     let op5_out = ops[4].process(op6_out);
     let op4_out = ops[3].process(op5_out);
 
-    (op1_out + op4_out) * 0.7
+    (op1_out + op4_out) * 0.71 // √2 = 1.41, inverse = 0.71
 }
 
 /// Algorithm 4: Stack Loop
@@ -102,7 +102,7 @@ fn algorithm_4(ops: &mut [Operator; 6]) -> f32 {
     let op5_out = ops[4].process(op6_out);
     let op4_out = ops[3].process(op5_out);
 
-    (op1_out + op4_out) * 0.7
+    (op1_out + op4_out) * 0.71 // √2 = 1.41, inverse = 0.71
 }
 
 /// Algorithm 5: Triple Output
@@ -122,7 +122,7 @@ fn algorithm_5(ops: &mut [Operator; 6]) -> f32 {
     // Op4 is carrier (no modulation)
     let op4_out = ops[3].process(0.0);
 
-    (op1_out + op3_out + op4_out) / 1.7
+    (op1_out + op3_out + op4_out) * 0.58 // √3 = 1.73, inverse = 0.58
 }
 
 /// Algorithm 6: Triple Split
@@ -144,7 +144,7 @@ fn algorithm_6(ops: &mut [Operator; 6]) -> f32 {
     let op4_out = ops[3].process(0.0);
 
     // Only carriers contribute to output: Op1, Op3, Op4
-    (op1_out + op3_out + op4_out) / 1.7
+    (op1_out + op3_out + op4_out) * 0.58 // √3 = 1.73, inverse = 0.58
 }
 
 /// Algorithm 7: Dual + Stack
@@ -160,7 +160,7 @@ fn algorithm_7(ops: &mut [Operator; 6]) -> f32 {
     let op4_out = ops[3].process(0.0);
     let op3_out = ops[2].process(op4_out + op5_out);
 
-    (op1_out + op3_out) * 0.7
+    (op1_out + op3_out) * 0.71 // √2 = 1.41, inverse = 0.71
 }
 
 /// Algorithm 8: Dual Split
@@ -178,7 +178,7 @@ fn algorithm_8(ops: &mut [Operator; 6]) -> f32 {
     let op4_out = ops[3].process(ops[3].get_feedback_output() * 0.7);
     let op3_out = ops[2].process(op4_out + op5_out);
 
-    (op1_out + op3_out) * 0.7
+    (op1_out + op3_out) * 0.71 // √2 = 1.41, inverse = 0.71
 }
 
 /// Algorithm 9: Dual + Self
@@ -196,7 +196,7 @@ fn algorithm_9(ops: &mut [Operator; 6]) -> f32 {
     let op4_out = ops[3].process(0.0);
     let op3_out = ops[2].process(op4_out + op5_out);
 
-    (op1_out + op3_out) * 0.7
+    (op1_out + op3_out) * 0.71 // √2 = 1.41, inverse = 0.71
 }
 
 /// Algorithm 10: Split Stack
@@ -214,7 +214,7 @@ fn algorithm_10(ops: &mut [Operator; 6]) -> f32 {
     let op6_out = ops[5].process(0.0);
     let op4_out = ops[3].process(op5_out + op6_out);
 
-    (op1_out + op4_out) * 0.7
+    (op1_out + op4_out) * 0.71 // √2 = 1.41, inverse = 0.71
 }
 
 /// Algorithm 11: Stack + Dual
@@ -230,7 +230,7 @@ fn algorithm_11(ops: &mut [Operator; 6]) -> f32 {
     let op5_out = ops[4].process(0.0);
     let op4_out = ops[3].process(op5_out + op6_out);
 
-    (op1_out + op4_out) * 0.7
+    (op1_out + op4_out) * 0.71 // √2 = 1.41, inverse = 0.71
 }
 
 /// Algorithm 12: Triple Mod
@@ -246,7 +246,7 @@ fn algorithm_12(ops: &mut [Operator; 6]) -> f32 {
     let op6_out = ops[5].process(0.0);
     let op3_out = ops[2].process(op4_out + op5_out + op6_out);
 
-    (op1_out + op3_out) * 0.7
+    (op1_out + op3_out) * 0.71 // √2 = 1.41, inverse = 0.71
 }
 
 /// Algorithm 13: Triple Fan
@@ -262,7 +262,7 @@ fn algorithm_13(ops: &mut [Operator; 6]) -> f32 {
     let op5_out = ops[4].process(0.0);
     let op3_out = ops[2].process(op4_out + op5_out + op6_out);
 
-    (op1_out + op3_out) * 0.7
+    (op1_out + op3_out) * 0.71 // √2 = 1.41, inverse = 0.71
 }
 
 /// Algorithm 14: Dual Stack
@@ -278,7 +278,7 @@ fn algorithm_14(ops: &mut [Operator; 6]) -> f32 {
     let op4_out = ops[3].process(op5_out + op6_out);
     let op3_out = ops[2].process(op4_out);
 
-    (op1_out + op3_out) * 0.7
+    (op1_out + op3_out) * 0.71 // √2 = 1.41, inverse = 0.71
 }
 
 /// Algorithm 15: Stack + Self
@@ -294,7 +294,7 @@ fn algorithm_15(ops: &mut [Operator; 6]) -> f32 {
     let op4_out = ops[3].process(op5_out + op6_out);
     let op3_out = ops[2].process(op4_out);
 
-    (op1_out + op3_out) * 0.7
+    (op1_out + op3_out) * 0.71 // √2 = 1.41, inverse = 0.71
 }
 
 /// Algorithm 16: Tree + Self
@@ -368,7 +368,7 @@ fn algorithm_19(ops: &mut [Operator; 6]) -> f32 {
     let op2_out = ops[1].process(0.0);
     let op1_out = ops[0].process(op2_out + op3_out + op4_out);
 
-    (op1_out + op4_out + op5_out) / 1.7
+    (op1_out + op4_out + op5_out) * 0.58 // √3 = 1.73, inverse = 0.58
 }
 
 /// Algorithm 20: Triple + Dual
@@ -386,7 +386,7 @@ fn algorithm_20(ops: &mut [Operator; 6]) -> f32 {
     let op2_out = ops[1].process(op3_out);
     let op1_out = ops[0].process(op3_out);
 
-    (op1_out + op2_out + op4_out) / 1.7
+    (op1_out + op2_out + op4_out) * 0.58 // √3 = 1.73, inverse = 0.58
 }
 
 /// Algorithm 21: Quad + Dual
@@ -404,7 +404,7 @@ fn algorithm_21(ops: &mut [Operator; 6]) -> f32 {
     let op2_out = ops[1].process(op3_out);
     let op1_out = ops[0].process(op3_out);
 
-    (op1_out + op2_out + op4_out + op5_out) / 2.0
+    (op1_out + op2_out + op4_out + op5_out) * 0.5 // √4 = 2.0, inverse = 0.5
 }
 
 /// Algorithm 22: Quad + Stack
@@ -420,7 +420,7 @@ fn algorithm_22(ops: &mut [Operator; 6]) -> f32 {
     let op4_out = ops[3].process(op6_out);
     let op3_out = ops[2].process(op6_out);
 
-    (op1_out + op3_out + op4_out + op5_out) / 2.0
+    (op1_out + op3_out + op4_out + op5_out) * 0.5 // √4 = 2.0, inverse = 0.5
 }
 
 /// Algorithm 23: Quad + Self
@@ -438,7 +438,7 @@ fn algorithm_23(ops: &mut [Operator; 6]) -> f32 {
     // Op1 is carrier (no modulation)
     let op1_out = ops[0].process(0.0);
 
-    (op1_out + op2_out + op4_out + op5_out) / 2.0
+    (op1_out + op2_out + op4_out + op5_out) * 0.5 // √4 = 2.0, inverse = 0.5
 }
 
 /// Algorithm 24: Penta + Self
@@ -454,7 +454,7 @@ fn algorithm_24(ops: &mut [Operator; 6]) -> f32 {
     let op2_out = ops[1].process(0.0);
     let op1_out = ops[0].process(0.0);
 
-    (op1_out + op2_out + op3_out + op4_out + op5_out) / 2.2
+    (op1_out + op2_out + op3_out + op4_out + op5_out) * 0.45 // √5 = 2.24, inverse = 0.45
 }
 
 /// Algorithm 25: Penta + Dual
@@ -470,7 +470,7 @@ fn algorithm_25(ops: &mut [Operator; 6]) -> f32 {
     let op2_out = ops[1].process(0.0);
     let op1_out = ops[0].process(0.0);
 
-    (op1_out + op2_out + op3_out + op4_out + op5_out) / 2.2
+    (op1_out + op2_out + op3_out + op4_out + op5_out) * 0.45 // √5 = 2.24, inverse = 0.45
 }
 
 /// Algorithm 26: Triple + Self
@@ -488,7 +488,7 @@ fn algorithm_26(ops: &mut [Operator; 6]) -> f32 {
     // Op1 is carrier (no modulation)
     let op1_out = ops[0].process(0.0);
 
-    (op1_out + op2_out + op4_out) / 1.7
+    (op1_out + op2_out + op4_out) * 0.58 // √3 = 1.73, inverse = 0.58
 }
 
 /// Algorithm 27: Triple Split
@@ -506,7 +506,7 @@ fn algorithm_27(ops: &mut [Operator; 6]) -> f32 {
     // Op1 is carrier (no modulation)
     let op1_out = ops[0].process(0.0);
 
-    (op1_out + op2_out + op4_out) / 1.7
+    (op1_out + op2_out + op4_out) * 0.58 // √3 = 1.73, inverse = 0.58
 }
 
 /// Algorithm 28: Triple + Stack
@@ -524,7 +524,7 @@ fn algorithm_28(ops: &mut [Operator; 6]) -> f32 {
     // Op6 is carrier (no modulation)
     let op6_out = ops[5].process(0.0);
 
-    (op1_out + op3_out + op6_out) / 1.7
+    (op1_out + op3_out + op6_out) * 0.58 // √3 = 1.73, inverse = 0.58
 }
 
 /// Algorithm 29: Quad + Stack
@@ -542,7 +542,7 @@ fn algorithm_29(ops: &mut [Operator; 6]) -> f32 {
     let op2_out = ops[1].process(0.0);
     let op1_out = ops[0].process(0.0);
 
-    (op1_out + op2_out + op3_out + op5_out) / 2.0
+    (op1_out + op2_out + op3_out + op5_out) * 0.5 // √4 = 2.0, inverse = 0.5
 }
 
 /// Algorithm 30: Quad + Self
@@ -558,7 +558,7 @@ fn algorithm_30(ops: &mut [Operator; 6]) -> f32 {
     let op2_out = ops[1].process(0.0);
     let op1_out = ops[0].process(0.0);
 
-    (op1_out + op2_out + op3_out + op6_out) / 2.0
+    (op1_out + op2_out + op3_out + op6_out) * 0.5 // √4 = 2.0, inverse = 0.5
 }
 
 /// Algorithm 31: Six Operators
@@ -572,7 +572,7 @@ fn algorithm_31(ops: &mut [Operator; 6]) -> f32 {
     let op2_out = ops[1].process(0.0);
     let op1_out = ops[0].process(0.0);
 
-    (op1_out + op2_out + op3_out + op4_out + op5_out + op6_out) / 2.4
+    (op1_out + op2_out + op3_out + op4_out + op5_out + op6_out) * 0.41 // √6 = 2.45, inverse = 0.41
 }
 
 /// Algorithm 32: All Carriers
@@ -586,7 +586,7 @@ fn algorithm_32(ops: &mut [Operator; 6]) -> f32 {
     let op2_out = ops[1].process(0.0);
     let op1_out = ops[0].process(0.0);
 
-    (op1_out + op2_out + op3_out + op4_out + op5_out + op6_out) / 2.4
+    (op1_out + op2_out + op3_out + op4_out + op5_out + op6_out) * 0.41 // √6 = 2.45, inverse = 0.41
 }
 
 /// Get algorithm name for display

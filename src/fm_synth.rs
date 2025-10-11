@@ -42,28 +42,22 @@ impl Voice {
             Operator::new(sample_rate),
         ];
 
-        // Set up a DX7 E.Piano-like patch (Algorithm 5) with reduced levels
-        let ratios = [1.0, 1.0, 7.0, 1.0, 14.0, 1.0]; // Classic E.Piano ratios
-        let levels = [75.0, 65.0, 35.0, 45.0, 20.0, 55.0]; // Reduced levels to prevent overload
+        // Basic init voice - simple sine wave
+        for op in &mut operators {
+            op.frequency_ratio = 1.0;
+            op.output_level = 99.0;
+            op.feedback = 0.0;
+            op.detune = 0.0;
 
-        for (i, op) in operators.iter_mut().enumerate() {
-            op.frequency_ratio = ratios[i];
-            op.output_level = levels[i];
-
-            // Add feedback to operator 6 (index 5)
-            if i == 5 {
-                op.feedback = 3.0; // Moderate feedback for warmth
-            }
-
-            // Fast attack envelope
-            op.envelope.rate1 = 99.0; // Fast attack
-            op.envelope.rate2 = 85.0; // Medium decay
-            op.envelope.rate3 = 70.0; // Medium sustain decay
-            op.envelope.rate4 = 75.0; // Medium release
-            op.envelope.level1 = 99.0; // Full attack level
-            op.envelope.level2 = 85.0; // High decay level
-            op.envelope.level3 = 60.0; // Medium sustain level
-            op.envelope.level4 = 0.0; // Full release
+            // Simple envelope
+            op.envelope.rate1 = 99.0;
+            op.envelope.rate2 = 50.0;
+            op.envelope.rate3 = 50.0;
+            op.envelope.rate4 = 50.0;
+            op.envelope.level1 = 99.0;
+            op.envelope.level2 = 75.0;
+            op.envelope.level3 = 50.0;
+            op.envelope.level4 = 0.0;
         }
 
         Self {
@@ -154,13 +148,13 @@ impl Voice {
             return 0.0;
         }
 
-        // Apply portamento smoothing with DX7-authentic curve
+        // Apply portamento smoothing with musical curve
         if self.current_frequency != self.target_frequency {
-            // DX7 portamento: 0-99 maps to ~5ms to ~5 seconds
-            // Use exponential curve for more natural feel
+            // DX7-style portamento: 0-99 maps to ~3ms to ~800ms for musical response
+            // Exponential curve for natural feel
             let portamento_rate = if portamento_time > 0.0 {
-                // Convert 0-99 range to seconds (exponentially)
-                let time_seconds = 0.005 + (portamento_time / 99.0).powf(2.0) * 2.0;
+                // Convert 0-99 range to seconds: 0=3ms, 50=~150ms, 99=~800ms
+                let time_seconds = 0.003 + (portamento_time / 99.0).powf(1.8) * 0.8;
                 // Convert to rate per sample
                 let samples_for_transition = time_seconds * self.sample_rate;
                 1.0 / samples_for_transition.max(1.0)
@@ -226,7 +220,7 @@ impl Voice {
             VoiceFadeState::Normal => modulated_output,
         };
 
-        final_output * 0.8
+        final_output
     }
 }
 
@@ -506,12 +500,12 @@ impl FmSynthesizer {
     }
 
     pub fn voice_initialize(&mut self) {
-        // Reset all voices to basic DX7 init voice settings
+        // Reset all voices to basic init voice settings
         self.preset_name = "Init Voice".to_string();
 
-        // Set algorithm to 1 using lock-free parameters
+        // Set algorithm to 1 (basic algorithm)
         let mut params = self.lock_free_params.get_global_params().clone();
-        params.algorithm = 1; // Basic algorithm
+        params.algorithm = 1;
         self.lock_free_params.set_global_param(params);
 
         // Stop all playing voices
@@ -522,25 +516,24 @@ impl FmSynthesizer {
 
         // Initialize all voice operators to basic settings
         for voice in &mut self.voices {
-            for (i, op) in voice.operators.iter_mut().enumerate() {
-                // Basic operator settings
+            for op in voice.operators.iter_mut() {
                 op.frequency_ratio = 1.0;
-                op.output_level = if i == 0 { 99.0 } else { 0.0 }; // Only OP1 audible
+                op.output_level = 99.0;
                 op.detune = 0.0;
                 op.feedback = 0.0;
                 op.velocity_sensitivity = 0.0;
                 op.key_scale_level = 0.0;
                 op.key_scale_rate = 0.0;
 
-                // Basic envelope (fast attack, sustain)
-                op.envelope.rate1 = 95.0; // Attack
-                op.envelope.rate2 = 25.0; // Decay
-                op.envelope.rate3 = 25.0; // Sustain
-                op.envelope.rate4 = 67.0; // Release
-                op.envelope.level1 = 99.0; // Attack level
-                op.envelope.level2 = 75.0; // Decay level
-                op.envelope.level3 = 50.0; // Sustain level (must be > 0 for sustained sound)
-                op.envelope.level4 = 0.0; // Release level
+                // Basic envelope
+                op.envelope.rate1 = 99.0;
+                op.envelope.rate2 = 50.0;
+                op.envelope.rate3 = 50.0;
+                op.envelope.rate4 = 50.0;
+                op.envelope.level1 = 99.0;
+                op.envelope.level2 = 75.0;
+                op.envelope.level3 = 50.0;
+                op.envelope.level4 = 0.0;
             }
         }
     }
@@ -642,9 +635,9 @@ impl FmSynthesizer {
         self.lock_free_params.get_global_params().portamento_time
     }
 
-    /// Soft limiting for final output
+    /// Soft limiting for final output - preserves DX7 crystalline character
     fn soft_limit(&self, sample: f32) -> f32 {
-        const THRESHOLD: f32 = 0.7; // Lower threshold for synth output
+        const THRESHOLD: f32 = 0.85; // Higher threshold preserves dynamics
         const KNEE: f32 = 0.15; // Gentler knee
 
         if sample.abs() <= THRESHOLD {
@@ -658,8 +651,8 @@ impl FmSynthesizer {
             let compressed_excess = excess / (1.0 + excess / KNEE);
             let limited = THRESHOLD + compressed_excess;
 
-            // Final hard limit with more headroom
-            sign * limited.min(0.85)
+            // Final hard limit with maximum headroom for clarity
+            sign * limited.min(0.95)
         }
     }
 }

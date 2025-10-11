@@ -58,8 +58,8 @@ impl Dx7App {
     fn lock_synth(
         &self,
     ) -> Result<
-        std::sync::MutexGuard<FmSynthesizer>,
-        std::sync::PoisonError<std::sync::MutexGuard<FmSynthesizer>>,
+        std::sync::MutexGuard<'_, FmSynthesizer>,
+        std::sync::PoisonError<std::sync::MutexGuard<'_, FmSynthesizer>>,
     > {
         self.synthesizer.lock()
     }

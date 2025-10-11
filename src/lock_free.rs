@@ -64,7 +64,7 @@ pub struct SynthParameters {
 impl Default for SynthParameters {
     fn default() -> Self {
         Self {
-            algorithm: 5,
+            algorithm: 1,
             master_volume: 0.7,
             pitch_bend: 0.0,
             mod_wheel: 0.0,
