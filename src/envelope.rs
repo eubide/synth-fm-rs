@@ -56,10 +56,10 @@ impl Envelope {
             sample_rate,
             key_scale_factor: 1.0,
 
-            // Initialize smoothing system
+            // Initialize smoothing system - reduced for better transient response
             rate_smoother: 0.0,
             target_rate: 0.0,
-            smoothing_samples: sample_rate * 0.005, // 5ms smoothing time
+            smoothing_samples: sample_rate * 0.002, // 2ms smoothing time for crystalline attacks
         }
     }
 
@@ -69,9 +69,17 @@ impl Envelope {
         self.stage = EnvelopeStage::Stage1;
         self.target_level = self.level1 / 99.0;
 
-        // Initialize smooth rate transition
+        // For fast attacks (rate1 > 90), skip smoothing for crystalline transients
         let new_rate = self.calculate_rate(self.rate1) * self.key_scale_factor;
-        self.set_target_rate(new_rate);
+        if self.rate1 > 90.0 {
+            // Instant attack - no smoothing for maximum clarity
+            self.rate = new_rate;
+            self.target_rate = new_rate;
+            self.rate_smoother = new_rate;
+        } else {
+            // Smooth rate transition for slower attacks
+            self.set_target_rate(new_rate);
+        }
     }
 
     pub fn release(&mut self) {

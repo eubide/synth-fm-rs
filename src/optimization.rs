@@ -62,9 +62,9 @@ impl OptimizationTables {
     fn init_voice_scale_table(&mut self) {
         self.voice_scale_table[0] = 1.0; // 0 voices = 1.0 (no scaling)
         for i in 1..=16 {
-            // Exponential scaling: 1 voice = 1.0, 8 voices = 0.35, 16 voices = 0.25
+            // DX7-authentic scaling: preserve more headroom for crystalline sound
             let voice_count_f = i as f32;
-            self.voice_scale_table[i] = (1.0 / voice_count_f.sqrt()).min(1.0) * 0.7;
+            self.voice_scale_table[i] = (1.0 / voice_count_f.sqrt()).min(1.0);
         }
     }
 

@@ -217,9 +217,7 @@ impl Operator {
         }
 
         self.last_output = output;
-
-        // Apply gentle soft clipping for operators
-        self.soft_clip_operator(output)
+        output
     }
 
     pub fn is_active(&self) -> bool {
@@ -249,25 +247,6 @@ impl Operator {
             1.0 / (1.0 + (-distance as f32 * self.key_scale_rate / 7.0 / 24.0))
         } else {
             1.0
-        }
-    }
-
-    /// Gentle soft clipping for operator output
-    fn soft_clip_operator(&self, sample: f32) -> f32 {
-        const THRESHOLD: f32 = 0.9; // Higher threshold for operators
-        const SOFTNESS: f32 = 0.1; // Gentle softening
-
-        if sample.abs() <= THRESHOLD {
-            sample
-        } else {
-            let sign = sample.signum();
-            let abs_sample = sample.abs();
-
-            // Gentle compression for operator clipping
-            let excess = abs_sample - THRESHOLD;
-            let softened = excess / (1.0 + excess / SOFTNESS);
-
-            sign * (THRESHOLD + softened).min(1.0)
         }
     }
 }
