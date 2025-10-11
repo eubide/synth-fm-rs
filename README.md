@@ -1,185 +1,185 @@
 # Yamaha DX7 Emulator
 
-Un emulador de alta fidelidad del legendario sintetizador Yamaha DX7, construido en Rust con síntesis FM en tiempo real, soporte MIDI y una interfaz gráfica que simula la experiencia original.
+A high-fidelity emulator of the legendary Yamaha DX7 synthesizer, built in Rust with real-time FM synthesis, MIDI support, and a graphical interface that simulates the original experience.
 
-## Características
+## Features
 
-### Motor de Síntesis FM
-- **6 Operadores FM** con control independiente de frecuencia y nivel
-- **32 Algoritmos** de routing auténticos del DX7 (correctamente implementados)
-- **Envolventes de 4 etapas** (Rate/Level) para cada operador
-- **Feedback** en el operador 6 para texturas armónicas
-- **16 voces de polifonía** con voice stealing inteligente
-- **Sistema de presets** compatible con patches clásicos del DX7
-- **🆕 LFO Global Auténtico** con 6 formas de onda y control MIDI en tiempo real
+### FM Synthesis Engine
+- **6 FM Operators** with independent frequency and level control
+- **32 Algorithms** authentic DX7 routing (correctly implemented)
+- **4-stage Envelopes** (Rate/Level) for each operator
+- **Feedback** on operator 6 for harmonic textures
+- **16-voice polyphony** with intelligent voice stealing
+- **Preset system** compatible with classic DX7 patches
+- **NEW Authentic Global LFO** with 6 waveforms and real-time MIDI control
 
-### Interfaz Auténtica
-- **Display LCD simulado** con retroiluminación verde
-- **Botones de membrana** como el DX7 original
-- **Modos de operación**: VOICE, OPERATOR (con selector de algoritmos integrado), **🆕 LFO**
-- **Selección de operadores** 1-6 (solo en modo Operator)
-- **Visualización avanzada de algoritmos** con layout optimizado para feedback loops
-- **Diagramas interactivos** que muestran conexiones entre operadores en tiempo real
-- **🆕 Panel LFO Completo** con control visual de modulación en tiempo real
+### Authentic Interface
+- **Simulated LCD display** with green backlight
+- **Membrane buttons** like the original DX7
+- **Operation modes**: VOICE, OPERATOR (with integrated algorithm selector), **NEW LFO**
+- **Operator selection** 1-6 (only in Operator mode)
+- **Advanced algorithm visualization** with optimized layout for feedback loops
+- **Interactive diagrams** showing real-time connections between operators
+- **NEW Complete LFO Panel** with real-time visual modulation control
 
-### Function Mode - Parámetros Globales
-- **Master Tune**: Afinación global ±150 cents
-- **Poly/Mono Mode**: Cambio entre modo polifónico y monofónico
-- **Pitch Bend Range**: Rango configurable 0-12 semitonos
-- **Portamento**: Control de deslizamiento de notas (solo en modo MONO)
-- **Voice Initialize**: Reset del preset a valores básicos del DX7
+### Function Mode - Global Parameters
+- **Master Tune**: Global tuning ±150 cents
+- **Poly/Mono Mode**: Switch between polyphonic and monophonic mode
+- **Pitch Bend Range**: Configurable range 0-12 semitones
+- **Portamento**: Note glide control (only in MONO mode)
+- **Voice Initialize**: Reset preset to basic DX7 values
 
-### Características Avanzadas
-- **Entrada MIDI en tiempo real** para controladores externos
-- **Teclado virtual** con soporte de múltiples octavas
-- **Pitch Bend** con rango configurable
-- **🆕 Mod Wheel (CC1)** controla profundidad del LFO en tiempo real
-- **Sistema de presets** para guardar y cargar sonidos
-- **Transiciones suaves** en modo mono sin clicks o artifacts
-- **Key Scaling** completo (rate y level) por operador
-- **Velocity Sensitivity** configurable (0-7) por operador
+### Advanced Features
+- **Real-time MIDI input** for external controllers
+- **Virtual keyboard** with multi-octave support
+- **Pitch Bend** with configurable range
+- **NEW Mod Wheel (CC1)** controls LFO depth in real-time
+- **Preset system** for saving and loading sounds
+- **Smooth transitions** in mono mode without clicks or artifacts
+- **Complete Key Scaling** (rate and level) per operator
+- **Velocity Sensitivity** configurable (0-7) per operator
 
-### 🆕 Sistema LFO Completo
-- **6 Formas de Onda**: Triangle, Sine, Square, Saw Up/Down, Sample & Hold
-- **Modulación Dual**: Pitch (vibrato) y Amplitude (tremolo) independientes  
-- **Control Auténtico**: Rate 0-99 (0.062Hz-20Hz), Delay 0-99 (0-5 segundos)
-- **Profundidades**: Pitch/Amp Depth 0-99 con escalado musical auténtico
-- **Key Sync**: Reinicio opcional del LFO en cada nota
-- **Integración MIDI**: Mod Wheel controla intensidad del efecto (0-100%)
+### NEW Complete LFO System
+- **6 Waveforms**: Triangle, Sine, Square, Saw Up/Down, Sample & Hold
+- **Dual Modulation**: Independent Pitch (vibrato) and Amplitude (tremolo)
+- **Authentic Control**: Rate 0-99 (0.062Hz-20Hz), Delay 0-99 (0-5 seconds)
+- **Depths**: Pitch/Amp Depth 0-99 with authentic musical scaling
+- **Key Sync**: Optional LFO restart on each note
+- **MIDI Integration**: Mod Wheel controls effect intensity (0-100%)
 
-## Instalación
+## Installation
 
 ```bash
-# Clonar el repositorio
+# Clone the repository
 git clone https://github.com/yourusername/synth-fm-rs.git
 cd synth-fm-rs
 
-# Compilar en modo release para rendimiento óptimo
+# Compile in release mode for optimal performance
 cargo build --release
 
-# Ejecutar el emulador
+# Run the emulator
 cargo run --release
 ```
 
-## Uso
+## Usage
 
-### Controles de Teclado
-- **Z-M**: Octava inferior (C-B)
-- **Q-U**: Octava superior (C-B)
-- **↑↓**: Cambiar octava
-- **Espacio**: Panic (detener todas las notas)
+### Keyboard Controls
+- **Z-M**: Lower octave (C-B)
+- **Q-U**: Upper octave (C-B)
+- **↑↓**: Change octave
+- **Space**: Panic (stop all notes)
 
-### Operación del DX7
+### DX7 Operation
 
-#### Modos de Interfaz
-- **VOICE Mode**: Selección y carga de presets
-- **OPERATOR Mode**: Edición detallada de operadores individuales y selección de algoritmos FM
-- **🆕 LFO Mode**: Control completo del oscilador de baja frecuencia
+#### Interface Modes
+- **VOICE Mode**: Preset selection and loading
+- **OPERATOR Mode**: Detailed editing of individual operators and FM algorithm selection
+- **NEW LFO Mode**: Complete low frequency oscillator control
 
-**Nota**: El control de algoritmos ahora se encuentra integrado en el modo OPERATOR para un flujo de trabajo más eficiente.
+**Note**: Algorithm control is now integrated into OPERATOR mode for a more efficient workflow.
 
-#### Flujo de Trabajo
-1. **Cargar un Preset**: En modo VOICE, selecciona un preset de la biblioteca
-2. **Ajustar Algoritmo y Operadores**: En modo OPERATOR, selecciona algoritmo FM en la parte superior y edita operadores 1-6
-3. **🆕 Configurar LFO**: En modo LFO, ajusta modulación y efectos expresivos
-4. **Aplicar Voice Init**: Usa el botón VOICE INIT para resetear a sonido básico
+#### Workflow
+1. **Load a Preset**: In VOICE mode, select a preset from the library
+2. **Adjust Algorithm and Operators**: In OPERATOR mode, select FM algorithm at the top and edit operators 1-6
+3. **NEW Configure LFO**: In LFO mode, adjust modulation and expressive effects
+4. **Apply Voice Init**: Use the VOICE INIT button to reset to basic sound
 
-#### 🆕 Uso del LFO
-1. **Acceder al LFO**: Presiona el botón **LFO** en la interfaz principal
-2. **Configurar Timing**:
-   - **Rate**: Velocidad del LFO (0-99, ~0.062-20Hz)
-   - **Delay**: Tiempo antes de que inicie el LFO (0-99, 0-5 segundos)
-3. **Configurar Modulación**:
-   - **Pitch Depth**: Cantidad de vibrato (0-99)
-   - **Amp Depth**: Cantidad de tremolo (0-99)
-   - **Waveform**: Selecciona entre 6 formas de onda
-   - **Key Sync**: Reinicia LFO con cada nota nueva
-4. **Control en Tiempo Real**: Mueve el **Mod Wheel** de tu teclado MIDI para controlar la intensidad del efecto
+#### NEW LFO Usage
+1. **Access LFO**: Press the **LFO** button on the main interface
+2. **Configure Timing**:
+   - **Rate**: LFO speed (0-99, ~0.062-20Hz)
+   - **Delay**: Time before LFO starts (0-99, 0-5 seconds)
+3. **Configure Modulation**:
+   - **Pitch Depth**: Amount of vibrato (0-99)
+   - **Amp Depth**: Amount of tremolo (0-99)
+   - **Waveform**: Select from 6 waveforms
+   - **Key Sync**: Restart LFO with each new note
+4. **Real-Time Control**: Move the **Mod Wheel** on your MIDI keyboard to control effect intensity
 
-#### Parámetros por Operador
-- **🆕 Frequency Ratio**: Valores discretos DX7 auténticos (0.5, 1.0, 2.0-31.0)
-- **Output Level**: Volumen de salida (0-99)
-- **Detune**: Desafinación fina (-7 a +7)
-- **🆕 Feedback**: Control dinámico mostrado según algoritmo seleccionado
-- **Envelope**: 4 etapas Rate/Level para control dinámico
+#### Parameters per Operator
+- **NEW Frequency Ratio**: Authentic discrete DX7 values (0.5, 1.0, 2.0-31.0)
+- **Output Level**: Output volume (0-99)
+- **Detune**: Fine detuning (-7 to +7)
+- **NEW Feedback**: Dynamic control displayed according to selected algorithm
+- **Envelope**: 4-stage Rate/Level for dynamic control
 
-### Algoritmos FM
-El DX7 incluye 32 algoritmos que definen cómo se conectan los 6 operadores:
-- **Algoritmo 1**: Stack completo (6→5→4→3→2→1)
-- **Algoritmo 32**: 6 operadores en paralelo (síntesis aditiva)
-- Y 30 configuraciones intermedias para todo tipo de sonidos
+### FM Algorithms
+The DX7 includes 32 algorithms that define how the 6 operators connect:
+- **Algorithm 1**: Full stack (6→5→4→3→2→1)
+- **Algorithm 32**: 6 operators in parallel (additive synthesis)
+- And 30 intermediate configurations for all types of sounds
 
-## Arquitectura Técnica
+## Technical Architecture
 
-### Motor de Audio
-- **Sample Rate**: 44.1kHz/48kHz adaptativo
+### Audio Engine
+- **Sample Rate**: 44.1kHz/48kHz adaptive
 - **Backend**: CPAL (Cross-Platform Audio Library)
-- **Procesamiento**: Lock-free con Arc<Mutex> para actualizaciones
-- **Latencia**: Buffer optimizado para tiempo real
-- **🚀 Optimizaciones**: Sistema de lookup tables para rendimiento crítico
+- **Processing**: Lock-free with Arc<Mutex> for updates
+- **Latency**: Buffer optimized for real-time
+- **Performance Optimizations**: Lookup table system for critical performance
 
-### 🚀 Optimizaciones de Rendimiento
-- **Tabla de Senos (4096 entradas)**: Interpolación cúbica para LFO y operadores
-- **Cache Exponencial (256 entradas)**: Envolventes y rate calculations optimizadas
-- **Frecuencias MIDI Pre-calculadas**: 128 notas sin cálculos de potencia en tiempo real
-- **Escalado de Voces**: Tabla de factores sqrt() para polifonía (0-16 voces)
-- **Cache de Rate LFO**: Evita recálculos exponenciales en modulación
-- **Mejora Total**: 10-100x más rápido que cálculos matemáticos directos
+### Performance Optimizations
+- **Sine Table (4096 entries)**: Cubic interpolation for LFO and operators
+- **Exponential Cache (256 entries)**: Optimized envelopes and rate calculations
+- **Pre-calculated MIDI Frequencies**: 128 notes without real-time power calculations
+- **Voice Scaling**: Table of sqrt() factors for polyphony (0-16 voices)
+- **LFO Rate Cache**: Avoids exponential recalculations in modulation
+- **Total Improvement**: 10-100x faster than direct mathematical calculations
 
-### Síntesis FM
-- Implementación auténtica de los algoritmos del DX7
-- Envolventes de 4 etapas con curvas exponenciales
-- Feedback del operador 6 para auto-modulación
-- **Portamento**: Interpolación exponencial en modo MONO con transiciones suaves
-- **Pitch Bend**: Aplicado con rango configurable
-- **Voice Stealing**: Algoritmo inteligente para polifonía
-- **Key Scaling**: Envolventes y niveles sensibles a la posición del teclado
-- **Velocity Sensitivity**: Respuesta de velocidad individual por operador
+### FM Synthesis
+- Authentic implementation of DX7 algorithms
+- 4-stage envelopes with exponential curves
+- Operator 6 feedback for self-modulation
+- **Portamento**: Exponential interpolation in MONO mode with smooth transitions
+- **Pitch Bend**: Applied with configurable range
+- **Voice Stealing**: Intelligent algorithm for polyphony
+- **Key Scaling**: Envelopes and levels sensitive to keyboard position
+- **Velocity Sensitivity**: Individual velocity response per operator
 
-### 🎯 Fidelidad al DX7 Original (95-98%)
-- **Master Tune**: Rango exacto ±150 cents
-- **Algoritmos**: 32 configuraciones auténticas con validación completa
-- **🆕 Feedback Auténtico**: Control dinámico basado en algoritmo seleccionado
-- **🆕 Frequency Ratios**: Valores discretos DX7 (0.5, 1.0, 2.0-31.0) con cuantización
-- **Envolventes**: Comportamiento Rate/Level original con key scaling
-- **🆕 LFO Global**: Implementación auténtica con 6 formas de onda DX7
-- **🆕 Mod Wheel**: Integración MIDI CC1 exacta como el original
-- **🆕 Curvas Exponenciales**: Rate mapping 0.062Hz-20Hz auténtico
-- **🆕 Portamento Musical**: Curva exponencial auténtica (5ms-2s) en modo MONO
-- **Visualización**: Diagramas de algoritmos con layout column-centric optimizado
-- **🚀 Rendimiento**: Optimizaciones 10-100x más rápidas que cálculos directos
-- **Transiciones**: Mono mode sin artifacts (mejora sobre el original)
+### Original DX7 Fidelity (95-98%)
+- **Master Tune**: Exact range ±150 cents
+- **Algorithms**: 32 authentic configurations with complete validation
+- **NEW Authentic Feedback**: Dynamic control based on selected algorithm
+- **NEW Frequency Ratios**: Discrete DX7 values (0.5, 1.0, 2.0-31.0) with quantization
+- **Envelopes**: Original Rate/Level behavior with key scaling
+- **NEW Global LFO**: Authentic implementation with 6 DX7 waveforms
+- **NEW Mod Wheel**: Exact MIDI CC1 integration like the original
+- **NEW Exponential Curves**: Authentic 0.062Hz-20Hz rate mapping
+- **NEW Musical Portamento**: Authentic exponential curve (5ms-2s) in MONO mode
+- **Visualization**: Algorithm diagrams with optimized column-centric layout
+- **Performance**: Optimizations 10-100x faster than direct calculations
+- **Transitions**: Mono mode without artifacts (improvement over original)
 
-## Desarrollo
+## Development
 
-### Comandos de Desarrollo
+### Development Commands
 ```bash
-# Compilar y ejecutar
-cargo build --release         # Build optimizado
-cargo run --release           # Ejecutar el emulador
-RUST_LOG=debug cargo run      # Ejecutar con debug logging
+# Build and run
+cargo build --release         # Optimized build
+cargo run --release           # Run the emulator
+RUST_LOG=debug cargo run      # Run with debug logging
 
-# Calidad de código
-cargo fmt                     # Formatear código
-cargo clippy                  # Ejecutar linter
-cargo clippy -- -D warnings   # Fallar en advertencias
-cargo check                   # Verificación sintáctica rápida
+# Code quality
+cargo fmt                     # Format code
+cargo clippy                  # Run linter
+cargo clippy -- -D warnings   # Fail on warnings
+cargo check                   # Quick syntax check
 ```
 
-### Arquitectura del Sistema
-El emulador utiliza una **arquitectura multi-thread** con estado compartido:
-- **Thread GUI**: Interfaz egui y interacción de usuario
-- **Thread Audio**: Procesamiento en tiempo real (CPAL callback)  
-- **Thread MIDI**: Manejo de entrada MIDI
-- **Estado compartido**: `Arc<Mutex<FmSynthesizer>>` para sincronización
+### System Architecture
+The emulator uses a **multi-thread architecture** with shared state:
+- **GUI Thread**: egui interface and user interaction
+- **Audio Thread**: Real-time processing (CPAL callback)
+- **MIDI Thread**: MIDI input handling
+- **Shared state**: `Arc<Mutex<FmSynthesizer>>` for synchronization
 
-### Sistema de Algoritmos
-Los diagramas visuales utilizan un **layout column-centric** donde:
-- Cada carrier crea su propia columna vertical
-- Los moduladores se apilan sobre sus targets
-- Los feedback loops aparecen como líneas verticales limpias
-- Centrado automático en canvas de 400x280px
+### Algorithm System
+Visual diagrams use a **column-centric layout** where:
+- Each carrier creates its own vertical column
+- Modulators stack above their targets
+- Feedback loops appear as clean vertical lines
+- Automatic centering in 400x280px canvas
 
-## Licencia
+## License
 
-Proyecto de código abierto bajo licencia MIT.
+Open source project under MIT license.
