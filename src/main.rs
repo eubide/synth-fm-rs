@@ -5,6 +5,7 @@ use std::time::Duration;
 mod algorithms;
 mod audio_engine;
 mod dx7_frequency;
+mod effects;
 mod envelope;
 mod fm_synth;
 mod gui;
@@ -62,12 +63,12 @@ fn main() -> Result<(), eframe::Error> {
 
     let _midi_handler = match MidiHandler::new(synth.clone()) {
         Ok(handler) => {
-            println!("MIDI input initialized successfully");
+            log::info!("MIDI input initialized successfully");
             Some(handler)
         }
         Err(e) => {
-            println!("Failed to initialize MIDI input: {}", e);
-            println!("Continuing without MIDI support...");
+            log::warn!("Failed to initialize MIDI input: {}", e);
+            log::info!("Continuing without MIDI support...");
             None
         }
     };

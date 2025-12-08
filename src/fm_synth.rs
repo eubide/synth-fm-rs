@@ -1,4 +1,5 @@
 use crate::algorithms;
+use crate::effects::EffectsChain;
 use crate::lfo::LFO;
 use crate::lock_free::LockFreeSynth;
 use crate::operator::Operator;
@@ -14,14 +15,14 @@ pub struct Voice {
     pub frequency: f32,
     pub velocity: f32,
     pub active: bool,
-    pub release_time: f32,
     pub current_frequency: f32, // For portamento
     pub target_frequency: f32,  // For portamento
     sample_rate: f32,
     // Voice stealing fade state
     fade_state: VoiceFadeState,
-    fade_gain: f32, // 0.0 to 1.0 for fade in/out
-    fade_rate: f32, // Rate per sample
+    fade_gain: f32,  // 0.0 to 1.0 for fade in/out
+    fade_rate: f32,  // Rate per sample
+    note_on_id: u64, // Counter value when note was triggered (lower = older)
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -66,13 +67,13 @@ impl Voice {
             frequency: 0.0,
             velocity: 0.0,
             active: false,
-            release_time: 0.0,
             current_frequency: 0.0,
             target_frequency: 0.0,
             sample_rate,
             fade_state: VoiceFadeState::Normal,
             fade_gain: 1.0,
             fade_rate: 0.001, // Fast fade: ~2ms @ 44.1kHz
+            note_on_id: 0,
         }
     }
 
@@ -125,7 +126,6 @@ impl Voice {
         for op in &mut self.operators {
             op.release();
         }
-        self.release_time = 0.0;
     }
 
     pub fn stop(&mut self) {
@@ -230,6 +230,8 @@ pub struct FmSynthesizer {
     pub preset_name: String,
     pub lfo: LFO,
     pub lock_free_params: LockFreeSynth,
+    note_counter: u64, // Global counter for voice stealing (older = lower value)
+    pub effects: EffectsChain,
 }
 
 impl FmSynthesizer {
@@ -249,12 +251,17 @@ impl FmSynthesizer {
             preset_name: "Init Voice".to_string(),
             lfo: LFO::new(sample_rate),
             lock_free_params,
+            note_counter: 0,
+            effects: EffectsChain::new(sample_rate),
         }
     }
 
     pub fn note_on(&mut self, note: u8, velocity: u8) {
         let velocity_f = velocity as f32 / 127.0;
         let params = self.lock_free_params.get_global_params();
+
+        // Increment note counter for voice stealing tracking
+        self.note_counter = self.note_counter.wrapping_add(1);
 
         // Trigger LFO if key sync is enabled
         self.lfo.trigger();
@@ -271,42 +278,44 @@ impl FmSynthesizer {
                 params.master_tune,
                 params.portamento_enable,
             );
+            self.voices[0].note_on_id = self.note_counter;
             self.held_notes.insert(note, 0);
         } else {
-            // Poly mode: original logic
+            // Poly mode: check if note is already playing
             if let Some(&voice_idx) = self.held_notes.get(&note) {
                 self.voices[voice_idx].trigger(
                     note,
                     velocity_f,
                     params.master_tune,
-                    params.portamento_enable && params.mono_mode,
+                    false, // No portamento in poly mode
                 );
+                self.voices[voice_idx].note_on_id = self.note_counter;
                 return;
             }
 
+            // Find an inactive voice
             for (i, voice) in self.voices.iter_mut().enumerate() {
                 if !voice.active {
-                    voice.trigger(note, velocity_f, params.master_tune, false); // No portamento in poly mode
+                    voice.trigger(note, velocity_f, params.master_tune, false);
+                    voice.note_on_id = self.note_counter;
                     self.held_notes.insert(note, i);
                     return;
                 }
             }
 
+            // Voice stealing: find the oldest voice (lowest note_on_id)
             let oldest_voice = self
                 .voices
                 .iter()
                 .enumerate()
-                .max_by(|a, b| {
-                    a.1.release_time
-                        .partial_cmp(&b.1.release_time)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                })
+                .min_by_key(|(_, v)| v.note_on_id)
                 .map(|(i, _)| i)
                 .unwrap_or(0);
 
             // Voice stealing with fade-out
             self.voices[oldest_voice].steal_voice();
             self.voices[oldest_voice].trigger(note, velocity_f, params.master_tune, false);
+            self.voices[oldest_voice].note_on_id = self.note_counter;
 
             self.held_notes.retain(|_, &mut v| v != oldest_voice);
             self.held_notes.insert(note, oldest_voice);
@@ -314,7 +323,6 @@ impl FmSynthesizer {
     }
 
     pub fn note_off(&mut self, note: u8) {
-        // Debug: println!("Note OFF: {}", note);
         if let Some(&voice_idx) = self.held_notes.get(&note) {
             if !self.lock_free_params.get_sustain_pedal() {
                 self.voices[voice_idx].release();
@@ -372,6 +380,17 @@ impl FmSynthesizer {
 
         // Apply final soft limiting
         self.soft_limit(scaled_output)
+    }
+
+    /// Process audio with effects, returns stereo pair (left, right)
+    pub fn process_stereo(&mut self) -> (f32, f32) {
+        let mono = self.process();
+
+        // Process through effects chain
+        let (left, right) = self.effects.process(mono);
+
+        // Apply soft limiting to both channels
+        (self.soft_limit(left), self.soft_limit(right))
     }
 
     pub fn set_algorithm(&mut self, algorithm: u8) {

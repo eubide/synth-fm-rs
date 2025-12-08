@@ -61,12 +61,12 @@ impl AudioEngine {
                 synthesizer,
                 underrun_counter.clone(),
             ),
-            _ => panic!("Unsupported sample format"),
+            format => panic!("Unsupported sample format: {:?}", format),
         };
 
         stream.play().expect("Failed to start audio stream");
 
-        println!(
+        log::info!(
             "Audio engine initialized with {} Hz sample rate",
             sample_rate
         );
@@ -96,13 +96,19 @@ impl AudioEngine {
                     match synthesizer.try_lock() {
                         Ok(mut synth) => {
                             for frame in data.chunks_mut(channels) {
-                                let sample = synth.process();
-                                // Apply better soft limiting to prevent clipping
-                                let limited_sample = Self::soft_limit(sample);
-                                let value = T::from_sample(limited_sample);
+                                // Process with effects (stereo output)
+                                let (left, right) = synth.process_stereo();
+                                // Apply soft limiting
+                                let left = Self::soft_limit(left);
+                                let right = Self::soft_limit(right);
 
-                                for channel_sample in frame.iter_mut() {
-                                    *channel_sample = value;
+                                // Write stereo to output
+                                if channels >= 2 {
+                                    frame[0] = T::from_sample(left);
+                                    frame[1] = T::from_sample(right);
+                                } else {
+                                    // Mono output: mix to mono
+                                    frame[0] = T::from_sample((left + right) * 0.5);
                                 }
                             }
                         }
@@ -110,7 +116,7 @@ impl AudioEngine {
                             // Reduced underrun logging frequency for less console spam
                             let underrun_count = underrun_counter.fetch_add(1, Ordering::Relaxed);
                             if underrun_count % 500 == 0 {
-                                eprintln!(
+                                log::warn!(
                                     "AUDIO WARNING: {} buffer underruns detected",
                                     underrun_count
                                 );
@@ -126,7 +132,7 @@ impl AudioEngine {
                         }
                     }
                 },
-                |err| eprintln!("Audio stream error: {}", err),
+                |err| log::error!("Audio stream error: {}", err),
                 None,
             )
             .expect("Failed to build output stream")

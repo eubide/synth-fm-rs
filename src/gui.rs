@@ -24,6 +24,7 @@ enum DisplayMode {
     Voice,
     Operator,
     LFO,
+    Effects,
 }
 
 impl Dx7App {
@@ -118,6 +119,28 @@ impl Dx7App {
                             )
                         } else {
                             "LFO: ERROR".to_string()
+                        }
+                    }
+                    DisplayMode::Effects => {
+                        if let Ok(synth) = self.lock_synth() {
+                            let chorus = if synth.effects.chorus.enabled {
+                                "CHO"
+                            } else {
+                                "-"
+                            };
+                            let delay = if synth.effects.delay.enabled {
+                                "DLY"
+                            } else {
+                                "-"
+                            };
+                            let reverb = if synth.effects.reverb.enabled {
+                                "REV"
+                            } else {
+                                "-"
+                            };
+                            format!("EFFECTS: {} {} {}", chorus, delay, reverb)
+                        } else {
+                            "EFFECTS: ERROR".to_string()
                         }
                     }
                 };
@@ -585,6 +608,19 @@ impl Dx7App {
                 if ui.add(lfo_button).clicked() {
                     self.display_mode = DisplayMode::LFO;
                     self.display_text = "LFO CONTROLS".to_string();
+                }
+
+                let effects_button = if self.display_mode == DisplayMode::Effects {
+                    egui::Button::new("EFFECTS")
+                        .fill(egui::Color32::from_rgb(180, 200, 220))
+                        .min_size(button_size)
+                } else {
+                    egui::Button::new("EFFECTS").min_size(button_size)
+                };
+
+                if ui.add(effects_button).clicked() {
+                    self.display_mode = DisplayMode::Effects;
+                    self.display_text = "EFFECTS".to_string();
                 }
 
                 // Only show operator buttons when in Operator mode
@@ -1175,6 +1211,9 @@ impl eframe::App for Dx7App {
                 DisplayMode::LFO => {
                     self.draw_lfo_panel(ui);
                 }
+                DisplayMode::Effects => {
+                    self.draw_effects_panel(ui);
+                }
             }
 
             ui.separator();
@@ -1404,6 +1443,187 @@ impl Dx7App {
                         }
                     });
                 }
+            });
+        });
+    }
+
+    fn draw_effects_panel(&mut self, ui: &mut egui::Ui) {
+        ui.group(|ui| {
+            ui.vertical(|ui| {
+                ui.label("EFFECTS");
+                ui.separator();
+
+                ui.columns(3, |columns| {
+                    // Column 1: CHORUS
+                    columns[0].group(|ui| {
+                        ui.vertical(|ui| {
+                            ui.label(egui::RichText::new("CHORUS").strong());
+
+                            if let Ok(mut synth) = self.lock_synth() {
+                                let chorus = &mut synth.effects.chorus;
+
+                                // Enable toggle
+                                ui.horizontal(|ui| {
+                                    ui.label("Enable:");
+                                    ui.checkbox(&mut chorus.enabled, "");
+                                });
+
+                                ui.add_enabled_ui(chorus.enabled, |ui| {
+                                    // Rate
+                                    ui.horizontal(|ui| {
+                                        ui.label("Rate:");
+                                        ui.add(
+                                            egui::Slider::new(&mut chorus.rate, 0.1..=5.0)
+                                                .suffix(" Hz")
+                                                .show_value(true),
+                                        );
+                                    });
+
+                                    // Depth
+                                    ui.horizontal(|ui| {
+                                        ui.label("Depth:");
+                                        ui.add(
+                                            egui::Slider::new(&mut chorus.depth, 0.0..=10.0)
+                                                .suffix(" ms")
+                                                .show_value(true),
+                                        );
+                                    });
+
+                                    // Mix
+                                    ui.horizontal(|ui| {
+                                        ui.label("Mix:");
+                                        ui.add(
+                                            egui::Slider::new(&mut chorus.mix, 0.0..=1.0)
+                                                .show_value(true),
+                                        );
+                                    });
+
+                                    // Feedback
+                                    ui.horizontal(|ui| {
+                                        ui.label("Feedback:");
+                                        ui.add(
+                                            egui::Slider::new(&mut chorus.feedback, 0.0..=0.7)
+                                                .show_value(true),
+                                        );
+                                    });
+                                });
+                            }
+                        });
+                    });
+
+                    // Column 2: DELAY
+                    columns[1].group(|ui| {
+                        ui.vertical(|ui| {
+                            ui.label(egui::RichText::new("DELAY").strong());
+
+                            if let Ok(mut synth) = self.lock_synth() {
+                                let delay = &mut synth.effects.delay;
+
+                                // Enable toggle
+                                ui.horizontal(|ui| {
+                                    ui.label("Enable:");
+                                    ui.checkbox(&mut delay.enabled, "");
+                                });
+
+                                ui.add_enabled_ui(delay.enabled, |ui| {
+                                    // Time
+                                    ui.horizontal(|ui| {
+                                        ui.label("Time:");
+                                        ui.add(
+                                            egui::Slider::new(&mut delay.time_ms, 0.0..=1000.0)
+                                                .suffix(" ms")
+                                                .show_value(true),
+                                        );
+                                    });
+
+                                    // Feedback
+                                    ui.horizontal(|ui| {
+                                        ui.label("Feedback:");
+                                        ui.add(
+                                            egui::Slider::new(&mut delay.feedback, 0.0..=0.9)
+                                                .show_value(true),
+                                        );
+                                    });
+
+                                    // Mix
+                                    ui.horizontal(|ui| {
+                                        ui.label("Mix:");
+                                        ui.add(
+                                            egui::Slider::new(&mut delay.mix, 0.0..=1.0)
+                                                .show_value(true),
+                                        );
+                                    });
+
+                                    // Ping-pong
+                                    ui.horizontal(|ui| {
+                                        ui.label("Ping-Pong:");
+                                        ui.checkbox(&mut delay.ping_pong, "");
+                                    });
+                                });
+                            }
+                        });
+                    });
+
+                    // Column 3: REVERB
+                    columns[2].group(|ui| {
+                        ui.vertical(|ui| {
+                            ui.label(egui::RichText::new("REVERB").strong());
+
+                            if let Ok(mut synth) = self.lock_synth() {
+                                let reverb = &mut synth.effects.reverb;
+
+                                // Enable toggle
+                                ui.horizontal(|ui| {
+                                    ui.label("Enable:");
+                                    ui.checkbox(&mut reverb.enabled, "");
+                                });
+
+                                ui.add_enabled_ui(reverb.enabled, |ui| {
+                                    // Room Size
+                                    ui.horizontal(|ui| {
+                                        ui.label("Room Size:");
+                                        ui.add(
+                                            egui::Slider::new(&mut reverb.room_size, 0.0..=1.0)
+                                                .show_value(true),
+                                        );
+                                    });
+
+                                    // Damping
+                                    ui.horizontal(|ui| {
+                                        ui.label("Damping:");
+                                        ui.add(
+                                            egui::Slider::new(&mut reverb.damping, 0.0..=1.0)
+                                                .show_value(true),
+                                        );
+                                    });
+
+                                    // Mix
+                                    ui.horizontal(|ui| {
+                                        ui.label("Mix:");
+                                        ui.add(
+                                            egui::Slider::new(&mut reverb.mix, 0.0..=1.0)
+                                                .show_value(true),
+                                        );
+                                    });
+
+                                    // Width
+                                    ui.horizontal(|ui| {
+                                        ui.label("Width:");
+                                        ui.add(
+                                            egui::Slider::new(&mut reverb.width, 0.0..=1.0)
+                                                .show_value(true),
+                                        );
+                                    });
+                                });
+                            }
+                        });
+                    });
+                });
+
+                ui.separator();
+                ui.horizontal(|ui| {
+                    ui.label("Signal chain: Input -> Chorus -> Delay -> Reverb -> Output");
+                });
             });
         });
     }
