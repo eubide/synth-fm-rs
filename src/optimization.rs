@@ -7,6 +7,8 @@ pub struct OptimizationTables {
     exp_table: [f32; 256],
     midi_frequencies: [f32; 128],
     voice_scale_table: [f32; 17], // For voice counts 0-16
+    dx7_level_table: [f32; 100],  // Authentic DX7 level-to-amplitude
+    dx7_rate_table: [f32; 100],   // Authentic DX7 rate-to-time
 }
 
 impl OptimizationTables {
@@ -16,12 +18,16 @@ impl OptimizationTables {
             exp_table: [0.0; 256],
             midi_frequencies: [0.0; 128],
             voice_scale_table: [0.0; 17],
+            dx7_level_table: [0.0; 100],
+            dx7_rate_table: [0.0; 100],
         };
 
         tables.init_sine_table();
         tables.init_exp_table();
         tables.init_midi_frequencies();
         tables.init_voice_scale_table();
+        tables.init_dx7_level_table();
+        tables.init_dx7_rate_table();
 
         tables
     }
@@ -65,6 +71,41 @@ impl OptimizationTables {
             // DX7-authentic scaling: preserve more headroom for crystalline sound
             let voice_count_f = i as f32;
             self.voice_scale_table[i] = (1.0 / voice_count_f.sqrt()).min(1.0);
+        }
+    }
+
+    // Authentic DX7 level-to-amplitude table
+    // DX7 uses ~0.75 dB per level step, with level 99 = 0 dB (max)
+    fn init_dx7_level_table(&mut self) {
+        for level in 0..100 {
+            if level == 0 {
+                self.dx7_level_table[level] = 0.0;
+            } else {
+                // DX7 formula: each level step = ~0.75 dB
+                // amplitude = 10^((level - 99) * 0.75 / 20)
+                // Simplified: amplitude = 2^((level - 99) / 8)
+                let db = (level as f32 - 99.0) * 0.75;
+                self.dx7_level_table[level] = 10.0_f32.powf(db / 20.0);
+            }
+        }
+    }
+
+    // Authentic DX7 rate-to-time table
+    // Rate 99 = fastest (~8ms), Rate 0 = slowest (~41 seconds)
+    // The relationship is exponential
+    fn init_dx7_rate_table(&mut self) {
+        for rate in 0..100 {
+            if rate == 0 {
+                // Rate 0: very slow, approximately 41 seconds for full transition
+                self.dx7_rate_table[rate] = 41.0;
+            } else {
+                // Exponential relationship: rate 99 = ~8ms, rate 0 = ~41s
+                // time_ms = 41000 * 2^(-rate * 12 / 99)
+                // This gives approximately 12 doublings of speed across 99 levels
+                let exponent = -(rate as f32) * 12.0 / 99.0;
+                let time_seconds = 41.0 * 2.0_f32.powf(exponent);
+                self.dx7_rate_table[rate] = time_seconds.max(0.008); // Min 8ms
+            }
         }
     }
 
@@ -119,25 +160,26 @@ impl OptimizationTables {
         }
     }
 
-    // Convert DX7 level (0-99) to linear amplitude with exponential curve
+    // Convert DX7 level (0-99) to linear amplitude using authentic table
     pub fn dx7_level_to_amplitude(&self, level: u8) -> f32 {
-        if level == 0 {
-            0.0
-        } else {
-            // DX7 uses exponential level scaling
-            let normalized = level as f32 / 99.0;
-            self.fast_exp(normalized)
-        }
+        let idx = (level as usize).min(99);
+        self.dx7_level_table[idx]
     }
 
-    // Convert DX7 rate (0-99) to time multiplier
+    // Convert DX7 rate (0-99) to time in seconds using authentic table
+    pub fn dx7_rate_to_time(&self, rate: u8) -> f32 {
+        let idx = (rate as usize).min(99);
+        self.dx7_rate_table[idx]
+    }
+
+    // Convert DX7 rate (0-99) to rate multiplier for envelope processing
+    // Higher rate = faster envelope = higher multiplier
     pub fn dx7_rate_to_multiplier(&self, rate: u8) -> f32 {
-        if rate == 0 {
-            0.0001 // Very slow
+        let time = self.dx7_rate_to_time(rate);
+        if time > 0.0 {
+            1.0 / time // Convert time to rate: faster time = higher rate
         } else {
-            // Exponential rate scaling: higher rate = faster envelope
-            let normalized = rate as f32 / 99.0;
-            0.001 + self.fast_exp(normalized) * 10.0 // 0.001 to ~10.0 range
+            100.0 // Max rate
         }
     }
 
