@@ -627,3 +627,181 @@ pub fn get_algorithm_name(algorithm_number: u8) -> &'static str {
         _ => "1: Two Stacks",
     }
 }
+
+/// Algorithm structure information for visualization
+#[derive(Debug, Clone)]
+pub struct AlgorithmInfo {
+    /// Which operators are carriers (1-indexed)
+    pub carriers: Vec<u8>,
+    /// Connections: (from, to) where 'from' modulates 'to' (1-indexed)
+    pub connections: Vec<(u8, u8)>,
+    /// Which operator has self-feedback (1-indexed), 0 if none
+    pub feedback_op: u8,
+}
+
+/// Get algorithm structure for visualization
+pub fn get_algorithm_info(algorithm_number: u8) -> AlgorithmInfo {
+    match algorithm_number {
+        1 => AlgorithmInfo {
+            carriers: vec![1, 3],
+            connections: vec![(2, 1), (4, 3), (5, 4), (6, 5)],
+            feedback_op: 6,
+        },
+        2 => AlgorithmInfo {
+            carriers: vec![1, 3],
+            connections: vec![(2, 1), (4, 3), (5, 4), (6, 5)],
+            feedback_op: 2,
+        },
+        3 => AlgorithmInfo {
+            carriers: vec![1, 4],
+            connections: vec![(2, 1), (3, 2), (5, 4), (6, 5)],
+            feedback_op: 6,
+        },
+        4 => AlgorithmInfo {
+            carriers: vec![1, 4],
+            connections: vec![(2, 1), (3, 2), (5, 4), (6, 5)],
+            feedback_op: 6,
+        },
+        5 => AlgorithmInfo {
+            carriers: vec![1, 3, 4],
+            connections: vec![(2, 1), (5, 3), (6, 2)],
+            feedback_op: 6,
+        },
+        6 => AlgorithmInfo {
+            carriers: vec![1, 3, 4],
+            connections: vec![(2, 1), (5, 3), (5, 6), (6, 2)],
+            feedback_op: 6,
+        },
+        7 => AlgorithmInfo {
+            carriers: vec![1, 3],
+            connections: vec![(2, 1), (4, 3), (5, 3), (6, 5)],
+            feedback_op: 6,
+        },
+        8 => AlgorithmInfo {
+            carriers: vec![1, 3],
+            connections: vec![(2, 1), (4, 3), (5, 3), (6, 5)],
+            feedback_op: 4,
+        },
+        9 => AlgorithmInfo {
+            carriers: vec![1, 3],
+            connections: vec![(2, 1), (4, 3), (5, 3), (6, 5)],
+            feedback_op: 2,
+        },
+        10 => AlgorithmInfo {
+            carriers: vec![1, 4],
+            connections: vec![(2, 1), (3, 2), (5, 4), (6, 4)],
+            feedback_op: 3,
+        },
+        11 => AlgorithmInfo {
+            carriers: vec![1, 4],
+            connections: vec![(2, 1), (3, 2), (5, 4), (6, 4)],
+            feedback_op: 6,
+        },
+        12 => AlgorithmInfo {
+            carriers: vec![1, 3],
+            connections: vec![(2, 1), (4, 3), (5, 3), (6, 3)],
+            feedback_op: 2,
+        },
+        13 => AlgorithmInfo {
+            carriers: vec![1, 3],
+            connections: vec![(2, 1), (4, 3), (5, 3), (6, 3)],
+            feedback_op: 6,
+        },
+        14 => AlgorithmInfo {
+            carriers: vec![1, 3],
+            connections: vec![(2, 1), (4, 3), (5, 4), (6, 4)],
+            feedback_op: 6,
+        },
+        15 => AlgorithmInfo {
+            carriers: vec![1, 3],
+            connections: vec![(2, 1), (4, 3), (5, 4), (6, 4)],
+            feedback_op: 2,
+        },
+        16 => AlgorithmInfo {
+            carriers: vec![1],
+            connections: vec![(2, 1), (3, 1), (4, 3), (5, 1), (6, 5)],
+            feedback_op: 6,
+        },
+        17 => AlgorithmInfo {
+            carriers: vec![1],
+            connections: vec![(2, 1), (3, 1), (4, 3), (5, 1), (6, 5)],
+            feedback_op: 2,
+        },
+        18 => AlgorithmInfo {
+            carriers: vec![1],
+            connections: vec![(2, 1), (3, 1), (4, 1), (5, 4), (6, 5)],
+            feedback_op: 3,
+        },
+        19 => AlgorithmInfo {
+            carriers: vec![1, 4, 5],
+            connections: vec![(2, 1), (3, 1), (5, 4), (6, 5)],
+            feedback_op: 3,
+        },
+        20 => AlgorithmInfo {
+            carriers: vec![1, 2, 4],
+            connections: vec![(3, 1), (3, 2), (5, 4), (6, 4)],
+            feedback_op: 3,
+        },
+        21 => AlgorithmInfo {
+            carriers: vec![1, 2, 4, 5],
+            connections: vec![(3, 1), (3, 2), (6, 4), (6, 5)],
+            feedback_op: 3,
+        },
+        22 => AlgorithmInfo {
+            carriers: vec![1, 3, 4, 5],
+            connections: vec![(2, 1), (6, 3), (6, 4), (6, 5)],
+            feedback_op: 6,
+        },
+        23 => AlgorithmInfo {
+            carriers: vec![1, 2, 4, 5],
+            connections: vec![(3, 2), (6, 4), (6, 5)],
+            feedback_op: 6,
+        },
+        24 => AlgorithmInfo {
+            carriers: vec![1, 2, 3, 4, 5],
+            connections: vec![(6, 3), (6, 4), (6, 5)],
+            feedback_op: 6,
+        },
+        25 => AlgorithmInfo {
+            carriers: vec![1, 2, 3, 4, 5],
+            connections: vec![(6, 4), (6, 5)],
+            feedback_op: 6,
+        },
+        26 => AlgorithmInfo {
+            carriers: vec![1, 2, 4],
+            connections: vec![(3, 2), (5, 4), (6, 4)],
+            feedback_op: 6,
+        },
+        27 => AlgorithmInfo {
+            carriers: vec![1, 2, 4],
+            connections: vec![(3, 2), (5, 4), (6, 4)],
+            feedback_op: 3,
+        },
+        28 => AlgorithmInfo {
+            carriers: vec![1, 3, 6],
+            connections: vec![(2, 1), (4, 3), (5, 4)],
+            feedback_op: 5,
+        },
+        29 => AlgorithmInfo {
+            carriers: vec![1, 2, 3, 5],
+            connections: vec![(4, 3), (6, 5)],
+            feedback_op: 6,
+        },
+        30 => AlgorithmInfo {
+            carriers: vec![1, 2, 3, 6],
+            connections: vec![(4, 3), (5, 4)],
+            feedback_op: 5,
+        },
+        31 => AlgorithmInfo {
+            carriers: vec![1, 2, 3, 4, 5, 6],
+            connections: vec![],
+            feedback_op: 6,
+        },
+        32 => AlgorithmInfo {
+            carriers: vec![1, 2, 3, 4, 5, 6],
+            connections: vec![],
+            feedback_op: 6,
+        },
+        _ => get_algorithm_info(1),
+    }
+}

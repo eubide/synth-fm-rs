@@ -623,202 +623,6 @@ impl Dx7App {
                     self.display_mode = DisplayMode::Effects;
                     self.display_text = "EFFECTS".to_string();
                 }
-
-                // Only show operator buttons when in Operator mode
-                if self.display_mode == DisplayMode::Operator {
-                    ui.separator();
-                    ui.label("OP:");
-
-                    for i in 1..=6 {
-                        let is_selected = self.selected_operator == i - 1;
-                        let op_button_size = egui::vec2(25.0, 25.0);
-                        let button = if is_selected {
-                            egui::Button::new(&format!("{}", i))
-                                .fill(egui::Color32::from_rgb(180, 200, 220))
-                                .min_size(op_button_size)
-                        } else {
-                            egui::Button::new(&format!("{}", i)).min_size(op_button_size)
-                        };
-
-                        if ui.add(button).clicked() {
-                            self.selected_operator = i - 1;
-                            self.display_text = format!("OPERATOR {}", i);
-                        }
-                    }
-                }
-            });
-        });
-    }
-
-    fn draw_operator_panel(&mut self, ui: &mut egui::Ui) {
-        ui.group(|ui| {
-            ui.vertical(|ui| {
-                ui.label(format!("OPERATOR {}", self.selected_operator + 1));
-
-                let op_idx = self.selected_operator;
-
-                let (
-                    mut freq_ratio,
-                    mut output_level,
-                    mut detune,
-                    mut feedback,
-                    mut vel_sens,
-                    mut key_scale_lvl,
-                    mut key_scale_rt,
-                ) = {
-                    let synth = self.synthesizer.lock().unwrap();
-                    if let Some(voice) = synth.voices.first() {
-                        let op = &voice.operators[op_idx];
-                        (
-                            op.frequency_ratio,
-                            op.output_level,
-                            op.detune,
-                            op.feedback,
-                            op.velocity_sensitivity,
-                            op.key_scale_level,
-                            op.key_scale_rate,
-                        )
-                    } else {
-                        (1.0, 99.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-                    }
-                };
-
-                ui.columns(2, |columns| {
-                    columns[0].label("Frequency Ratio:");
-
-                    // Use DX7 discrete frequency ratios
-                    if columns[1]
-                        .add(
-                            egui::Slider::new(&mut freq_ratio, 0.5..=31.0)
-                                .step_by(1.0)
-                                .custom_formatter(|n, _| {
-                                    let q =
-                                        crate::dx7_frequency::quantize_frequency_ratio(n as f32);
-                                    format!("{:.2}", q)
-                                })
-                                .show_value(true),
-                        )
-                        .changed()
-                    {
-                        let quantized_value =
-                            crate::dx7_frequency::quantize_frequency_ratio(freq_ratio);
-                        self.synthesizer.lock().unwrap().set_operator_param(
-                            op_idx,
-                            "ratio",
-                            quantized_value,
-                        );
-                    }
-                });
-
-                ui.columns(2, |columns| {
-                    columns[0].label("Output Level:");
-                    if columns[1]
-                        .add(
-                            egui::Slider::new(&mut output_level, 0.0..=99.0)
-                                .integer()
-                                .show_value(true),
-                        )
-                        .changed()
-                    {
-                        self.synthesizer.lock().unwrap().set_operator_param(
-                            op_idx,
-                            "level",
-                            output_level,
-                        );
-                    }
-                });
-
-                ui.columns(2, |columns| {
-                    columns[0].label("Detune:");
-                    if columns[1]
-                        .add(
-                            egui::Slider::new(&mut detune, -7.0..=7.0)
-                                .integer()
-                                .show_value(true),
-                        )
-                        .changed()
-                    {
-                        self.synthesizer
-                            .lock()
-                            .unwrap()
-                            .set_operator_param(op_idx, "detune", detune);
-                    }
-                });
-
-                if self.operator_has_feedback(op_idx) {
-                    ui.columns(2, |columns| {
-                        columns[0].label("Feedback:");
-                        if columns[1]
-                            .add(
-                                egui::Slider::new(&mut feedback, 0.0..=7.0)
-                                    .integer()
-                                    .show_value(true),
-                            )
-                            .changed()
-                        {
-                            self.synthesizer
-                                .lock()
-                                .unwrap()
-                                .set_operator_param(op_idx, "feedback", feedback);
-                        }
-                    });
-                }
-
-                ui.separator();
-                ui.label("Sensitivity:");
-
-                ui.columns(2, |columns| {
-                    columns[0].label("Velocity Sens:");
-                    if columns[1]
-                        .add(
-                            egui::Slider::new(&mut vel_sens, 0.0..=7.0)
-                                .integer()
-                                .show_value(true),
-                        )
-                        .changed()
-                    {
-                        self.synthesizer
-                            .lock()
-                            .unwrap()
-                            .set_operator_param(op_idx, "vel_sens", vel_sens);
-                    }
-                });
-
-                ui.columns(2, |columns| {
-                    columns[0].label("Key Scale Level:");
-                    if columns[1]
-                        .add(
-                            egui::Slider::new(&mut key_scale_lvl, 0.0..=99.0)
-                                .integer()
-                                .show_value(true),
-                        )
-                        .changed()
-                    {
-                        self.synthesizer.lock().unwrap().set_operator_param(
-                            op_idx,
-                            "key_scale_level",
-                            key_scale_lvl,
-                        );
-                    }
-                });
-
-                ui.columns(2, |columns| {
-                    columns[0].label("Key Scale Rate:");
-                    if columns[1]
-                        .add(
-                            egui::Slider::new(&mut key_scale_rt, 0.0..=7.0)
-                                .integer()
-                                .show_value(true),
-                        )
-                        .changed()
-                    {
-                        self.synthesizer.lock().unwrap().set_operator_param(
-                            op_idx,
-                            "key_scale_rate",
-                            key_scale_rt,
-                        );
-                    }
-                });
             });
         });
     }
@@ -894,207 +698,6 @@ impl Dx7App {
                     ui.label("Current Voice:");
                     ui.label(egui::RichText::new(self.presets[self.selected_preset].name).strong());
                 });
-            });
-        });
-    }
-
-    fn draw_envelope_panel(&mut self, ui: &mut egui::Ui) {
-        ui.group(|ui| {
-            ui.vertical(|ui| {
-                ui.label(format!("ENVELOPE - OP{}", self.selected_operator + 1));
-
-                let op_idx = self.selected_operator;
-
-                let (
-                    mut rate1,
-                    mut rate2,
-                    mut rate3,
-                    mut rate4,
-                    mut level1,
-                    mut level2,
-                    mut level3,
-                    mut level4,
-                ) = {
-                    let synth = self.synthesizer.lock().unwrap();
-                    if let Some(voice) = synth.voices.first() {
-                        let env = &voice.operators[op_idx].envelope;
-                        (
-                            env.rate1, env.rate2, env.rate3, env.rate4, env.level1, env.level2,
-                            env.level3, env.level4,
-                        )
-                    } else {
-                        (99.0, 50.0, 35.0, 50.0, 99.0, 75.0, 50.0, 0.0)
-                    }
-                };
-
-                ui.vertical(|ui| {
-                    ui.label("RATES");
-                    ui.columns(2, |columns| {
-                        columns[0].label("Attack Rate:");
-                        if columns[1]
-                            .add(
-                                egui::Slider::new(&mut rate1, 0.0..=99.0)
-                                    .integer()
-                                    .show_value(true),
-                            )
-                            .changed()
-                        {
-                            self.synthesizer
-                                .lock()
-                                .unwrap()
-                                .set_envelope_param(op_idx, "rate1", rate1);
-                        }
-                    });
-                    ui.columns(2, |columns| {
-                        columns[0].label("Decay Rate:");
-                        if columns[1]
-                            .add(
-                                egui::Slider::new(&mut rate2, 0.0..=99.0)
-                                    .integer()
-                                    .show_value(true),
-                            )
-                            .changed()
-                        {
-                            self.synthesizer
-                                .lock()
-                                .unwrap()
-                                .set_envelope_param(op_idx, "rate2", rate2);
-                        }
-                    });
-                    ui.columns(2, |columns| {
-                        columns[0].label("Sustain Rate:");
-                        if columns[1]
-                            .add(
-                                egui::Slider::new(&mut rate3, 0.0..=99.0)
-                                    .integer()
-                                    .show_value(true),
-                            )
-                            .changed()
-                        {
-                            self.synthesizer
-                                .lock()
-                                .unwrap()
-                                .set_envelope_param(op_idx, "rate3", rate3);
-                        }
-                    });
-                    ui.columns(2, |columns| {
-                        columns[0].label("Release Rate:");
-                        if columns[1]
-                            .add(
-                                egui::Slider::new(&mut rate4, 0.0..=99.0)
-                                    .integer()
-                                    .show_value(true),
-                            )
-                            .changed()
-                        {
-                            self.synthesizer
-                                .lock()
-                                .unwrap()
-                                .set_envelope_param(op_idx, "rate4", rate4);
-                        }
-                    });
-                });
-
-                ui.vertical(|ui| {
-                    ui.label("LEVELS");
-                    ui.columns(2, |columns| {
-                        columns[0].label("Attack Level:");
-                        if columns[1]
-                            .add(
-                                egui::Slider::new(&mut level1, 0.0..=99.0)
-                                    .integer()
-                                    .show_value(true),
-                            )
-                            .changed()
-                        {
-                            self.synthesizer
-                                .lock()
-                                .unwrap()
-                                .set_envelope_param(op_idx, "level1", level1);
-                        }
-                    });
-                    ui.columns(2, |columns| {
-                        columns[0].label("Decay Level:");
-                        if columns[1]
-                            .add(
-                                egui::Slider::new(&mut level2, 0.0..=99.0)
-                                    .integer()
-                                    .show_value(true),
-                            )
-                            .changed()
-                        {
-                            self.synthesizer
-                                .lock()
-                                .unwrap()
-                                .set_envelope_param(op_idx, "level2", level2);
-                        }
-                    });
-                    ui.columns(2, |columns| {
-                        columns[0].label("Sustain Level:");
-                        if columns[1]
-                            .add(
-                                egui::Slider::new(&mut level3, 0.0..=99.0)
-                                    .integer()
-                                    .show_value(true),
-                            )
-                            .changed()
-                        {
-                            self.synthesizer
-                                .lock()
-                                .unwrap()
-                                .set_envelope_param(op_idx, "level3", level3);
-                        }
-                    });
-                    ui.columns(2, |columns| {
-                        columns[0].label("Release Level:");
-                        if columns[1]
-                            .add(
-                                egui::Slider::new(&mut level4, 0.0..=99.0)
-                                    .integer()
-                                    .show_value(true),
-                            )
-                            .changed()
-                        {
-                            self.synthesizer
-                                .lock()
-                                .unwrap()
-                                .set_envelope_param(op_idx, "level4", level4);
-                        }
-                    });
-                });
-            });
-        });
-    }
-
-    fn draw_algorithm_selector(&mut self, ui: &mut egui::Ui) {
-        ui.group(|ui| {
-            ui.vertical(|ui| {
-                ui.label("ALGORITHM");
-
-                let mut synth = self.synthesizer.lock().unwrap();
-                let current_alg = synth.get_algorithm();
-                let current_name = algorithms::get_algorithm_name(current_alg).to_string();
-
-                egui::ComboBox::from_label("")
-                    .selected_text(format!("{:02} - {}", current_alg, current_name))
-                    .show_ui(ui, |ui| {
-                        for i in 1..=32 {
-                            let alg_name = algorithms::get_algorithm_name(i).to_string();
-
-                            if ui
-                                .selectable_value(
-                                    &mut current_alg.clone(),
-                                    i,
-                                    format!("{:02} - {}", i, alg_name),
-                                )
-                                .clicked()
-                            {
-                                synth.set_algorithm(i);
-                            }
-                        }
-                    });
-
-                ui.add_space(10.0);
             });
         });
     }
@@ -1192,15 +795,18 @@ impl eframe::App for Dx7App {
                     self.draw_preset_selector(ui);
                 }
                 DisplayMode::Operator => {
-                    self.draw_algorithm_selector(ui);
-                    ui.add_space(8.0);
-
+                    // Two-column layout: Left = Algorithm + Op selector, Right = Selected Op details
                     ui.columns(2, |columns| {
+                        // LEFT COLUMN: Algorithm diagram + Operator selector strip
                         columns[0].vertical(|ui| {
-                            self.draw_operator_panel(ui);
+                            self.draw_algorithm_diagram_compact(ui);
+                            ui.add_space(4.0);
+                            self.draw_operator_selector_strip(ui);
                         });
+
+                        // RIGHT COLUMN: Selected operator full details with envelope
                         columns[1].vertical(|ui| {
-                            self.draw_envelope_panel(ui);
+                            self.draw_operator_full_panel(ui);
                         });
                     });
                 }
@@ -1230,53 +836,6 @@ impl eframe::App for Dx7App {
 }
 
 impl Dx7App {
-    fn operator_has_feedback(&self, op_idx: usize) -> bool {
-        // Determine which operators have feedback based on the current algorithm
-        // Feedback is defined as self-connections in the algorithm
-        let current_algorithm = self.synthesizer.lock().unwrap().get_algorithm();
-
-        // Map algorithm number to operators that have feedback (1-indexed)
-        // Based on analysis of algorithms.json
-        let feedback_ops = match current_algorithm {
-            1 => vec![6],
-            2 => vec![2],
-            3 => vec![6],
-            4 => vec![6], // Op6 controls feedback in the loop
-            5 => vec![6],
-            6 => vec![6], // Op6 controls feedback from Op5
-            7 => vec![6],
-            8 => vec![4],
-            9 => vec![2],
-            10 => vec![3],
-            11 => vec![6],
-            12 => vec![2],
-            13 => vec![6],
-            14 => vec![6],
-            15 => vec![2],
-            16 => vec![6],
-            17 => vec![2],
-            18 => vec![3],
-            19 => vec![3],
-            20 => vec![3],
-            21 => vec![3],
-            22 => vec![6],
-            23 => vec![6],
-            24 => vec![6],
-            25 => vec![6],
-            26 => vec![6],
-            27 => vec![3],
-            28 => vec![5],
-            29 => vec![6],
-            30 => vec![5],
-            31 => vec![6],
-            32 => vec![6],
-            _ => vec![6], // Default fallback
-        };
-
-        // Convert to 0-indexed and check
-        feedback_ops.contains(&(op_idx + 1))
-    }
-
     fn draw_lfo_panel(&mut self, ui: &mut egui::Ui) {
         ui.group(|ui| {
             ui.vertical(|ui| {
@@ -1564,6 +1123,379 @@ impl Dx7App {
                         });
                     });
                 }
+            });
+        });
+    }
+
+    fn draw_algorithm_diagram_compact(&mut self, ui: &mut egui::Ui) {
+        let current_alg = if let Ok(synth) = self.lock_synth() {
+            synth.get_algorithm()
+        } else {
+            1
+        };
+
+        let alg_info = algorithms::get_algorithm_info(current_alg);
+
+        let enabled_states: [bool; 6] = if let Ok(synth) = self.lock_synth() {
+            [
+                synth.get_operator_enabled(0),
+                synth.get_operator_enabled(1),
+                synth.get_operator_enabled(2),
+                synth.get_operator_enabled(3),
+                synth.get_operator_enabled(4),
+                synth.get_operator_enabled(5),
+            ]
+        } else {
+            [true; 6]
+        };
+
+        ui.group(|ui| {
+            ui.vertical(|ui| {
+                // Compact header with algorithm selector
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("ALG").strong());
+                    if let Ok(mut synth) = self.lock_synth() {
+                        let current = synth.get_algorithm();
+                        if ui.small_button("<").clicked() && current > 1 {
+                            synth.set_algorithm(current - 1);
+                        }
+                        ui.label(egui::RichText::new(format!("{:02}", current)).strong());
+                        if ui.small_button(">").clicked() && current < 32 {
+                            synth.set_algorithm(current + 1);
+                        }
+                        ui.label(algorithms::get_algorithm_name(current));
+                    }
+                });
+
+                // Compact diagram canvas
+                let (response, painter) =
+                    ui.allocate_painter(egui::vec2(ui.available_width(), 75.0), egui::Sense::hover());
+                let rect = response.rect;
+
+                let positions = self.calculate_operator_positions_compact(&alg_info, rect);
+
+                // Draw connections
+                let connection_color = egui::Color32::from_rgb(100, 100, 100);
+                for (from, to) in &alg_info.connections {
+                    let from_pos = positions[(*from - 1) as usize];
+                    let to_pos = positions[(*to - 1) as usize];
+                    painter.line_segment([from_pos, to_pos], egui::Stroke::new(1.5, connection_color));
+                }
+
+                // Draw feedback indicator
+                if alg_info.feedback_op > 0 {
+                    let fb_pos = positions[(alg_info.feedback_op - 1) as usize];
+                    let loop_center = fb_pos + egui::vec2(14.0, -8.0);
+                    painter.circle_stroke(loop_center, 6.0, egui::Stroke::new(1.5, egui::Color32::from_rgb(200, 100, 50)));
+                }
+
+                // Draw operators (smaller)
+                let op_radius = 11.0;
+                for (i, &pos) in positions.iter().enumerate() {
+                    let op_num = (i + 1) as u8;
+                    let is_carrier = alg_info.carriers.contains(&op_num);
+                    let is_selected = self.selected_operator == i;
+                    let is_enabled = enabled_states[i];
+
+                    let (fill_color, stroke_color, text_color) = if !is_enabled {
+                        (egui::Color32::from_rgb(80, 80, 80), egui::Color32::from_rgb(60, 60, 60), egui::Color32::from_rgb(120, 120, 120))
+                    } else if is_carrier {
+                        (egui::Color32::from_rgb(70, 130, 180),
+                         if is_selected { egui::Color32::from_rgb(255, 200, 0) } else { egui::Color32::from_rgb(50, 100, 150) },
+                         egui::Color32::WHITE)
+                    } else {
+                        (egui::Color32::from_rgb(100, 160, 100),
+                         if is_selected { egui::Color32::from_rgb(255, 200, 0) } else { egui::Color32::from_rgb(70, 130, 70) },
+                         egui::Color32::WHITE)
+                    };
+
+                    painter.circle(pos, op_radius, fill_color, egui::Stroke::new(if is_selected { 2.5 } else { 1.5 }, stroke_color));
+                    painter.text(pos, egui::Align2::CENTER_CENTER, format!("{}", op_num), egui::FontId::proportional(10.0), text_color);
+                }
+
+                // Output indicator
+                let output_x = rect.right() - 20.0;
+                let output_y = rect.center().y + 20.0;
+                painter.text(egui::pos2(output_x, output_y), egui::Align2::CENTER_CENTER, "OUT", egui::FontId::proportional(8.0), egui::Color32::from_rgb(100, 100, 100));
+
+                for &carrier in &alg_info.carriers {
+                    let carrier_pos = positions[(carrier - 1) as usize];
+                    painter.line_segment([carrier_pos + egui::vec2(op_radius + 2.0, 0.0), egui::pos2(output_x - 10.0, output_y)],
+                        egui::Stroke::new(1.0, egui::Color32::from_rgb(70, 130, 180)));
+                }
+            });
+        });
+    }
+
+    fn calculate_operator_positions_compact(&self, alg_info: &algorithms::AlgorithmInfo, rect: egui::Rect) -> [egui::Pos2; 6] {
+        let mut layers: [i32; 6] = [0; 6];
+        for &carrier in &alg_info.carriers {
+            layers[(carrier - 1) as usize] = 0;
+        }
+        for _ in 0..5 {
+            for (from, to) in &alg_info.connections {
+                let to_layer = layers[(*to - 1) as usize];
+                let from_layer = &mut layers[(*from - 1) as usize];
+                *from_layer = (*from_layer).max(to_layer + 1);
+            }
+        }
+
+        let max_layer = *layers.iter().max().unwrap_or(&0);
+        let mut ops_per_layer: Vec<Vec<u8>> = vec![vec![]; (max_layer + 1) as usize];
+        for (i, &layer) in layers.iter().enumerate() {
+            ops_per_layer[layer as usize].push((i + 1) as u8);
+        }
+
+        let layer_height = rect.height() / (max_layer + 2) as f32;
+        let mut positions: [egui::Pos2; 6] = [egui::Pos2::ZERO; 6];
+
+        for (layer, ops) in ops_per_layer.iter().enumerate() {
+            let y = rect.bottom() - layer_height * (layer as f32 + 1.0);
+            let layer_width = rect.width() - 50.0;
+            let spacing = layer_width / (ops.len() + 1) as f32;
+            for (i, &op) in ops.iter().enumerate() {
+                let x = rect.left() + spacing * (i as f32 + 1.0);
+                positions[(op - 1) as usize] = egui::pos2(x, y);
+            }
+        }
+        positions
+    }
+
+    /// Minimal operator selector strip - just clickable buttons to select operator
+    fn draw_operator_selector_strip(&mut self, ui: &mut egui::Ui) {
+        let current_alg = if let Ok(synth) = self.lock_synth() {
+            synth.get_algorithm()
+        } else {
+            1
+        };
+        let alg_info = algorithms::get_algorithm_info(current_alg);
+
+        ui.group(|ui| {
+            ui.label(egui::RichText::new("SELECT OPERATOR").size(10.0));
+            ui.horizontal_wrapped(|ui| {
+                for op_idx in 0..6 {
+                    let op_num = (op_idx + 1) as u8;
+                    let is_carrier = alg_info.carriers.contains(&op_num);
+                    let is_selected = self.selected_operator == op_idx;
+                    let has_feedback = alg_info.feedback_op == op_num;
+
+                    let (enabled, level) = {
+                        if let Ok(synth) = self.lock_synth() {
+                            if let Some(voice) = synth.voices.first() {
+                                (voice.operators[op_idx].enabled, voice.operators[op_idx].output_level)
+                            } else {
+                                (true, 99.0)
+                            }
+                        } else {
+                            (true, 99.0)
+                        }
+                    };
+
+                    let base_color = if !enabled {
+                        egui::Color32::from_rgb(80, 80, 80)
+                    } else if is_carrier {
+                        egui::Color32::from_rgb(70, 130, 180)
+                    } else {
+                        egui::Color32::from_rgb(100, 160, 100)
+                    };
+
+                    // Vertical mini-panel per operator
+                    ui.allocate_ui(egui::vec2(65.0, 70.0), |ui| {
+                        let frame = egui::Frame::none()
+                            .fill(if is_selected { egui::Color32::from_rgb(240, 248, 255) } else { egui::Color32::from_rgb(250, 250, 250) })
+                            .stroke(egui::Stroke::new(if is_selected { 2.5 } else { 1.0 },
+                                if is_selected { egui::Color32::from_rgb(255, 180, 0) } else { base_color }))
+                            .rounding(4.0)
+                            .inner_margin(4.0);
+
+                        frame.show(ui, |ui| {
+                            ui.vertical_centered(|ui| {
+                                // OP label with role
+                                let role = if is_carrier { "C" } else { "M" };
+                                let fb = if has_feedback { " F" } else { "" };
+                                let label_text = format!("OP{} {}{}", op_num, role, fb);
+
+                                if ui.selectable_label(is_selected, egui::RichText::new(label_text).size(11.0).color(base_color)).clicked() {
+                                    self.selected_operator = op_idx;
+                                }
+
+                                // Level bar (vertical)
+                                let bar_width = 40.0;
+                                let bar_height = 10.0;
+                                let (bar_rect, _) = ui.allocate_exact_size(egui::vec2(bar_width, bar_height), egui::Sense::hover());
+                                ui.painter().rect_filled(bar_rect, 2.0, egui::Color32::from_rgb(40, 40, 40));
+                                let fill_width = (level / 99.0) * bar_width;
+                                let fill_rect = egui::Rect::from_min_size(bar_rect.min, egui::vec2(fill_width, bar_height));
+                                ui.painter().rect_filled(fill_rect, 2.0, if enabled { base_color } else { egui::Color32::from_rgb(60, 60, 60) });
+
+                                // Level value
+                                ui.label(egui::RichText::new(format!("{:.0}", level)).size(10.0));
+                            });
+                        });
+                    });
+                }
+            });
+        });
+    }
+
+    /// Full operator panel with all parameters and envelope
+    fn draw_operator_full_panel(&mut self, ui: &mut egui::Ui) {
+        let op_idx = self.selected_operator;
+        let current_alg = if let Ok(synth) = self.lock_synth() {
+            synth.get_algorithm()
+        } else {
+            1
+        };
+        let alg_info = algorithms::get_algorithm_info(current_alg);
+        let op_num = (op_idx + 1) as u8;
+        let is_carrier = alg_info.carriers.contains(&op_num);
+        let has_feedback = alg_info.feedback_op == op_num;
+
+        let (
+            mut enabled,
+            mut freq_ratio,
+            mut output_level,
+            mut detune,
+            mut feedback,
+            mut vel_sens,
+            mut key_scale_lvl,
+            mut key_scale_rt,
+            mut rate1, mut rate2, mut rate3, mut rate4,
+            mut level1, mut level2, mut level3, mut level4,
+        ) = {
+            let synth = self.synthesizer.lock().unwrap();
+            if let Some(voice) = synth.voices.first() {
+                let op = &voice.operators[op_idx];
+                let env = &op.envelope;
+                (
+                    op.enabled,
+                    op.frequency_ratio,
+                    op.output_level,
+                    op.detune,
+                    op.feedback,
+                    op.velocity_sensitivity,
+                    op.key_scale_level,
+                    op.key_scale_rate,
+                    env.rate1, env.rate2, env.rate3, env.rate4,
+                    env.level1, env.level2, env.level3, env.level4,
+                )
+            } else {
+                (true, 1.0, 99.0, 0.0, 0.0, 0.0, 0.0, 0.0, 99.0, 50.0, 35.0, 50.0, 99.0, 75.0, 50.0, 0.0)
+            }
+        };
+
+        ui.group(|ui| {
+            // Header
+            let role = if is_carrier { "CARRIER" } else { "MODULATOR" };
+            let fb_text = if has_feedback { " [FB]" } else { "" };
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new(format!("OPERATOR {} - {}{}", op_num, role, fb_text)).strong());
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.checkbox(&mut enabled, "ON").changed() {
+                        if let Ok(mut synth) = self.lock_synth() {
+                            synth.set_operator_param(op_idx, "enabled", if enabled { 1.0 } else { 0.0 });
+                        }
+                    }
+                });
+            });
+            ui.separator();
+
+            ui.add_enabled_ui(enabled, |ui| {
+                // Parameters section
+                ui.label(egui::RichText::new("PARAMETERS").size(10.0));
+                egui::Grid::new("op_params_grid").num_columns(4).spacing([8.0, 4.0]).show(ui, |ui| {
+                    ui.label("Ratio:");
+                    if ui.add(egui::Slider::new(&mut freq_ratio, 0.5..=31.0).step_by(1.0)
+                        .custom_formatter(|n, _| format!("{:.2}", crate::dx7_frequency::quantize_frequency_ratio(n as f32)))).changed() {
+                        let q = crate::dx7_frequency::quantize_frequency_ratio(freq_ratio);
+                        self.synthesizer.lock().unwrap().set_operator_param(op_idx, "ratio", q);
+                    }
+                    ui.label("Level:");
+                    if ui.add(egui::Slider::new(&mut output_level, 0.0..=99.0).integer()).changed() {
+                        self.synthesizer.lock().unwrap().set_operator_param(op_idx, "level", output_level);
+                    }
+                    ui.end_row();
+
+                    ui.label("Detune:");
+                    if ui.add(egui::Slider::new(&mut detune, -7.0..=7.0).integer()).changed() {
+                        self.synthesizer.lock().unwrap().set_operator_param(op_idx, "detune", detune);
+                    }
+                    ui.label("Vel Sens:");
+                    if ui.add(egui::Slider::new(&mut vel_sens, 0.0..=7.0).integer()).changed() {
+                        self.synthesizer.lock().unwrap().set_operator_param(op_idx, "vel_sens", vel_sens);
+                    }
+                    ui.end_row();
+
+                    if has_feedback {
+                        ui.label("Feedback:");
+                        if ui.add(egui::Slider::new(&mut feedback, 0.0..=7.0).integer()).changed() {
+                            self.synthesizer.lock().unwrap().set_operator_param(op_idx, "feedback", feedback);
+                        }
+                    } else {
+                        ui.label("");
+                        ui.label("");
+                    }
+                    ui.label("Key Lvl:");
+                    if ui.add(egui::Slider::new(&mut key_scale_lvl, 0.0..=99.0).integer()).changed() {
+                        self.synthesizer.lock().unwrap().set_operator_param(op_idx, "key_scale_level", key_scale_lvl);
+                    }
+                    ui.end_row();
+
+                    ui.label("");
+                    ui.label("");
+                    ui.label("Key Rate:");
+                    if ui.add(egui::Slider::new(&mut key_scale_rt, 0.0..=7.0).integer()).changed() {
+                        self.synthesizer.lock().unwrap().set_operator_param(op_idx, "key_scale_rate", key_scale_rt);
+                    }
+                    ui.end_row();
+                });
+
+                ui.add_space(8.0);
+
+                // Envelope section
+                ui.label(egui::RichText::new("ENVELOPE").size(10.0));
+                egui::Grid::new("op_env_grid").num_columns(4).spacing([8.0, 4.0]).show(ui, |ui| {
+                    // Row 1: Rates
+                    ui.label("R1:");
+                    if ui.add(egui::Slider::new(&mut rate1, 0.0..=99.0).integer()).changed() {
+                        self.synthesizer.lock().unwrap().set_envelope_param(op_idx, "rate1", rate1);
+                    }
+                    ui.label("R2:");
+                    if ui.add(egui::Slider::new(&mut rate2, 0.0..=99.0).integer()).changed() {
+                        self.synthesizer.lock().unwrap().set_envelope_param(op_idx, "rate2", rate2);
+                    }
+                    ui.end_row();
+
+                    ui.label("L1:");
+                    if ui.add(egui::Slider::new(&mut level1, 0.0..=99.0).integer()).changed() {
+                        self.synthesizer.lock().unwrap().set_envelope_param(op_idx, "level1", level1);
+                    }
+                    ui.label("L2:");
+                    if ui.add(egui::Slider::new(&mut level2, 0.0..=99.0).integer()).changed() {
+                        self.synthesizer.lock().unwrap().set_envelope_param(op_idx, "level2", level2);
+                    }
+                    ui.end_row();
+
+                    ui.label("R3:");
+                    if ui.add(egui::Slider::new(&mut rate3, 0.0..=99.0).integer()).changed() {
+                        self.synthesizer.lock().unwrap().set_envelope_param(op_idx, "rate3", rate3);
+                    }
+                    ui.label("R4:");
+                    if ui.add(egui::Slider::new(&mut rate4, 0.0..=99.0).integer()).changed() {
+                        self.synthesizer.lock().unwrap().set_envelope_param(op_idx, "rate4", rate4);
+                    }
+                    ui.end_row();
+
+                    ui.label("L3:");
+                    if ui.add(egui::Slider::new(&mut level3, 0.0..=99.0).integer()).changed() {
+                        self.synthesizer.lock().unwrap().set_envelope_param(op_idx, "level3", level3);
+                    }
+                    ui.label("L4:");
+                    if ui.add(egui::Slider::new(&mut level4, 0.0..=99.0).integer()).changed() {
+                        self.synthesizer.lock().unwrap().set_envelope_param(op_idx, "level4", level4);
+                    }
+                    ui.end_row();
+                });
             });
         });
     }

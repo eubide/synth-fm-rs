@@ -416,9 +416,20 @@ impl FmSynthesizer {
                 "vel_sens" => voice.operators[op_index].velocity_sensitivity = value,
                 "key_scale_level" => voice.operators[op_index].key_scale_level = value,
                 "key_scale_rate" => voice.operators[op_index].key_scale_rate = value,
+                "enabled" => voice.operators[op_index].enabled = value > 0.5,
                 _ => {}
             }
         }
+    }
+
+    pub fn get_operator_enabled(&self, op_index: usize) -> bool {
+        if op_index >= 6 {
+            return true;
+        }
+        self.voices
+            .first()
+            .map(|v| v.operators[op_index].enabled)
+            .unwrap_or(true)
     }
 
     pub fn set_envelope_param(&mut self, op_index: usize, param: &str, value: f32) {

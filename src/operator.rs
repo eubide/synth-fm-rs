@@ -25,6 +25,7 @@ impl CachedValues {
 
 #[derive(Debug, Clone)]
 pub struct Operator {
+    pub enabled: bool,
     pub frequency_ratio: f32,
     pub detune: f32,
     pub output_level: f32,
@@ -49,6 +50,7 @@ pub struct Operator {
 impl Operator {
     pub fn new(sample_rate: f32) -> Self {
         Self {
+            enabled: true,
             frequency_ratio: 1.0,
             detune: 0.0,
             output_level: 99.0,
@@ -177,6 +179,10 @@ impl Operator {
     }
 
     pub fn process(&mut self, modulation: f32) -> f32 {
+        if !self.enabled {
+            return 0.0;
+        }
+
         self.update_cached_values();
 
         let env_value = self.envelope.process();
