@@ -134,7 +134,7 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
                 (99.0, 80.0, 80.0, 70.0, 99.0, 30.0, 0.0, 0.0), // Op6: Very quick shimmer
             ],
             master_tune: None,
-            mono_mode: Some(false),      // POLY mode
+            mono_mode: Some(false), // POLY mode
             pitch_bend_range: Some(2.0),
             portamento_enable: Some(false),
             portamento_time: None,
@@ -170,12 +170,12 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
             name: "STRINGS",
             algorithm: 32, // All carriers for smooth ensemble
             operators: [
-                (1.0, 99.0, 0.0, 0.0),     // Op1: Carrier - main voice
-                (1.003, 95.0, 0.0, 0.0),   // Op2: Carrier - subtle detune up
-                (0.997, 90.0, 0.0, 0.0),   // Op3: Carrier - subtle detune down
-                (1.006, 85.0, 0.0, 0.0),   // Op4: Carrier - more detune up
-                (0.994, 80.0, 0.0, 0.0),   // Op5: Carrier - more detune down
-                (2.0, 70.0, 0.0, 0.0),     // Op6: Carrier - octave for body
+                (1.0, 99.0, 0.0, 0.0),   // Op1: Carrier - main voice
+                (1.003, 95.0, 0.0, 0.0), // Op2: Carrier - subtle detune up
+                (0.997, 90.0, 0.0, 0.0), // Op3: Carrier - subtle detune down
+                (1.006, 85.0, 0.0, 0.0), // Op4: Carrier - more detune up
+                (0.994, 80.0, 0.0, 0.0), // Op5: Carrier - more detune down
+                (2.0, 70.0, 0.0, 0.0),   // Op6: Carrier - octave for body
             ],
             envelopes: [
                 (35.0, 55.0, 65.0, 45.0, 99.0, 95.0, 90.0, 0.0), // Op1: Slow smooth attack, high sustain
@@ -731,11 +731,11 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
                 (35.0, 45.0, 55.0, 40.0, 99.0, 70.0, 60.0, 0.0), // Op5: Even slower harmonic
                 (18.0, 28.0, 80.0, 23.0, 99.0, 92.0, 77.0, 0.0), // Op6: Fastest ethereal entry
             ],
-            master_tune: Some(-1.5), // Slightly flat for warmth
-            mono_mode: Some(false),  // POLY for chord pads
-            pitch_bend_range: Some(2.0), // Standard pitch bend
+            master_tune: Some(-1.5),       // Slightly flat for warmth
+            mono_mode: Some(false),        // POLY for chord pads
+            pitch_bend_range: Some(2.0),   // Standard pitch bend
             portamento_enable: Some(true), // Smooth pad glides
-            portamento_time: Some(30.0), // Moderate glide
+            portamento_time: Some(30.0),   // Moderate glide
         },
     ]
 }
