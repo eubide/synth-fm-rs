@@ -26,7 +26,6 @@ impl CachedValues {
 #[derive(Debug, Clone)]
 pub struct Operator {
     pub frequency_ratio: f32,
-    pub frequency_fixed: Option<f32>,
     pub detune: f32,
     pub output_level: f32,
     pub velocity_sensitivity: f32, // 0-7, how much velocity affects output
@@ -51,7 +50,6 @@ impl Operator {
     pub fn new(sample_rate: f32) -> Self {
         Self {
             frequency_ratio: 1.0,
-            frequency_fixed: None,
             detune: 0.0,
             output_level: 99.0,
             velocity_sensitivity: 0.0,
@@ -97,10 +95,16 @@ impl Operator {
         self.cached_values.level_amplitude =
             OPTIMIZATION_TABLES.dx7_level_to_amplitude(self.output_level as u8);
 
-        // Cache velocity factor (exponential curve for natural response)
+        // DX7-style velocity sensitivity (0-7 range)
+        // At sensitivity 0: velocity has no effect (always full volume)
+        // At sensitivity 7: full velocity range effect
+        // Uses power curve for natural dynamics
         let vel_sens_factor = self.velocity_sensitivity / 7.0;
-        let velocity_curve = 1.0 - vel_sens_factor + (vel_sens_factor * self.current_velocity);
-        self.cached_values.velocity_factor = velocity_curve.clamp(0.0, 1.0);
+        let velocity_power = 1.0 + vel_sens_factor * 2.0; // Power from 1.0 to 3.0
+        let velocity_curve = self.current_velocity.powf(velocity_power);
+        // Blend between full volume and velocity-scaled based on sensitivity
+        self.cached_values.velocity_factor =
+            (1.0 - vel_sens_factor) + (vel_sens_factor * velocity_curve);
 
         // Cache key scaling factors
         let key_distance = self.current_note as f32 - self.key_scale_breakpoint as f32;
@@ -130,9 +134,7 @@ impl Operator {
     }
 
     pub fn update_frequency(&mut self) {
-        let actual_freq = self
-            .frequency_fixed
-            .unwrap_or(self.base_frequency * self.frequency_ratio);
+        let actual_freq = self.base_frequency * self.frequency_ratio;
         let detuned_freq = actual_freq * (1.0 + self.detune / 100.0);
 
         // Validate frequency range
@@ -182,7 +184,7 @@ impl Operator {
             return 0.0;
         }
 
-        // Apply feedback modulation (DX7: 0-7 maps to 0-π radians)
+        // Apply feedback modulation (DX7: 0-7 maps to 0-π radians max)
         let feedback_mod = if self.feedback > 0.0 {
             self.last_output * self.feedback * PI / 7.0
         } else {
@@ -190,6 +192,7 @@ impl Operator {
         };
 
         // Generate output with phase modulation
+        // Modulation already includes modulator amplitude, apply directly
         let total_modulation = modulation + feedback_mod;
         let sin_result = OPTIMIZATION_TABLES.fast_sin(self.phase + total_modulation);
         let output = sin_result
