@@ -45,7 +45,7 @@ This is a Yamaha DX7 FM synthesizer emulator built with Rust, using a thread-saf
 - Cross-platform audio backend abstraction
 
 **Algorithm System** (`algorithms.rs`) - FM algorithm implementation:
-- Loads 32 authentic DX7 algorithms from `algorithms.json`
+- 32 authentic DX7 algorithms hardcoded for performance
 - Column-centric graph layout for visual representation
 - Comprehensive validation system for algorithm integrity
 - Feedback loop detection and handling
@@ -64,16 +64,12 @@ This is a Yamaha DX7 FM synthesizer emulator built with Rust, using a thread-saf
 - Audio thread (real-time processing)
 - MIDI thread (note events)
 
-**Algorithm Processing**: Uses recursive operator processing with feedback handling, where each algorithm defines carrier/modulator relationships loaded from JSON configuration.
+**Algorithm Processing**: Uses recursive operator processing with feedback handling, where each algorithm defines carrier/modulator relationships hardcoded in Rust for optimal performance.
 
 **Voice Management**: Implements authentic DX7 voice allocation with:
 - Polyphonic mode: Up to 16 simultaneous voices
 - Monophonic mode: Single voice with portamento
-- Intelligent voice stealing based on release times
-
-### Configuration Files
-
-**algorithms.json** - Defines all 32 DX7 algorithms with carrier/modulator connections and feedback loops. Critical for authentic FM synthesis behavior.
+- Intelligent voice stealing based on note-on order (oldest voice first)
 
 ### Threading Model
 
