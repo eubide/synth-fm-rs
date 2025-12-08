@@ -1,25 +1,13 @@
 use crate::fm_synth::FmSynthesizer;
 use midir::{MidiInput, MidiInputConnection};
 use std::sync::{Arc, Mutex};
-use std::collections::VecDeque;
-
-#[derive(Clone, Debug)]
-#[allow(dead_code)]
-pub struct MidiMessage {
-    pub timestamp: std::time::Instant,
-    pub message_type: String,
-    pub description: String,
-}
 
 pub struct MidiHandler {
     _connection: Option<MidiInputConnection<()>>,
-    #[allow(dead_code)]
-    pub message_history: Arc<Mutex<VecDeque<MidiMessage>>>,
 }
 
 impl MidiHandler {
     pub fn new(synthesizer: Arc<Mutex<FmSynthesizer>>) -> Result<Self, Box<dyn std::error::Error>> {
-        let message_history = Arc::new(Mutex::new(VecDeque::new()));
         let midi_in = MidiInput::new("DX7 MIDI Input")?;
 
         let ports = midi_in.ports();
@@ -35,27 +23,21 @@ impl MidiHandler {
         let port = &ports[0];
         log::info!("Using MIDI input: {}", midi_in.port_name(port)?);
 
-        let history_clone = message_history.clone();
         let connection = midi_in.connect(
             port,
             "DX7 MIDI",
             move |_timestamp, message, _| {
-                Self::handle_midi_message(&synthesizer, message, &history_clone);
+                Self::handle_midi_message(&synthesizer, message);
             },
             (),
         )?;
 
         Ok(Self {
             _connection: Some(connection),
-            message_history,
         })
     }
 
-    fn handle_midi_message(
-        synthesizer: &Arc<Mutex<FmSynthesizer>>,
-        message: &[u8],
-        history: &Arc<Mutex<VecDeque<MidiMessage>>>,
-    ) {
+    fn handle_midi_message(synthesizer: &Arc<Mutex<FmSynthesizer>>, message: &[u8]) {
         if message.len() < 2 {
             return;
         }
@@ -63,50 +45,55 @@ impl MidiHandler {
         let status = message[0] & 0xF0;
         let channel = (message[0] & 0x0F) + 1;
 
-        let (msg_type, description) = match status {
+        match status {
             0x90 => {
                 if message.len() >= 3 {
                     let note = message[1];
                     let velocity = message[2];
 
                     if velocity > 0 {
-                        log::debug!("Note ON Ch{} Note:{} ({}) Vel:{}", channel, note, Self::note_name(note), velocity);
+                        log::debug!(
+                            "Note ON Ch{} Note:{} ({}) Vel:{}",
+                            channel,
+                            note,
+                            Self::note_name(note),
+                            velocity
+                        );
                         if let Ok(mut synth) = synthesizer.lock() {
                             synth.note_on(note, velocity);
                         } else {
                             log::error!("Failed to acquire synth lock for note on");
                         }
-                        ("Note On".to_string(), format!("Note: {} ({}) Vel: {} Ch: {}",
-                            note, Self::note_name(note), velocity, channel))
                     } else {
-                        log::debug!("Note OFF Ch{} Note:{} ({}) (via vel=0)", channel, note, Self::note_name(note));
+                        log::debug!(
+                            "Note OFF Ch{} Note:{} ({}) (via vel=0)",
+                            channel,
+                            note,
+                            Self::note_name(note)
+                        );
                         if let Ok(mut synth) = synthesizer.lock() {
                             synth.note_off(note);
                         } else {
                             log::error!("Failed to acquire synth lock for note off");
                         }
-                        ("Note Off".to_string(), format!("Note: {} ({}) (vel 0) Ch: {}",
-                            note, Self::note_name(note), channel))
                     }
-                } else {
-                    return;
                 }
             }
 
             0x80 => {
                 if message.len() >= 3 {
                     let note = message[1];
-                    let velocity = message[2];
-                    log::debug!("Note OFF Ch{} Note:{} ({})", channel, note, Self::note_name(note));
+                    log::debug!(
+                        "Note OFF Ch{} Note:{} ({})",
+                        channel,
+                        note,
+                        Self::note_name(note)
+                    );
                     if let Ok(mut synth) = synthesizer.lock() {
                         synth.note_off(note);
                     } else {
                         log::error!("Failed to acquire synth lock for note off");
                     }
-                    ("Note Off".to_string(), format!("Note: {} ({}) Vel: {} Ch: {}",
-                        note, Self::note_name(note), velocity, channel))
-                } else {
-                    return;
                 }
             }
 
@@ -122,16 +109,18 @@ impl MidiHandler {
                         _ => "Unknown CC",
                     };
 
-                    log::debug!("Control Change Ch{} CC{} ({}) Value:{}", channel, controller, cc_name, value);
+                    log::debug!(
+                        "Control Change Ch{} CC{} ({}) Value:{}",
+                        channel,
+                        controller,
+                        cc_name,
+                        value
+                    );
                     if let Ok(mut synth) = synthesizer.lock() {
                         synth.control_change(controller, value);
                     } else {
                         log::error!("Failed to acquire synth lock for control change");
                     }
-                    ("CC".to_string(), format!("CC: {} ({}) Val: {} Ch: {}",
-                        controller, cc_name, value, channel))
-                } else {
-                    return;
                 }
             }
 
@@ -146,35 +135,23 @@ impl MidiHandler {
                     } else {
                         log::error!("Failed to acquire synth lock for pitch bend");
                     }
-                    ("Pitch Bend".to_string(), format!("Bend: {} Ch: {}", value, channel))
-                } else {
-                    return;
                 }
             }
 
             _ => {
-                log::debug!("Unknown MIDI message: Status:0x{:02X} Ch{}", status, channel);
-                ("Unknown".to_string(), format!("Status: 0x{:02X} Ch: {}", status, channel))
-            }
-        };
-
-        // Add to history
-        if let Ok(mut hist) = history.lock() {
-            hist.push_back(MidiMessage {
-                timestamp: std::time::Instant::now(),
-                message_type: msg_type,
-                description,
-            });
-
-            // Keep only last 100 messages
-            if hist.len() > 100 {
-                hist.pop_front();
+                log::debug!(
+                    "Unknown MIDI message: Status:0x{:02X} Ch{}",
+                    status,
+                    channel
+                );
             }
         }
     }
 
     fn note_name(note: u8) -> String {
-        let notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+        let notes = [
+            "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
+        ];
         let octave = (note / 12) as i32 - 1;
         let note_index = note % 12;
         format!("{}{}", notes[note_index as usize], octave)
