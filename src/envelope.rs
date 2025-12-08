@@ -94,19 +94,18 @@ impl Envelope {
     }
 
     pub fn process(&mut self) -> f32 {
-        match self.stage {
-            EnvelopeStage::Idle => return 0.0,
-            _ => {}
+        if self.stage == EnvelopeStage::Idle {
+            return 0.0;
         }
 
         // Smooth rate transitions to reduce clicks
         self.update_rate_smoothing();
 
-        // Use exponential approach instead of linear for more natural sound
+        // Exponential approach for natural envelope curves
         let distance = self.target_level - self.current_level;
         if distance.abs() > 0.0001 {
-            // Exponential approach with smooth rate
-            let approach_factor = (self.rate * 2.0).min(0.1);
+            // Approach factor based on rate - higher rate = faster approach
+            let approach_factor = (self.rate * 0.5).clamp(0.001, 0.3);
             self.current_level += distance * approach_factor;
 
             // Check if we're close enough to target to advance stage
@@ -114,11 +113,13 @@ impl Envelope {
                 self.current_level = self.target_level;
                 self.advance_stage();
             }
+        } else {
+            self.current_level = self.target_level;
+            self.advance_stage();
         }
 
-        // Apply soft knee to velocity response for smoother dynamics
-        let velocity_curve = self.velocity * self.velocity * (3.0 - 2.0 * self.velocity);
-        self.current_level * velocity_curve
+        // Apply velocity scaling
+        self.current_level * self.velocity
     }
 
     fn advance_stage(&mut self) {
