@@ -54,7 +54,8 @@ fn main() -> Result<(), eframe::Error> {
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([900.0, 700.0])
+            .with_inner_size([960.0, 720.0])
+            .with_resizable(false)
             .with_title("Yamaha DX7 Emulator"),
         ..Default::default()
     };
