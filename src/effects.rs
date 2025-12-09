@@ -163,11 +163,6 @@ impl Delay {
 
         (out_l, out_r)
     }
-
-    pub fn clear(&mut self) {
-        self.buffer_l.fill(0.0);
-        self.buffer_r.fill(0.0);
-    }
 }
 
 // ============================================================================
