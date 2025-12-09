@@ -33,11 +33,13 @@ A high-fidelity DX7-style FM synthesizer, built in Rust with real-time FM synthe
 - **Real-time MIDI input** for external controllers
 - **Virtual keyboard** with multi-octave support
 - **Pitch Bend** with configurable range
-- **NEW Mod Wheel (CC1)** controls LFO depth in real-time
+- **Mod Wheel (CC1)** controls LFO depth in real-time
+- **MIDI Program Change (0xC0)** for preset selection via MIDI
 - **Preset system** for saving and loading sounds
 - **Smooth transitions** in mono mode without clicks or artifacts
 - **Complete Key Scaling** (rate and level) per operator
 - **Velocity Sensitivity** configurable (0-7) per operator
+- **Authentic Portamento** with exponential curve (5ms to 2.5s range)
 
 ### NEW Complete LFO System
 - **6 Waveforms**: Triangle, Sine, Square, Saw Up/Down, Sample & Hold

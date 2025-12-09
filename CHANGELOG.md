@@ -34,6 +34,30 @@ Complete refactoring from `Arc<Mutex<>>` to a fully lock-free architecture for z
 - 10 unit tests passing (concurrent stress tests included)
 - Removed all `#[allow(dead_code)]` from active effect commands
 
+### Added: MIDI Program Change Support
+
+- **MIDI Program Change (0xC0)**: Select presets via MIDI program change messages
+  - Handler in `midi_handler.rs` for 0xC0 status byte
+  - `LoadPreset(index)` command in command queue
+  - `SynthEngine::load_preset()` applies preset to all voices
+  - `SynthController::load_preset()` convenience method
+  - Presets stored in SynthEngine for audio-thread access
+
+### Fixed: Portamento Curve
+
+- **Authentic Portamento Range**: Adjusted from 0.8s max to 2.5s max
+  - Old formula: `0.003 + (time/99)^1.8 * 0.8` (3ms to 800ms)
+  - New formula: `0.005 + (time/99)^2.0 * 2.5` (5ms to 2.5s)
+  - More authentic DX7-style glide behavior for slow, expressive portamento
+
+### Verified Working (removed from Known Issues)
+
+- **Operator Feedback**: Confirmed working correctly
+  - GUI sends `OperatorParam::Feedback` to all 16 voices via command queue
+  - `operator.rs` applies feedback as `last_output * feedback * PI / 7.0`
+- **Cross-operator Feedback**: Verified per DX7 spec
+  - Algorithms correctly use `ops[n].get_feedback_output()` for feedback routing
+
 ---
 
 ## [0.3.0] - 2025-09-16

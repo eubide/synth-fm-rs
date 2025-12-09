@@ -125,8 +125,7 @@ pub enum SynthCommand {
         value: f32,
     },
 
-    // Preset loading (reserved for future use)
-    #[allow(dead_code)]
+    // Preset loading (for MIDI program change)
     LoadPreset(usize),
 
     // Voice initialization

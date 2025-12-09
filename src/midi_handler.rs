@@ -145,6 +145,17 @@ impl MidiHandler {
                 }
             }
 
+            // Program Change (0xC0) - preset selection
+            0xC0 => {
+                let program = message[1] as usize;
+                log::info!("Program Change Ch{} Program:{}", channel, program);
+                if let Ok(mut ctrl) = controller.lock() {
+                    ctrl.load_preset(program);
+                } else {
+                    log::error!("Failed to acquire controller lock for program change");
+                }
+            }
+
             _ => {
                 log::debug!(
                     "Unknown MIDI message: Status:0x{:02X} Ch{}",

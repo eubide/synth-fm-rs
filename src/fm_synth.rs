@@ -144,7 +144,8 @@ impl Voice {
 
         if self.current_frequency != self.target_frequency {
             let portamento_rate = if portamento_time > 0.0 {
-                let time_seconds = 0.003 + (portamento_time / 99.0).powf(1.8) * 0.8;
+                // Authentic DX7-style portamento: 5ms to 2.5s range
+                let time_seconds = 0.005 + (portamento_time / 99.0).powf(2.0) * 2.5;
                 let samples_for_transition = time_seconds * self.sample_rate;
                 1.0 / samples_for_transition.max(1.0)
             } else {
@@ -225,6 +226,9 @@ pub struct SynthEngine {
     sustain_pedal: bool,
     #[allow(dead_code)]
     sample_rate: f32,
+    // Preset storage for MIDI program change
+    presets: Vec<Dx7Preset>,
+    current_preset_index: usize,
 }
 
 impl SynthEngine {
@@ -254,6 +258,8 @@ impl SynthEngine {
             mono_mode: false,
             sustain_pedal: false,
             sample_rate,
+            presets: get_dx7_presets(),
+            current_preset_index: 0,
         }
     }
 
@@ -336,8 +342,8 @@ impl SynthEngine {
             } => {
                 self.set_effect_param(effect, param, value);
             }
-            SynthCommand::LoadPreset(_preset_idx) => {
-                // Preset loading handled by controller
+            SynthCommand::LoadPreset(preset_idx) => {
+                self.load_preset(preset_idx);
             }
             SynthCommand::VoiceInitialize => {
                 self.voice_initialize();
@@ -516,6 +522,42 @@ impl SynthEngine {
                 op.envelope.level4 = 0.0;
             }
         }
+    }
+
+    /// Load a preset by index (for MIDI program change)
+    fn load_preset(&mut self, index: usize) {
+        if index >= self.presets.len() {
+            return;
+        }
+
+        let preset = &self.presets[index];
+        self.algorithm = preset.algorithm;
+        self.preset_name = preset.name.to_string();
+        self.current_preset_index = index;
+
+        // Apply operator settings to all voices
+        for voice in &mut self.voices {
+            for (i, op) in voice.operators.iter_mut().enumerate() {
+                let (ratio, level, detune, feedback) = preset.operators[i];
+                op.frequency_ratio = ratio;
+                op.output_level = level;
+                op.detune = detune;
+                op.feedback = feedback;
+
+                // Apply envelope
+                let (r1, r2, r3, r4, l1, l2, l3, l4) = preset.envelopes[i];
+                op.envelope.rate1 = r1;
+                op.envelope.rate2 = r2;
+                op.envelope.rate3 = r3;
+                op.envelope.rate4 = r4;
+                op.envelope.level1 = l1;
+                op.envelope.level2 = l2;
+                op.envelope.level3 = l3;
+                op.envelope.level4 = l4;
+            }
+        }
+
+        log::debug!("Loaded preset {}: {}", index, preset.name);
     }
 
     fn panic(&mut self) {
@@ -899,6 +941,11 @@ impl SynthController {
 
     pub fn panic(&mut self) {
         self.send(SynthCommand::Panic);
+    }
+
+    /// Load a preset by index (for MIDI program change 0xC0)
+    pub fn load_preset(&mut self, index: usize) {
+        self.send(SynthCommand::LoadPreset(index));
     }
 }
 
