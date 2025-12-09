@@ -1,20 +1,15 @@
 use crate::optimization::OPTIMIZATION_TABLES;
 use std::f32::consts::PI;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum LFOWaveform {
+    #[default]
     Triangle,
     SawDown,
     SawUp,
     Square,
     Sine,
     SampleHold,
-}
-
-impl Default for LFOWaveform {
-    fn default() -> Self {
-        LFOWaveform::Triangle
-    }
 }
 
 impl LFOWaveform {
@@ -42,6 +37,7 @@ impl LFOWaveform {
 }
 
 #[derive(Debug, Clone)]
+#[allow(clippy::upper_case_acronyms)]
 pub struct LFO {
     // DX7-style parameters (0-99 range)
     pub rate: f32,        // LFO speed

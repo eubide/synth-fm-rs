@@ -141,8 +141,7 @@ impl Operator {
 
         // Validate frequency range
         if detuned_freq.is_finite()
-            && detuned_freq >= 0.1
-            && detuned_freq <= 20000.0
+            && (0.1..=20000.0).contains(&detuned_freq)
             && self.sample_rate > 0.0
             && self.sample_rate.is_finite()
         {

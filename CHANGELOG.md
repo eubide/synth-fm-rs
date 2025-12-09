@@ -2,7 +2,41 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased] - 2025-09-16
+## [Unreleased] - 2025-12-09
+
+### Major: Lock-Free Architecture Refactoring
+
+Complete refactoring from `Arc<Mutex<>>` to a fully lock-free architecture for zero-contention audio processing.
+
+#### New Files
+- **`command_queue.rs`**: SPSC ringbuffer for GUI/MIDI -> Audio commands
+- **`state_snapshot.rs`**: Triple buffer for Audio -> GUI state snapshots
+
+#### Architecture Changes
+- **SynthEngine**: Runs exclusively on audio thread, owns all synthesis state
+- **SynthController**: Interface for GUI/MIDI threads, sends commands via ringbuffer
+- **StateSnapshot**: Read-only view of synth state for GUI display
+- **TripleBuffer**: Atomic swap with CAS for lock-free state updates
+
+#### GUI Improvements
+- All controls now read from snapshots (never block audio)
+- All changes sent via SynthCommand enum through ringbuffer
+- Effects panel fully refactored to lock-free (Chorus, Delay, Reverb)
+- New snapshot structs: `ChorusSnapshot`, `DelaySnapshot`, `ReverbSnapshot`, `OperatorSnapshot`
+
+#### Performance
+- Zero mutex contention in audio callback
+- Command latency < 10ms (processed at buffer start)
+- Snapshot updates every 1024 samples (~23ms at 44.1kHz)
+
+#### Code Quality
+- Zero warnings (`cargo check` and `cargo clippy`)
+- 10 unit tests passing (concurrent stress tests included)
+- Removed all `#[allow(dead_code)]` from active effect commands
+
+---
+
+## [0.3.0] - 2025-09-16
 
 ### Fixed
 - **MIDI Pitch Bend Operator Precedence**: Fixed critical bug in pitch bend calculation
@@ -163,7 +197,7 @@ All notable changes to this project will be documented in this file.
 ---
 
 ## Project Status
-- **🎯 Fidelity**: 95-98% authentic to original Yamaha DX7
+- **Fidelity**: 95-98% authentic to original DX7
 - **✅ Core Features**: 32 algorithms, 16-voice polyphony, key scaling, velocity sensitivity, **complete LFO system**
 - **🚀 Major Additions**: Global LFO with 6 waveforms, real-time MIDI mod wheel control
 - **💡 Improvements over original**: Smooth mono transitions, enhanced visualization, responsive UI design

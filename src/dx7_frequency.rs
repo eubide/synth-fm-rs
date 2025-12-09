@@ -9,5 +9,5 @@ pub fn quantize_frequency_ratio(ratio: f32) -> f32 {
     }
 
     // For higher values, round to nearest integer
-    (ratio.round()).min(31.0).max(1.0)
+    ratio.round().clamp(1.0, 31.0)
 }

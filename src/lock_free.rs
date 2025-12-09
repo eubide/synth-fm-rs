@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU8, Ordering};
 
 /// Lock-free triple buffer for real-time parameter updates.
 ///
@@ -23,7 +23,7 @@ impl<T: Clone + Send> TripleBuffer<T> {
 
     pub fn new(initial_value: T) -> Self {
         // Initial state: write=0, read=1, back=2
-        let initial_indices = 0 | (1 << Self::READ_SHIFT) | (2 << Self::BACK_SHIFT);
+        let initial_indices = (1 << Self::READ_SHIFT) | (2 << Self::BACK_SHIFT);
 
         Self {
             buffers: [
@@ -72,6 +72,7 @@ impl<T: Clone + Send> TripleBuffer<T> {
 
     /// Read current data (Audio thread only).
     /// Atomically swaps read and back buffers, then returns reference to read buffer.
+    #[allow(dead_code)]
     pub fn read(&self) -> &T {
         // Atomically swap read and back buffers using CAS loop
         loop {
@@ -98,6 +99,7 @@ impl<T: Clone + Send> TripleBuffer<T> {
 
     /// Peek at current read buffer without swapping.
     /// Use this when you just need to check the current value.
+    #[allow(dead_code)]
     pub fn peek(&self) -> &T {
         let current = self.indices.load(Ordering::Acquire);
         let read_idx = (current & Self::READ_MASK) >> Self::READ_SHIFT;
@@ -108,96 +110,6 @@ impl<T: Clone + Send> TripleBuffer<T> {
 // Safety: T is Send, and we use proper atomic synchronization
 unsafe impl<T: Clone + Send> Send for TripleBuffer<T> {}
 unsafe impl<T: Clone + Send> Sync for TripleBuffer<T> {}
-
-/// Real-time safe synthesizer parameters
-#[derive(Debug, Clone)]
-pub struct SynthParameters {
-    pub algorithm: u8,
-    pub master_volume: f32,
-    pub pitch_bend: f32,
-    pub mod_wheel: f32,
-    pub master_tune: f32,
-    pub pitch_bend_range: f32,
-    pub portamento_enable: bool,
-    pub portamento_time: f32,
-    pub mono_mode: bool,
-}
-
-impl Default for SynthParameters {
-    fn default() -> Self {
-        Self {
-            algorithm: 1,
-            master_volume: 0.7,
-            pitch_bend: 0.0,
-            mod_wheel: 0.0,
-            master_tune: 0.0,
-            pitch_bend_range: 2.0,
-            portamento_enable: false,
-            portamento_time: 50.0,
-            mono_mode: false,
-        }
-    }
-}
-
-/// Lock-free synthesizer state for real-time audio processing
-pub struct LockFreeSynth {
-    pub global_params: TripleBuffer<SynthParameters>,
-    pub sustain_pedal: AtomicBool,
-    pub panic_requested: AtomicBool,
-}
-
-impl LockFreeSynth {
-    pub fn new() -> Self {
-        Self {
-            global_params: TripleBuffer::new(SynthParameters::default()),
-            sustain_pedal: AtomicBool::new(false),
-            panic_requested: AtomicBool::new(false),
-        }
-    }
-
-    /// Update global parameter (GUI thread)
-    pub fn set_global_param(&self, params: SynthParameters) {
-        self.global_params.write(params);
-    }
-
-    /// Get current global parameters (audio thread)
-    pub fn get_global_params(&self) -> &SynthParameters {
-        self.global_params.read()
-    }
-
-    /// Peek at parameters without consuming the back buffer
-    pub fn peek_global_params(&self) -> &SynthParameters {
-        self.global_params.peek()
-    }
-
-    /// Request panic (from any thread)
-    pub fn request_panic(&self) {
-        self.panic_requested.store(true, Ordering::Release);
-    }
-
-    /// Check and clear panic request (audio thread)
-    pub fn check_panic_request(&self) -> bool {
-        self.panic_requested
-            .compare_exchange(true, false, Ordering::AcqRel, Ordering::Acquire)
-            .is_ok()
-    }
-
-    /// Set sustain pedal (from any thread)
-    pub fn set_sustain_pedal(&self, pressed: bool) {
-        self.sustain_pedal.store(pressed, Ordering::Release);
-    }
-
-    /// Get sustain pedal state (audio thread)
-    pub fn get_sustain_pedal(&self) -> bool {
-        self.sustain_pedal.load(Ordering::Acquire)
-    }
-}
-
-impl Default for LockFreeSynth {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -249,34 +161,6 @@ mod tests {
 
         writer.join().unwrap();
         reader.join().unwrap();
-    }
-
-    #[test]
-    fn test_synth_parameters() {
-        let synth = LockFreeSynth::new();
-
-        let mut params = SynthParameters::default();
-        params.algorithm = 5;
-        params.master_volume = 0.5;
-
-        synth.set_global_param(params);
-
-        let read_params = synth.get_global_params();
-        assert_eq!(read_params.algorithm, 5);
-        assert!((read_params.master_volume - 0.5).abs() < 0.001);
-    }
-
-    #[test]
-    fn test_panic_request() {
-        let synth = LockFreeSynth::new();
-
-        assert!(!synth.check_panic_request());
-
-        synth.request_panic();
-        assert!(synth.check_panic_request());
-
-        // Should be cleared after check
-        assert!(!synth.check_panic_request());
     }
 }
 

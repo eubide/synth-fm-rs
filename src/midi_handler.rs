@@ -7,7 +7,9 @@ pub struct MidiHandler {
 }
 
 impl MidiHandler {
-    pub fn new(controller: Arc<Mutex<SynthController>>) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn new(
+        controller: Arc<Mutex<SynthController>>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let midi_in = MidiInput::new("DX7 MIDI Input")?;
 
         let ports = midi_in.ports();

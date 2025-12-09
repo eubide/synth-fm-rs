@@ -41,7 +41,7 @@ pub enum LfoParam {
     KeySync,
 }
 
-/// Effect types
+/// Effect types for effect parameter commands
 #[derive(Debug, Clone, Copy)]
 pub enum EffectType {
     Chorus,
@@ -76,8 +76,13 @@ pub enum EffectParam {
 #[derive(Debug, Clone)]
 pub enum SynthCommand {
     // Note events
-    NoteOn { note: u8, velocity: u8 },
-    NoteOff { note: u8 },
+    NoteOn {
+        note: u8,
+        velocity: u8,
+    },
+    NoteOff {
+        note: u8,
+    },
 
     // Global parameters
     SetAlgorithm(u8),
@@ -108,7 +113,10 @@ pub enum SynthCommand {
     },
 
     // LFO parameters
-    SetLfoParam { param: LfoParam, value: f32 },
+    SetLfoParam {
+        param: LfoParam,
+        value: f32,
+    },
 
     // Effect parameters
     SetEffectParam {
@@ -117,7 +125,8 @@ pub enum SynthCommand {
         value: f32,
     },
 
-    // Preset loading
+    // Preset loading (reserved for future use)
+    #[allow(dead_code)]
     LoadPreset(usize),
 
     // Voice initialization
@@ -140,11 +149,13 @@ impl CommandSender {
     }
 
     /// Check how many slots are available in the buffer
+    #[allow(dead_code)]
     pub fn available(&self) -> usize {
         self.producer.slots()
     }
 
     /// Check if the buffer is full
+    #[allow(dead_code)]
     pub fn is_full(&self) -> bool {
         self.producer.is_full()
     }
@@ -164,6 +175,7 @@ impl CommandReceiver {
 
     /// Process all pending commands with a callback.
     /// This is the recommended way to process commands in the audio callback.
+    #[allow(dead_code)]
     pub fn process_all<F>(&mut self, mut callback: F)
     where
         F: FnMut(SynthCommand),
@@ -174,11 +186,13 @@ impl CommandReceiver {
     }
 
     /// Check how many commands are waiting
+    #[allow(dead_code)]
     pub fn pending(&self) -> usize {
         self.consumer.slots()
     }
 
     /// Check if there are any pending commands
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.consumer.is_empty()
     }
@@ -188,10 +202,7 @@ impl CommandReceiver {
 pub fn create_command_queue() -> (CommandSender, CommandReceiver) {
     let (producer, consumer) = RingBuffer::new(COMMAND_BUFFER_SIZE);
 
-    (
-        CommandSender { producer },
-        CommandReceiver { consumer },
-    )
+    (CommandSender { producer }, CommandReceiver { consumer })
 }
 
 #[cfg(test)]

@@ -27,21 +27,23 @@ cargo build --all-features    # Build with all features
 
 ## Architecture Overview
 
-This is a Yamaha DX7 FM synthesizer emulator built with Rust, using a thread-safe architecture with shared state between audio and GUI threads.
+This is a DX7-style FM synthesizer emulator built with Rust, using a **lock-free architecture** with message queues and state snapshots for zero-contention communication between audio and GUI threads.
 
 ### Core Components
 
-**main.rs** - Application entry point that initializes the audio engine, MIDI handler, and GUI with shared synthesizer state via `Arc<Mutex<FmSynthesizer>>`.
+**main.rs** - Application entry point that initializes the audio engine, MIDI handler, and GUI. Creates `SynthEngine` (audio thread) and `SynthController` (GUI/MIDI threads) via `create_synth()`.
 
-**FmSynthesizer** (`fm_synth.rs`) - Central synthesizer engine managing:
+**fm_synth.rs** - Central synthesizer module with two main components:
+- **SynthEngine**: Runs on audio thread, processes commands, generates audio
+- **SynthController**: Interface for GUI/MIDI threads, sends commands via ringbuffer
 - 16-voice polyphony with voice stealing
 - Algorithm selection and routing
 - Global parameters (master tune, mono/poly mode, portamento)
-- Note on/off handling and voice allocation
 
 **AudioEngine** (`audio_engine.rs`) - Real-time audio processing using CPAL:
 - 44.1kHz sample rate with adaptive buffer sizing
-- Lock-free audio thread communication
+- Processes commands from ringbuffer at start of each buffer
+- Publishes state snapshots for GUI consumption
 - Cross-platform audio backend abstraction
 
 **Algorithm System** (`algorithms.rs`) - FM algorithm implementation:
@@ -51,18 +53,19 @@ This is a Yamaha DX7 FM synthesizer emulator built with Rust, using a thread-saf
 - Feedback loop detection and handling
 
 **GUI System** (`gui.rs`) - egui-based DX7 interface emulation:
-- Three operation modes: VOICE, OPERATOR (with integrated algorithm selection), LFO
-- Real-time parameter control with immediate audio feedback
+- Four operation modes: VOICE, OPERATOR, LFO, EFFECTS
+- Real-time parameter control via command queue (lock-free)
+- Reads state from snapshots (never blocks audio thread)
 - Algorithm diagram visualization with automatic layout
 - Preset management and selection
-- Streamlined interface with algorithm controls integrated into OPERATOR mode
 
 ### Key Architectural Patterns
 
-**Shared State Management**: The synthesizer state is wrapped in `Arc<Mutex<>>` and shared between:
-- GUI thread (parameter updates)
-- Audio thread (real-time processing)
-- MIDI thread (note events)
+**Lock-Free Communication**: Zero-contention message passing between threads:
+- **CommandQueue** (`command_queue.rs`): SPSC ringbuffer (GUI/MIDI -> Audio)
+- **StateSnapshot** (`state_snapshot.rs`): Triple buffer with atomic swap (Audio -> GUI)
+- GUI reads snapshots for display, sends commands for changes
+- Audio thread processes commands at buffer start, publishes snapshot at end
 
 **Algorithm Processing**: Uses recursive operator processing with feedback handling, where each algorithm defines carrier/modulator relationships hardcoded in Rust for optimal performance.
 
@@ -73,12 +76,12 @@ This is a Yamaha DX7 FM synthesizer emulator built with Rust, using a thread-saf
 
 ### Threading Model
 
-The application uses three main threads:
-1. **Main/GUI Thread**: egui interface and user interaction
-2. **Audio Thread**: Real-time synthesis processing (CPAL callback)
-3. **MIDI Thread**: MIDI input handling and event processing
+The application uses three main threads with lock-free communication:
+1. **Main/GUI Thread**: egui interface, reads StateSnapshot, sends SynthCommands
+2. **Audio Thread**: Real-time synthesis via SynthEngine (owns all audio state)
+3. **MIDI Thread**: MIDI input, sends SynthCommands via SynthController
 
-State synchronization is handled through the shared `FmSynthesizer` instance with minimal lock contention.
+No mutexes in the audio path. GUI and MIDI threads never block audio processing.
 
 ### Algorithm Graph Layout System
 

@@ -1,6 +1,6 @@
 use crate::algorithms;
 use crate::audio_engine::AudioEngine;
-use crate::command_queue::{EnvelopeParam, LfoParam, OperatorParam};
+use crate::command_queue::{EffectParam, EffectType, EnvelopeParam, LfoParam, OperatorParam};
 use crate::fm_synth::{SynthController, SynthEngine};
 use crate::midi_handler::MidiHandler;
 use crate::presets::{get_dx7_presets, Dx7Preset};
@@ -25,13 +25,13 @@ pub struct Dx7App {
 }
 
 #[derive(PartialEq)]
+#[allow(clippy::upper_case_acronyms)]
 enum DisplayMode {
     Voice,
     Operator,
     LFO,
     Effects,
 }
-
 
 impl Dx7App {
     pub fn new(
@@ -51,7 +51,7 @@ impl Dx7App {
             _midi_handler: midi_handler,
             selected_operator: 0,
             display_mode: DisplayMode::Voice,
-            display_text: "YAMAHA DX7".to_string(),
+            display_text: "DX7 FM SYNTH".to_string(),
             last_key_times: std::collections::HashMap::new(),
             current_octave: 4,
             presets,
@@ -117,8 +117,7 @@ impl Dx7App {
                     DisplayMode::Voice => {
                         format!(
                             "VOICE: {} | ALG: {:02}",
-                            self.snapshot.preset_name,
-                            self.snapshot.algorithm
+                            self.snapshot.preset_name, self.snapshot.algorithm
                         )
                     }
                     DisplayMode::Operator => {
@@ -134,9 +133,21 @@ impl Dx7App {
                         )
                     }
                     DisplayMode::Effects => {
-                        let chorus = if self.snapshot.chorus_enabled { "CHO" } else { "-" };
-                        let delay = if self.snapshot.delay_enabled { "DLY" } else { "-" };
-                        let reverb = if self.snapshot.reverb_enabled { "REV" } else { "-" };
+                        let chorus = if self.snapshot.chorus.enabled {
+                            "CHO"
+                        } else {
+                            "-"
+                        };
+                        let delay = if self.snapshot.delay.enabled {
+                            "DLY"
+                        } else {
+                            "-"
+                        };
+                        let reverb = if self.snapshot.reverb.enabled {
+                            "REV"
+                        } else {
+                            "-"
+                        };
                         format!("EFFECTS: {} {} {}", chorus, delay, reverb)
                     }
                 };
@@ -151,12 +162,24 @@ impl Dx7App {
                 ui.separator();
 
                 // Always display current status information (from snapshot)
-                let mode_text = if self.snapshot.mono_mode { "MONO" } else { "POLY" };
-                let midi_text = if self._midi_handler.is_some() { "MIDI OK" } else { "NO MIDI" };
+                let mode_text = if self.snapshot.mono_mode {
+                    "MONO"
+                } else {
+                    "POLY"
+                };
+                let midi_text = if self._midi_handler.is_some() {
+                    "MIDI OK"
+                } else {
+                    "NO MIDI"
+                };
 
                 let status_line = if self.snapshot.mono_mode {
                     // Show portamento only in MONO mode
-                    let porta_text = if self.snapshot.portamento_enable { "ON" } else { "OFF" };
+                    let porta_text = if self.snapshot.portamento_enable {
+                        "ON"
+                    } else {
+                        "OFF"
+                    };
                     format!(
                         "VOICE: {} | ALG: {:02} | MODE: {} | PORTA: {} | {}",
                         self.snapshot.preset_name,
@@ -169,10 +192,7 @@ impl Dx7App {
                     // In POLY mode, don't show portamento
                     format!(
                         "VOICE: {} | ALG: {:02} | MODE: {} | {}",
-                        self.snapshot.preset_name,
-                        self.snapshot.algorithm,
-                        mode_text,
-                        midi_text
+                        self.snapshot.preset_name, self.snapshot.algorithm, mode_text, midi_text
                     )
                 };
 
@@ -208,7 +228,9 @@ impl Dx7App {
                             ui.horizontal(|ui| {
                                 ui.label("MASTER VOL:");
                                 let mut volume = self.snapshot.master_volume;
-                                let slider_response = ui.add(egui::Slider::new(&mut volume, 0.0..=1.0).show_value(false));
+                                let slider_response = ui.add(
+                                    egui::Slider::new(&mut volume, 0.0..=1.0).show_value(false),
+                                );
                                 if slider_response.changed() {
                                     if let Ok(mut ctrl) = self.lock_controller() {
                                         ctrl.set_master_volume(volume);
@@ -244,7 +266,12 @@ impl Dx7App {
                             ui.horizontal(|ui| {
                                 ui.label("MASTER VOL:");
                                 let mut volume = self.snapshot.master_volume;
-                                if ui.add(egui::Slider::new(&mut volume, 0.0..=1.0).show_value(false)).changed() {
+                                if ui
+                                    .add(
+                                        egui::Slider::new(&mut volume, 0.0..=1.0).show_value(false),
+                                    )
+                                    .changed()
+                                {
                                     if let Ok(mut ctrl) = self.lock_controller() {
                                         ctrl.set_master_volume(volume);
                                     }
@@ -262,7 +289,13 @@ impl Dx7App {
                             ui.horizontal(|ui| {
                                 ui.label("MASTER TUNE:");
                                 let mut master_tune = self.snapshot.master_tune;
-                                if ui.add(egui::Slider::new(&mut master_tune, -150.0..=150.0).show_value(false)).changed() {
+                                if ui
+                                    .add(
+                                        egui::Slider::new(&mut master_tune, -150.0..=150.0)
+                                            .show_value(false),
+                                    )
+                                    .changed()
+                                {
                                     if let Ok(mut ctrl) = self.lock_controller() {
                                         ctrl.set_master_tune(master_tune);
                                     }
@@ -279,7 +312,13 @@ impl Dx7App {
                             ui.horizontal(|ui| {
                                 ui.label("PITCH BEND:");
                                 let mut pb_range = self.snapshot.pitch_bend_range;
-                                if ui.add(egui::Slider::new(&mut pb_range, 0.0..=12.0).show_value(false)).changed() {
+                                if ui
+                                    .add(
+                                        egui::Slider::new(&mut pb_range, 0.0..=12.0)
+                                            .show_value(false),
+                                    )
+                                    .changed()
+                                {
                                     if let Ok(mut ctrl) = self.lock_controller() {
                                         ctrl.set_pitch_bend_range(pb_range);
                                     }
@@ -300,12 +339,16 @@ impl Dx7App {
                             ui.horizontal(|ui| {
                                 ui.label("MODE:");
                                 let mut mode = mono_mode;
-                                if ui.selectable_value(&mut mode, false, "POLY").clicked() && mono_mode {
+                                if ui.selectable_value(&mut mode, false, "POLY").clicked()
+                                    && mono_mode
+                                {
                                     if let Ok(mut ctrl) = self.lock_controller() {
                                         ctrl.set_mono_mode(false);
                                     }
                                 }
-                                if ui.selectable_value(&mut mode, true, "MONO").clicked() && !mono_mode {
+                                if ui.selectable_value(&mut mode, true, "MONO").clicked()
+                                    && !mono_mode
+                                {
                                     if let Ok(mut ctrl) = self.lock_controller() {
                                         ctrl.set_mono_mode(true);
                                     }
@@ -326,7 +369,13 @@ impl Dx7App {
                                     if porta_enable {
                                         ui.label("TIME:");
                                         let mut pt = porta_time;
-                                        if ui.add(egui::Slider::new(&mut pt, 0.0..=99.0).show_value(false)).changed() {
+                                        if ui
+                                            .add(
+                                                egui::Slider::new(&mut pt, 0.0..=99.0)
+                                                    .show_value(false),
+                                            )
+                                            .changed()
+                                        {
                                             if let Ok(mut ctrl) = self.lock_controller() {
                                                 ctrl.set_portamento_time(pt);
                                             }
@@ -395,7 +444,10 @@ impl Dx7App {
                 if porta_enable {
                     ui.label("TIME:");
                     let mut pt = porta_time;
-                    if ui.add(egui::Slider::new(&mut pt, 0.0..=99.0).show_value(false)).changed() {
+                    if ui
+                        .add(egui::Slider::new(&mut pt, 0.0..=99.0).show_value(false))
+                        .changed()
+                    {
                         if let Ok(mut ctrl) = self.lock_controller() {
                             ctrl.set_portamento_time(pt);
                         }
@@ -414,7 +466,10 @@ impl Dx7App {
         ui.horizontal(|ui| {
             ui.label("TUNE:");
             let mut tune = master_tune;
-            if ui.add(egui::Slider::new(&mut tune, -150.0..=150.0).show_value(false)).changed() {
+            if ui
+                .add(egui::Slider::new(&mut tune, -150.0..=150.0).show_value(false))
+                .changed()
+            {
                 if let Ok(mut ctrl) = self.lock_controller() {
                     ctrl.set_master_tune(tune);
                 }
@@ -432,7 +487,10 @@ impl Dx7App {
         ui.horizontal(|ui| {
             ui.label("BEND:");
             let mut pb = pb_range;
-            if ui.add(egui::Slider::new(&mut pb, 0.0..=12.0).show_value(false)).changed() {
+            if ui
+                .add(egui::Slider::new(&mut pb, 0.0..=12.0).show_value(false))
+                .changed()
+            {
                 if let Ok(mut ctrl) = self.lock_controller() {
                     ctrl.set_pitch_bend_range(pb);
                 }
@@ -671,7 +729,7 @@ impl eframe::App for Dx7App {
         egui::CentralPanel::default().show(ctx, |ui| {
             // Header
             ui.vertical_centered(|ui| {
-                ui.heading("YAMAHA DX7 DIGITAL SYNTHESIZER");
+                ui.heading("DX7-STYLE DIGITAL FM SYNTHESIZER");
             });
             ui.separator();
 
@@ -755,7 +813,10 @@ impl Dx7App {
                         ui.label("TIMING");
                         ui.horizontal(|ui| {
                             ui.label("Rate:");
-                            if ui.add(egui::Slider::new(&mut lfo_rate, 0.0..=99.0).integer()).changed() {
+                            if ui
+                                .add(egui::Slider::new(&mut lfo_rate, 0.0..=99.0).integer())
+                                .changed()
+                            {
                                 if let Ok(mut ctrl) = self.lock_controller() {
                                     ctrl.set_lfo_param(LfoParam::Rate, lfo_rate);
                                 }
@@ -763,7 +824,10 @@ impl Dx7App {
                         });
                         ui.horizontal(|ui| {
                             ui.label("Delay:");
-                            if ui.add(egui::Slider::new(&mut lfo_delay, 0.0..=99.0).integer()).changed() {
+                            if ui
+                                .add(egui::Slider::new(&mut lfo_delay, 0.0..=99.0).integer())
+                                .changed()
+                            {
                                 if let Ok(mut ctrl) = self.lock_controller() {
                                     ctrl.set_lfo_param(LfoParam::Delay, lfo_delay);
                                 }
@@ -771,8 +835,7 @@ impl Dx7App {
                         });
                         ui.label(format!(
                             "Freq: {:.2} Hz | Delay: {:.2}s",
-                            self.snapshot.lfo_frequency_hz,
-                            self.snapshot.lfo_delay_seconds
+                            self.snapshot.lfo_frequency_hz, self.snapshot.lfo_delay_seconds
                         ));
                     });
 
@@ -781,7 +844,10 @@ impl Dx7App {
                         ui.label("MODULATION");
                         ui.horizontal(|ui| {
                             ui.label("Pitch:");
-                            if ui.add(egui::Slider::new(&mut lfo_pitch_depth, 0.0..=99.0).integer()).changed() {
+                            if ui
+                                .add(egui::Slider::new(&mut lfo_pitch_depth, 0.0..=99.0).integer())
+                                .changed()
+                            {
                                 if let Ok(mut ctrl) = self.lock_controller() {
                                     ctrl.set_lfo_param(LfoParam::PitchDepth, lfo_pitch_depth);
                                 }
@@ -789,7 +855,10 @@ impl Dx7App {
                         });
                         ui.horizontal(|ui| {
                             ui.label("Amp:");
-                            if ui.add(egui::Slider::new(&mut lfo_amp_depth, 0.0..=99.0).integer()).changed() {
+                            if ui
+                                .add(egui::Slider::new(&mut lfo_amp_depth, 0.0..=99.0).integer())
+                                .changed()
+                            {
                                 if let Ok(mut ctrl) = self.lock_controller() {
                                     ctrl.set_lfo_param(LfoParam::AmpDepth, lfo_amp_depth);
                                 }
@@ -800,10 +869,22 @@ impl Dx7App {
                             egui::ComboBox::from_id_source("lfo_waveform")
                                 .selected_text(lfo_waveform.name())
                                 .show_ui(ui, |ui| {
-                                    for (i, &waveform) in crate::lfo::LFOWaveform::all().iter().enumerate() {
-                                        if ui.selectable_value(&mut lfo_waveform.clone(), waveform, waveform.name()).clicked() {
+                                    for (i, &waveform) in
+                                        crate::lfo::LFOWaveform::all().iter().enumerate()
+                                    {
+                                        if ui
+                                            .selectable_value(
+                                                &mut lfo_waveform.clone(),
+                                                waveform,
+                                                waveform.name(),
+                                            )
+                                            .clicked()
+                                        {
                                             if let Ok(mut ctrl) = self.lock_controller() {
-                                                ctrl.set_lfo_param(LfoParam::Waveform(i as u8), 0.0);
+                                                ctrl.set_lfo_param(
+                                                    LfoParam::Waveform(i as u8),
+                                                    0.0,
+                                                );
                                             }
                                         }
                                     }
@@ -813,7 +894,10 @@ impl Dx7App {
                             ui.label("Key Sync:");
                             if ui.checkbox(&mut lfo_key_sync, "").changed() {
                                 if let Ok(mut ctrl) = self.lock_controller() {
-                                    ctrl.set_lfo_param(LfoParam::KeySync, if lfo_key_sync { 1.0 } else { 0.0 });
+                                    ctrl.set_lfo_param(
+                                        LfoParam::KeySync,
+                                        if lfo_key_sync { 1.0 } else { 0.0 },
+                                    );
                                 }
                             }
                         });
@@ -825,7 +909,11 @@ impl Dx7App {
                 ui.label(format!(
                     "Mod Wheel: {}%{}",
                     mod_pct,
-                    if mod_pct == 0 { " (move to enable)" } else { "" }
+                    if mod_pct == 0 {
+                        " (move to enable)"
+                    } else {
+                        ""
+                    }
                 ));
             });
         });
@@ -854,46 +942,84 @@ impl Dx7App {
             ui.vertical(|ui| {
                 ui.label(egui::RichText::new("CHORUS").strong());
 
-                if let Ok(mut synth) = self.lock_engine() {
-                    let chorus = &mut synth.effects.chorus;
+                let chorus = &self.snapshot.chorus;
+                let mut enabled = chorus.enabled;
+                let mut rate = chorus.rate;
+                let mut depth = chorus.depth;
+                let mut mix = chorus.mix;
+                let mut feedback = chorus.feedback;
 
+                ui.horizontal(|ui| {
+                    ui.label("Enable:");
+                    if ui.checkbox(&mut enabled, "").changed() {
+                        if let Ok(mut ctrl) = self.lock_controller() {
+                            ctrl.set_effect_param(
+                                EffectType::Chorus,
+                                EffectParam::Enabled,
+                                if enabled { 1.0 } else { 0.0 },
+                            );
+                        }
+                    }
+                });
+
+                ui.add_enabled_ui(enabled, |ui| {
                     ui.horizontal(|ui| {
-                        ui.label("Enable:");
-                        ui.checkbox(&mut chorus.enabled, "");
-                    });
-
-                    ui.add_enabled_ui(chorus.enabled, |ui| {
-                        ui.horizontal(|ui| {
-                            ui.label("Rate:");
-                            ui.add(
-                                egui::Slider::new(&mut chorus.rate, 0.1..=5.0)
+                        ui.label("Rate:");
+                        if ui
+                            .add(
+                                egui::Slider::new(&mut rate, 0.1..=5.0)
                                     .suffix(" Hz")
                                     .show_value(true),
-                            );
-                        });
-                        ui.horizontal(|ui| {
-                            ui.label("Depth:");
-                            ui.add(
-                                egui::Slider::new(&mut chorus.depth, 0.0..=10.0)
+                            )
+                            .changed()
+                        {
+                            if let Ok(mut ctrl) = self.lock_controller() {
+                                ctrl.set_effect_param(EffectType::Chorus, EffectParam::ChorusRate, rate);
+                            }
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Depth:");
+                        if ui
+                            .add(
+                                egui::Slider::new(&mut depth, 0.0..=10.0)
                                     .suffix(" ms")
                                     .show_value(true),
-                            );
-                        });
-                        ui.horizontal(|ui| {
-                            ui.label("Mix:");
-                            ui.add(
-                                egui::Slider::new(&mut chorus.mix, 0.0..=1.0).show_value(true),
-                            );
-                        });
-                        ui.horizontal(|ui| {
-                            ui.label("Feedback:");
-                            ui.add(
-                                egui::Slider::new(&mut chorus.feedback, 0.0..=0.7)
-                                    .show_value(true),
-                            );
-                        });
+                            )
+                            .changed()
+                        {
+                            if let Ok(mut ctrl) = self.lock_controller() {
+                                ctrl.set_effect_param(EffectType::Chorus, EffectParam::ChorusDepth, depth);
+                            }
+                        }
                     });
-                }
+                    ui.horizontal(|ui| {
+                        ui.label("Mix:");
+                        if ui
+                            .add(egui::Slider::new(&mut mix, 0.0..=1.0).show_value(true))
+                            .changed()
+                        {
+                            if let Ok(mut ctrl) = self.lock_controller() {
+                                ctrl.set_effect_param(EffectType::Chorus, EffectParam::Mix, mix);
+                            }
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Feedback:");
+                        if ui
+                            .add(egui::Slider::new(&mut feedback, 0.0..=0.7).show_value(true))
+                            .changed()
+                        {
+                            if let Ok(mut ctrl) = self.lock_controller() {
+                                ctrl.set_effect_param(
+                                    EffectType::Chorus,
+                                    EffectParam::ChorusFeedback,
+                                    feedback,
+                                );
+                            }
+                        }
+                    });
+                });
             });
         });
     }
@@ -903,42 +1029,81 @@ impl Dx7App {
             ui.vertical(|ui| {
                 ui.label(egui::RichText::new("DELAY").strong());
 
-                if let Ok(mut synth) = self.lock_engine() {
-                    let delay = &mut synth.effects.delay;
+                let delay = &self.snapshot.delay;
+                let mut enabled = delay.enabled;
+                let mut time_ms = delay.time_ms;
+                let mut feedback = delay.feedback;
+                let mut mix = delay.mix;
+                let mut ping_pong = delay.ping_pong;
 
+                ui.horizontal(|ui| {
+                    ui.label("Enable:");
+                    if ui.checkbox(&mut enabled, "").changed() {
+                        if let Ok(mut ctrl) = self.lock_controller() {
+                            ctrl.set_effect_param(
+                                EffectType::Delay,
+                                EffectParam::Enabled,
+                                if enabled { 1.0 } else { 0.0 },
+                            );
+                        }
+                    }
+                });
+
+                ui.add_enabled_ui(enabled, |ui| {
                     ui.horizontal(|ui| {
-                        ui.label("Enable:");
-                        ui.checkbox(&mut delay.enabled, "");
-                    });
-
-                    ui.add_enabled_ui(delay.enabled, |ui| {
-                        ui.horizontal(|ui| {
-                            ui.label("Time:");
-                            ui.add(
-                                egui::Slider::new(&mut delay.time_ms, 0.0..=1000.0)
+                        ui.label("Time:");
+                        if ui
+                            .add(
+                                egui::Slider::new(&mut time_ms, 0.0..=1000.0)
                                     .suffix(" ms")
                                     .show_value(true),
-                            );
-                        });
-                        ui.horizontal(|ui| {
-                            ui.label("Feedback:");
-                            ui.add(
-                                egui::Slider::new(&mut delay.feedback, 0.0..=0.9)
-                                    .show_value(true),
-                            );
-                        });
-                        ui.horizontal(|ui| {
-                            ui.label("Mix:");
-                            ui.add(
-                                egui::Slider::new(&mut delay.mix, 0.0..=1.0).show_value(true),
-                            );
-                        });
-                        ui.horizontal(|ui| {
-                            ui.label("Ping-Pong:");
-                            ui.checkbox(&mut delay.ping_pong, "");
-                        });
+                            )
+                            .changed()
+                        {
+                            if let Ok(mut ctrl) = self.lock_controller() {
+                                ctrl.set_effect_param(EffectType::Delay, EffectParam::DelayTime, time_ms);
+                            }
+                        }
                     });
-                }
+                    ui.horizontal(|ui| {
+                        ui.label("Feedback:");
+                        if ui
+                            .add(egui::Slider::new(&mut feedback, 0.0..=0.9).show_value(true))
+                            .changed()
+                        {
+                            if let Ok(mut ctrl) = self.lock_controller() {
+                                ctrl.set_effect_param(
+                                    EffectType::Delay,
+                                    EffectParam::DelayFeedback,
+                                    feedback,
+                                );
+                            }
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Mix:");
+                        if ui
+                            .add(egui::Slider::new(&mut mix, 0.0..=1.0).show_value(true))
+                            .changed()
+                        {
+                            if let Ok(mut ctrl) = self.lock_controller() {
+                                ctrl.set_effect_param(EffectType::Delay, EffectParam::Mix, mix);
+                            }
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Ping-Pong:");
+                        if ui.checkbox(&mut ping_pong, "").changed() {
+                            if let Ok(mut ctrl) = self.lock_controller() {
+                                ctrl.set_effect_param(
+                                    EffectType::Delay,
+                                    EffectParam::DelayPingPong,
+                                    if ping_pong { 1.0 } else { 0.0 },
+                                );
+                            }
+                        }
+                    });
+                });
             });
         });
     }
@@ -948,43 +1113,84 @@ impl Dx7App {
             ui.vertical(|ui| {
                 ui.label(egui::RichText::new("REVERB").strong());
 
-                if let Ok(mut synth) = self.lock_engine() {
-                    let reverb = &mut synth.effects.reverb;
+                let reverb = &self.snapshot.reverb;
+                let mut enabled = reverb.enabled;
+                let mut room_size = reverb.room_size;
+                let mut damping = reverb.damping;
+                let mut mix = reverb.mix;
+                let mut width = reverb.width;
 
+                ui.horizontal(|ui| {
+                    ui.label("Enable:");
+                    if ui.checkbox(&mut enabled, "").changed() {
+                        if let Ok(mut ctrl) = self.lock_controller() {
+                            ctrl.set_effect_param(
+                                EffectType::Reverb,
+                                EffectParam::Enabled,
+                                if enabled { 1.0 } else { 0.0 },
+                            );
+                        }
+                    }
+                });
+
+                ui.add_enabled_ui(enabled, |ui| {
                     ui.horizontal(|ui| {
-                        ui.label("Enable:");
-                        ui.checkbox(&mut reverb.enabled, "");
+                        ui.label("Room Size:");
+                        if ui
+                            .add(egui::Slider::new(&mut room_size, 0.0..=1.0).show_value(true))
+                            .changed()
+                        {
+                            if let Ok(mut ctrl) = self.lock_controller() {
+                                ctrl.set_effect_param(
+                                    EffectType::Reverb,
+                                    EffectParam::ReverbRoomSize,
+                                    room_size,
+                                );
+                            }
+                        }
                     });
-
-                    ui.add_enabled_ui(reverb.enabled, |ui| {
-                        ui.horizontal(|ui| {
-                            ui.label("Room Size:");
-                            ui.add(
-                                egui::Slider::new(&mut reverb.room_size, 0.0..=1.0)
-                                    .show_value(true),
-                            );
-                        });
-                        ui.horizontal(|ui| {
-                            ui.label("Damping:");
-                            ui.add(
-                                egui::Slider::new(&mut reverb.damping, 0.0..=1.0)
-                                    .show_value(true),
-                            );
-                        });
-                        ui.horizontal(|ui| {
-                            ui.label("Mix:");
-                            ui.add(
-                                egui::Slider::new(&mut reverb.mix, 0.0..=1.0).show_value(true),
-                            );
-                        });
-                        ui.horizontal(|ui| {
-                            ui.label("Width:");
-                            ui.add(
-                                egui::Slider::new(&mut reverb.width, 0.0..=1.0).show_value(true),
-                            );
-                        });
+                    ui.horizontal(|ui| {
+                        ui.label("Damping:");
+                        if ui
+                            .add(egui::Slider::new(&mut damping, 0.0..=1.0).show_value(true))
+                            .changed()
+                        {
+                            if let Ok(mut ctrl) = self.lock_controller() {
+                                ctrl.set_effect_param(
+                                    EffectType::Reverb,
+                                    EffectParam::ReverbDamping,
+                                    damping,
+                                );
+                            }
+                        }
                     });
-                }
+                    ui.horizontal(|ui| {
+                        ui.label("Mix:");
+                        if ui
+                            .add(egui::Slider::new(&mut mix, 0.0..=1.0).show_value(true))
+                            .changed()
+                        {
+                            if let Ok(mut ctrl) = self.lock_controller() {
+                                ctrl.set_effect_param(EffectType::Reverb, EffectParam::Mix, mix);
+                            }
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Width:");
+                        if ui
+                            .add(egui::Slider::new(&mut width, 0.0..=1.0).show_value(true))
+                            .changed()
+                        {
+                            if let Ok(mut ctrl) = self.lock_controller() {
+                                ctrl.set_effect_param(
+                                    EffectType::Reverb,
+                                    EffectParam::ReverbWidth,
+                                    width,
+                                );
+                            }
+                        }
+                    });
+                });
             });
         });
     }
@@ -1021,8 +1227,8 @@ impl Dx7App {
                 });
 
                 // Compact diagram canvas
-                let (response, painter) =
-                    ui.allocate_painter(egui::vec2(ui.available_width(), 75.0), egui::Sense::hover());
+                let (response, painter) = ui
+                    .allocate_painter(egui::vec2(ui.available_width(), 75.0), egui::Sense::hover());
                 let rect = response.rect;
 
                 let positions = self.calculate_operator_positions_compact(&alg_info, rect);
@@ -1032,14 +1238,19 @@ impl Dx7App {
                 for (from, to) in &alg_info.connections {
                     let from_pos = positions[(*from - 1) as usize];
                     let to_pos = positions[(*to - 1) as usize];
-                    painter.line_segment([from_pos, to_pos], egui::Stroke::new(1.5, connection_color));
+                    painter
+                        .line_segment([from_pos, to_pos], egui::Stroke::new(1.5, connection_color));
                 }
 
                 // Draw feedback indicator
                 if alg_info.feedback_op > 0 {
                     let fb_pos = positions[(alg_info.feedback_op - 1) as usize];
                     let loop_center = fb_pos + egui::vec2(14.0, -8.0);
-                    painter.circle_stroke(loop_center, 6.0, egui::Stroke::new(1.5, egui::Color32::from_rgb(200, 100, 50)));
+                    painter.circle_stroke(
+                        loop_center,
+                        6.0,
+                        egui::Stroke::new(1.5, egui::Color32::from_rgb(200, 100, 50)),
+                    );
                 }
 
                 // Draw operators (smaller)
@@ -1051,36 +1262,78 @@ impl Dx7App {
                     let is_enabled = enabled_states[i];
 
                     let (fill_color, stroke_color, text_color) = if !is_enabled {
-                        (egui::Color32::from_rgb(80, 80, 80), egui::Color32::from_rgb(60, 60, 60), egui::Color32::from_rgb(120, 120, 120))
+                        (
+                            egui::Color32::from_rgb(80, 80, 80),
+                            egui::Color32::from_rgb(60, 60, 60),
+                            egui::Color32::from_rgb(120, 120, 120),
+                        )
                     } else if is_carrier {
-                        (egui::Color32::from_rgb(70, 130, 180),
-                         if is_selected { egui::Color32::from_rgb(255, 200, 0) } else { egui::Color32::from_rgb(50, 100, 150) },
-                         egui::Color32::WHITE)
+                        (
+                            egui::Color32::from_rgb(70, 130, 180),
+                            if is_selected {
+                                egui::Color32::from_rgb(255, 200, 0)
+                            } else {
+                                egui::Color32::from_rgb(50, 100, 150)
+                            },
+                            egui::Color32::WHITE,
+                        )
                     } else {
-                        (egui::Color32::from_rgb(100, 160, 100),
-                         if is_selected { egui::Color32::from_rgb(255, 200, 0) } else { egui::Color32::from_rgb(70, 130, 70) },
-                         egui::Color32::WHITE)
+                        (
+                            egui::Color32::from_rgb(100, 160, 100),
+                            if is_selected {
+                                egui::Color32::from_rgb(255, 200, 0)
+                            } else {
+                                egui::Color32::from_rgb(70, 130, 70)
+                            },
+                            egui::Color32::WHITE,
+                        )
                     };
 
-                    painter.circle(pos, op_radius, fill_color, egui::Stroke::new(if is_selected { 2.5 } else { 1.5 }, stroke_color));
-                    painter.text(pos, egui::Align2::CENTER_CENTER, format!("{}", op_num), egui::FontId::proportional(10.0), text_color);
+                    painter.circle(
+                        pos,
+                        op_radius,
+                        fill_color,
+                        egui::Stroke::new(if is_selected { 2.5 } else { 1.5 }, stroke_color),
+                    );
+                    painter.text(
+                        pos,
+                        egui::Align2::CENTER_CENTER,
+                        format!("{}", op_num),
+                        egui::FontId::proportional(10.0),
+                        text_color,
+                    );
                 }
 
                 // Output indicator
                 let output_x = rect.right() - 20.0;
                 let output_y = rect.center().y + 20.0;
-                painter.text(egui::pos2(output_x, output_y), egui::Align2::CENTER_CENTER, "OUT", egui::FontId::proportional(8.0), egui::Color32::from_rgb(100, 100, 100));
+                painter.text(
+                    egui::pos2(output_x, output_y),
+                    egui::Align2::CENTER_CENTER,
+                    "OUT",
+                    egui::FontId::proportional(8.0),
+                    egui::Color32::from_rgb(100, 100, 100),
+                );
 
                 for &carrier in &alg_info.carriers {
                     let carrier_pos = positions[(carrier - 1) as usize];
-                    painter.line_segment([carrier_pos + egui::vec2(op_radius + 2.0, 0.0), egui::pos2(output_x - 10.0, output_y)],
-                        egui::Stroke::new(1.0, egui::Color32::from_rgb(70, 130, 180)));
+                    painter.line_segment(
+                        [
+                            carrier_pos + egui::vec2(op_radius + 2.0, 0.0),
+                            egui::pos2(output_x - 10.0, output_y),
+                        ],
+                        egui::Stroke::new(1.0, egui::Color32::from_rgb(70, 130, 180)),
+                    );
                 }
             });
         });
     }
 
-    fn calculate_operator_positions_compact(&self, alg_info: &algorithms::AlgorithmInfo, rect: egui::Rect) -> [egui::Pos2; 6] {
+    fn calculate_operator_positions_compact(
+        &self,
+        alg_info: &algorithms::AlgorithmInfo,
+        rect: egui::Rect,
+    ) -> [egui::Pos2; 6] {
         let mut layers: [i32; 6] = [0; 6];
         for &carrier in &alg_info.carriers {
             layers[(carrier - 1) as usize] = 0;
@@ -1142,9 +1395,19 @@ impl Dx7App {
                     // Vertical mini-panel per operator
                     ui.allocate_ui(egui::vec2(65.0, 70.0), |ui| {
                         let frame = egui::Frame::none()
-                            .fill(if is_selected { egui::Color32::from_rgb(240, 248, 255) } else { egui::Color32::from_rgb(250, 250, 250) })
-                            .stroke(egui::Stroke::new(if is_selected { 2.5 } else { 1.0 },
-                                if is_selected { egui::Color32::from_rgb(255, 180, 0) } else { base_color }))
+                            .fill(if is_selected {
+                                egui::Color32::from_rgb(240, 248, 255)
+                            } else {
+                                egui::Color32::from_rgb(250, 250, 250)
+                            })
+                            .stroke(egui::Stroke::new(
+                                if is_selected { 2.5 } else { 1.0 },
+                                if is_selected {
+                                    egui::Color32::from_rgb(255, 180, 0)
+                                } else {
+                                    base_color
+                                },
+                            ))
                             .rounding(4.0)
                             .inner_margin(4.0);
 
@@ -1155,18 +1418,44 @@ impl Dx7App {
                                 let fb = if has_feedback { " F" } else { "" };
                                 let label_text = format!("OP{} {}{}", op_num, role, fb);
 
-                                if ui.selectable_label(is_selected, egui::RichText::new(label_text).size(11.0).color(base_color)).clicked() {
+                                if ui
+                                    .selectable_label(
+                                        is_selected,
+                                        egui::RichText::new(label_text)
+                                            .size(11.0)
+                                            .color(base_color),
+                                    )
+                                    .clicked()
+                                {
                                     self.selected_operator = op_idx;
                                 }
 
                                 // Level bar (vertical)
                                 let bar_width = 40.0;
                                 let bar_height = 10.0;
-                                let (bar_rect, _) = ui.allocate_exact_size(egui::vec2(bar_width, bar_height), egui::Sense::hover());
-                                ui.painter().rect_filled(bar_rect, 2.0, egui::Color32::from_rgb(40, 40, 40));
+                                let (bar_rect, _) = ui.allocate_exact_size(
+                                    egui::vec2(bar_width, bar_height),
+                                    egui::Sense::hover(),
+                                );
+                                ui.painter().rect_filled(
+                                    bar_rect,
+                                    2.0,
+                                    egui::Color32::from_rgb(40, 40, 40),
+                                );
                                 let fill_width = (level / 99.0) * bar_width;
-                                let fill_rect = egui::Rect::from_min_size(bar_rect.min, egui::vec2(fill_width, bar_height));
-                                ui.painter().rect_filled(fill_rect, 2.0, if enabled { base_color } else { egui::Color32::from_rgb(60, 60, 60) });
+                                let fill_rect = egui::Rect::from_min_size(
+                                    bar_rect.min,
+                                    egui::vec2(fill_width, bar_height),
+                                );
+                                ui.painter().rect_filled(
+                                    fill_rect,
+                                    2.0,
+                                    if enabled {
+                                        base_color
+                                    } else {
+                                        egui::Color32::from_rgb(60, 60, 60)
+                                    },
+                                );
 
                                 // Level value
                                 ui.label(egui::RichText::new(format!("{:.0}", level)).size(10.0));
@@ -1211,11 +1500,18 @@ impl Dx7App {
             let role = if is_carrier { "CARRIER" } else { "MODULATOR" };
             let fb_text = if has_feedback { " [FB]" } else { "" };
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(format!("OPERATOR {} - {}{}", op_num, role, fb_text)).strong());
+                ui.label(
+                    egui::RichText::new(format!("OPERATOR {} - {}{}", op_num, role, fb_text))
+                        .strong(),
+                );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.checkbox(&mut enabled, "ON").changed() {
                         if let Ok(mut ctrl) = self.lock_controller() {
-                            ctrl.set_operator_param(op_idx as u8, OperatorParam::Enabled, if enabled { 1.0 } else { 0.0 });
+                            ctrl.set_operator_param(
+                                op_idx as u8,
+                                OperatorParam::Enabled,
+                                if enabled { 1.0 } else { 0.0 },
+                            );
                         }
                     }
                 });
@@ -1225,129 +1521,230 @@ impl Dx7App {
             ui.add_enabled_ui(enabled, |ui| {
                 // Parameters section
                 ui.label(egui::RichText::new("PARAMETERS").size(10.0));
-                egui::Grid::new("op_params_grid").num_columns(4).spacing([8.0, 4.0]).show(ui, |ui| {
-                    ui.label("Ratio:");
-                    if ui.add(egui::Slider::new(&mut freq_ratio, 0.5..=31.0).step_by(1.0)
-                        .custom_formatter(|n, _| format!("{:.2}", crate::dx7_frequency::quantize_frequency_ratio(n as f32)))).changed() {
-                        let q = crate::dx7_frequency::quantize_frequency_ratio(freq_ratio);
-                        if let Ok(mut ctrl) = self.lock_controller() {
-                            ctrl.set_operator_param(op_idx as u8, OperatorParam::Ratio, q);
-                        }
-                    }
-                    ui.label("Level:");
-                    if ui.add(egui::Slider::new(&mut output_level, 0.0..=99.0).integer()).changed() {
-                        if let Ok(mut ctrl) = self.lock_controller() {
-                            ctrl.set_operator_param(op_idx as u8, OperatorParam::Level, output_level);
-                        }
-                    }
-                    ui.end_row();
-
-                    ui.label("Detune:");
-                    if ui.add(egui::Slider::new(&mut detune, -7.0..=7.0).integer()).changed() {
-                        if let Ok(mut ctrl) = self.lock_controller() {
-                            ctrl.set_operator_param(op_idx as u8, OperatorParam::Detune, detune);
-                        }
-                    }
-                    ui.label("Vel Sens:");
-                    if ui.add(egui::Slider::new(&mut vel_sens, 0.0..=7.0).integer()).changed() {
-                        if let Ok(mut ctrl) = self.lock_controller() {
-                            ctrl.set_operator_param(op_idx as u8, OperatorParam::VelocitySensitivity, vel_sens);
-                        }
-                    }
-                    ui.end_row();
-
-                    if has_feedback {
-                        ui.label("Feedback:");
-                        if ui.add(egui::Slider::new(&mut feedback, 0.0..=7.0).integer()).changed() {
+                egui::Grid::new("op_params_grid")
+                    .num_columns(4)
+                    .spacing([8.0, 4.0])
+                    .show(ui, |ui| {
+                        ui.label("Ratio:");
+                        if ui
+                            .add(
+                                egui::Slider::new(&mut freq_ratio, 0.5..=31.0)
+                                    .step_by(1.0)
+                                    .custom_formatter(|n, _| {
+                                        format!(
+                                            "{:.2}",
+                                            crate::dx7_frequency::quantize_frequency_ratio(
+                                                n as f32
+                                            )
+                                        )
+                                    }),
+                            )
+                            .changed()
+                        {
+                            let q = crate::dx7_frequency::quantize_frequency_ratio(freq_ratio);
                             if let Ok(mut ctrl) = self.lock_controller() {
-                                ctrl.set_operator_param(op_idx as u8, OperatorParam::Feedback, feedback);
+                                ctrl.set_operator_param(op_idx as u8, OperatorParam::Ratio, q);
                             }
                         }
-                    } else {
-                        ui.label("");
-                        ui.label("");
-                    }
-                    ui.label("Key Lvl:");
-                    if ui.add(egui::Slider::new(&mut key_scale_lvl, 0.0..=99.0).integer()).changed() {
-                        if let Ok(mut ctrl) = self.lock_controller() {
-                            ctrl.set_operator_param(op_idx as u8, OperatorParam::KeyScaleLevel, key_scale_lvl);
+                        ui.label("Level:");
+                        if ui
+                            .add(egui::Slider::new(&mut output_level, 0.0..=99.0).integer())
+                            .changed()
+                        {
+                            if let Ok(mut ctrl) = self.lock_controller() {
+                                ctrl.set_operator_param(
+                                    op_idx as u8,
+                                    OperatorParam::Level,
+                                    output_level,
+                                );
+                            }
                         }
-                    }
-                    ui.end_row();
+                        ui.end_row();
 
-                    ui.label("");
-                    ui.label("");
-                    ui.label("Key Rate:");
-                    if ui.add(egui::Slider::new(&mut key_scale_rt, 0.0..=7.0).integer()).changed() {
-                        if let Ok(mut ctrl) = self.lock_controller() {
-                            ctrl.set_operator_param(op_idx as u8, OperatorParam::KeyScaleRate, key_scale_rt);
+                        ui.label("Detune:");
+                        if ui
+                            .add(egui::Slider::new(&mut detune, -7.0..=7.0).integer())
+                            .changed()
+                        {
+                            if let Ok(mut ctrl) = self.lock_controller() {
+                                ctrl.set_operator_param(
+                                    op_idx as u8,
+                                    OperatorParam::Detune,
+                                    detune,
+                                );
+                            }
                         }
-                    }
-                    ui.end_row();
-                });
+                        ui.label("Vel Sens:");
+                        if ui
+                            .add(egui::Slider::new(&mut vel_sens, 0.0..=7.0).integer())
+                            .changed()
+                        {
+                            if let Ok(mut ctrl) = self.lock_controller() {
+                                ctrl.set_operator_param(
+                                    op_idx as u8,
+                                    OperatorParam::VelocitySensitivity,
+                                    vel_sens,
+                                );
+                            }
+                        }
+                        ui.end_row();
+
+                        if has_feedback {
+                            ui.label("Feedback:");
+                            if ui
+                                .add(egui::Slider::new(&mut feedback, 0.0..=7.0).integer())
+                                .changed()
+                            {
+                                if let Ok(mut ctrl) = self.lock_controller() {
+                                    ctrl.set_operator_param(
+                                        op_idx as u8,
+                                        OperatorParam::Feedback,
+                                        feedback,
+                                    );
+                                }
+                            }
+                        } else {
+                            ui.label("");
+                            ui.label("");
+                        }
+                        ui.label("Key Lvl:");
+                        if ui
+                            .add(egui::Slider::new(&mut key_scale_lvl, 0.0..=99.0).integer())
+                            .changed()
+                        {
+                            if let Ok(mut ctrl) = self.lock_controller() {
+                                ctrl.set_operator_param(
+                                    op_idx as u8,
+                                    OperatorParam::KeyScaleLevel,
+                                    key_scale_lvl,
+                                );
+                            }
+                        }
+                        ui.end_row();
+
+                        ui.label("");
+                        ui.label("");
+                        ui.label("Key Rate:");
+                        if ui
+                            .add(egui::Slider::new(&mut key_scale_rt, 0.0..=7.0).integer())
+                            .changed()
+                        {
+                            if let Ok(mut ctrl) = self.lock_controller() {
+                                ctrl.set_operator_param(
+                                    op_idx as u8,
+                                    OperatorParam::KeyScaleRate,
+                                    key_scale_rt,
+                                );
+                            }
+                        }
+                        ui.end_row();
+                    });
 
                 ui.add_space(8.0);
 
                 // Envelope section
                 ui.label(egui::RichText::new("ENVELOPE").size(10.0));
-                egui::Grid::new("op_env_grid").num_columns(4).spacing([8.0, 4.0]).show(ui, |ui| {
-                    // Row 1: Rates
-                    ui.label("R1:");
-                    if ui.add(egui::Slider::new(&mut rate1, 0.0..=99.0).integer()).changed() {
-                        if let Ok(mut ctrl) = self.lock_controller() {
-                            ctrl.set_envelope_param(op_idx as u8, EnvelopeParam::Rate1, rate1);
+                egui::Grid::new("op_env_grid")
+                    .num_columns(4)
+                    .spacing([8.0, 4.0])
+                    .show(ui, |ui| {
+                        // Row 1: Rates
+                        ui.label("R1:");
+                        if ui
+                            .add(egui::Slider::new(&mut rate1, 0.0..=99.0).integer())
+                            .changed()
+                        {
+                            if let Ok(mut ctrl) = self.lock_controller() {
+                                ctrl.set_envelope_param(op_idx as u8, EnvelopeParam::Rate1, rate1);
+                            }
                         }
-                    }
-                    ui.label("R2:");
-                    if ui.add(egui::Slider::new(&mut rate2, 0.0..=99.0).integer()).changed() {
-                        if let Ok(mut ctrl) = self.lock_controller() {
-                            ctrl.set_envelope_param(op_idx as u8, EnvelopeParam::Rate2, rate2);
+                        ui.label("R2:");
+                        if ui
+                            .add(egui::Slider::new(&mut rate2, 0.0..=99.0).integer())
+                            .changed()
+                        {
+                            if let Ok(mut ctrl) = self.lock_controller() {
+                                ctrl.set_envelope_param(op_idx as u8, EnvelopeParam::Rate2, rate2);
+                            }
                         }
-                    }
-                    ui.end_row();
+                        ui.end_row();
 
-                    ui.label("L1:");
-                    if ui.add(egui::Slider::new(&mut level1, 0.0..=99.0).integer()).changed() {
-                        if let Ok(mut ctrl) = self.lock_controller() {
-                            ctrl.set_envelope_param(op_idx as u8, EnvelopeParam::Level1, level1);
+                        ui.label("L1:");
+                        if ui
+                            .add(egui::Slider::new(&mut level1, 0.0..=99.0).integer())
+                            .changed()
+                        {
+                            if let Ok(mut ctrl) = self.lock_controller() {
+                                ctrl.set_envelope_param(
+                                    op_idx as u8,
+                                    EnvelopeParam::Level1,
+                                    level1,
+                                );
+                            }
                         }
-                    }
-                    ui.label("L2:");
-                    if ui.add(egui::Slider::new(&mut level2, 0.0..=99.0).integer()).changed() {
-                        if let Ok(mut ctrl) = self.lock_controller() {
-                            ctrl.set_envelope_param(op_idx as u8, EnvelopeParam::Level2, level2);
+                        ui.label("L2:");
+                        if ui
+                            .add(egui::Slider::new(&mut level2, 0.0..=99.0).integer())
+                            .changed()
+                        {
+                            if let Ok(mut ctrl) = self.lock_controller() {
+                                ctrl.set_envelope_param(
+                                    op_idx as u8,
+                                    EnvelopeParam::Level2,
+                                    level2,
+                                );
+                            }
                         }
-                    }
-                    ui.end_row();
+                        ui.end_row();
 
-                    ui.label("R3:");
-                    if ui.add(egui::Slider::new(&mut rate3, 0.0..=99.0).integer()).changed() {
-                        if let Ok(mut ctrl) = self.lock_controller() {
-                            ctrl.set_envelope_param(op_idx as u8, EnvelopeParam::Rate3, rate3);
+                        ui.label("R3:");
+                        if ui
+                            .add(egui::Slider::new(&mut rate3, 0.0..=99.0).integer())
+                            .changed()
+                        {
+                            if let Ok(mut ctrl) = self.lock_controller() {
+                                ctrl.set_envelope_param(op_idx as u8, EnvelopeParam::Rate3, rate3);
+                            }
                         }
-                    }
-                    ui.label("R4:");
-                    if ui.add(egui::Slider::new(&mut rate4, 0.0..=99.0).integer()).changed() {
-                        if let Ok(mut ctrl) = self.lock_controller() {
-                            ctrl.set_envelope_param(op_idx as u8, EnvelopeParam::Rate4, rate4);
+                        ui.label("R4:");
+                        if ui
+                            .add(egui::Slider::new(&mut rate4, 0.0..=99.0).integer())
+                            .changed()
+                        {
+                            if let Ok(mut ctrl) = self.lock_controller() {
+                                ctrl.set_envelope_param(op_idx as u8, EnvelopeParam::Rate4, rate4);
+                            }
                         }
-                    }
-                    ui.end_row();
+                        ui.end_row();
 
-                    ui.label("L3:");
-                    if ui.add(egui::Slider::new(&mut level3, 0.0..=99.0).integer()).changed() {
-                        if let Ok(mut ctrl) = self.lock_controller() {
-                            ctrl.set_envelope_param(op_idx as u8, EnvelopeParam::Level3, level3);
+                        ui.label("L3:");
+                        if ui
+                            .add(egui::Slider::new(&mut level3, 0.0..=99.0).integer())
+                            .changed()
+                        {
+                            if let Ok(mut ctrl) = self.lock_controller() {
+                                ctrl.set_envelope_param(
+                                    op_idx as u8,
+                                    EnvelopeParam::Level3,
+                                    level3,
+                                );
+                            }
                         }
-                    }
-                    ui.label("L4:");
-                    if ui.add(egui::Slider::new(&mut level4, 0.0..=99.0).integer()).changed() {
-                        if let Ok(mut ctrl) = self.lock_controller() {
-                            ctrl.set_envelope_param(op_idx as u8, EnvelopeParam::Level4, level4);
+                        ui.label("L4:");
+                        if ui
+                            .add(egui::Slider::new(&mut level4, 0.0..=99.0).integer())
+                            .changed()
+                        {
+                            if let Ok(mut ctrl) = self.lock_controller() {
+                                ctrl.set_envelope_param(
+                                    op_idx as u8,
+                                    EnvelopeParam::Level4,
+                                    level4,
+                                );
+                            }
                         }
-                    }
-                    ui.end_row();
-                });
+                        ui.end_row();
+                    });
             });
         });
     }

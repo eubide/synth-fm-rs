@@ -7,7 +7,11 @@ use crate::effects::EffectsChain;
 use crate::lfo::{LFOWaveform, LFO};
 use crate::operator::Operator;
 use crate::optimization::OPTIMIZATION_TABLES;
-use crate::state_snapshot::{create_snapshot_channel, OperatorSnapshot, SnapshotReceiver, SnapshotSender, SynthSnapshot};
+use crate::presets::{get_dx7_presets, Dx7Preset};
+use crate::state_snapshot::{
+    create_snapshot_channel, ChorusSnapshot, DelaySnapshot, OperatorSnapshot, ReverbSnapshot,
+    SnapshotReceiver, SnapshotSender, SynthSnapshot,
+};
 use std::collections::HashMap;
 
 const MAX_VOICES: usize = 16;
@@ -150,7 +154,7 @@ impl Voice {
             let freq_ratio = self.target_frequency / self.current_frequency.max(0.001);
             let log_ratio = freq_ratio.ln();
             let step = log_ratio * portamento_rate;
-            self.current_frequency *= (1.0 + step).min(2.0).max(0.5);
+            self.current_frequency *= (1.0 + step).clamp(0.5, 2.0);
 
             if (self.target_frequency - self.current_frequency).abs() < 0.1 {
                 self.current_frequency = self.target_frequency;
@@ -219,6 +223,7 @@ pub struct SynthEngine {
     portamento_time: f32,
     mono_mode: bool,
     sustain_pedal: bool,
+    #[allow(dead_code)]
     sample_rate: f32,
 }
 
@@ -592,9 +597,27 @@ impl SynthEngine {
             lfo_key_sync: self.lfo.key_sync,
             lfo_frequency_hz: self.lfo.get_frequency_hz(),
             lfo_delay_seconds: self.lfo.get_delay_seconds(),
-            chorus_enabled: self.effects.chorus.enabled,
-            delay_enabled: self.effects.delay.enabled,
-            reverb_enabled: self.effects.reverb.enabled,
+            chorus: ChorusSnapshot {
+                enabled: self.effects.chorus.enabled,
+                rate: self.effects.chorus.rate,
+                depth: self.effects.chorus.depth,
+                mix: self.effects.chorus.mix,
+                feedback: self.effects.chorus.feedback,
+            },
+            delay: DelaySnapshot {
+                enabled: self.effects.delay.enabled,
+                time_ms: self.effects.delay.time_ms,
+                feedback: self.effects.delay.feedback,
+                mix: self.effects.delay.mix,
+                ping_pong: self.effects.delay.ping_pong,
+            },
+            reverb: ReverbSnapshot {
+                enabled: self.effects.reverb.enabled,
+                room_size: self.effects.reverb.room_size,
+                damping: self.effects.reverb.damping,
+                mix: self.effects.reverb.mix,
+                width: self.effects.reverb.width,
+            },
             operators: self.get_operator_snapshots(),
         };
 
@@ -661,75 +684,93 @@ impl SynthEngine {
         }
     }
 
+    #[allow(dead_code)]
     pub fn lfo_mut(&mut self) -> &mut LFO {
         &mut self.lfo
     }
 
-    // Public read-only getters for GUI
+    // Public read-only getters (kept for API completeness, GUI now uses snapshots)
+    #[allow(dead_code)]
     pub fn get_algorithm(&self) -> u8 {
         self.algorithm
     }
 
+    #[allow(dead_code)]
     pub fn get_master_volume(&self) -> f32 {
         self.master_volume
     }
 
+    #[allow(dead_code)]
     pub fn get_master_tune(&self) -> f32 {
         self.master_tune
     }
 
+    #[allow(dead_code)]
     pub fn get_mono_mode(&self) -> bool {
         self.mono_mode
     }
 
+    #[allow(dead_code)]
     pub fn get_portamento_enable(&self) -> bool {
         self.portamento_enable
     }
 
+    #[allow(dead_code)]
     pub fn get_portamento_time(&self) -> f32 {
         self.portamento_time
     }
 
+    #[allow(dead_code)]
     pub fn get_pitch_bend_range(&self) -> f32 {
         self.pitch_bend_range
     }
 
+    #[allow(dead_code)]
     pub fn get_mod_wheel(&self) -> f32 {
         self.mod_wheel
     }
 
+    #[allow(dead_code)]
     pub fn get_lfo_rate(&self) -> f32 {
         self.lfo.rate
     }
 
+    #[allow(dead_code)]
     pub fn get_lfo_delay(&self) -> f32 {
         self.lfo.delay
     }
 
+    #[allow(dead_code)]
     pub fn get_lfo_pitch_depth(&self) -> f32 {
         self.lfo.pitch_depth
     }
 
+    #[allow(dead_code)]
     pub fn get_lfo_amp_depth(&self) -> f32 {
         self.lfo.amp_depth
     }
 
+    #[allow(dead_code)]
     pub fn get_lfo_waveform(&self) -> LFOWaveform {
         self.lfo.waveform
     }
 
+    #[allow(dead_code)]
     pub fn get_lfo_key_sync(&self) -> bool {
         self.lfo.key_sync
     }
 
+    #[allow(dead_code)]
     pub fn get_lfo_frequency_hz(&self) -> f32 {
         self.lfo.get_frequency_hz()
     }
 
+    #[allow(dead_code)]
     pub fn get_lfo_delay_seconds(&self) -> f32 {
         self.lfo.get_delay_seconds()
     }
 
+    #[allow(dead_code)]
     pub fn get_operator_enabled(&self, op_idx: usize) -> bool {
         if let Some(voice) = self.voices.first() {
             if op_idx < 6 {
@@ -739,6 +780,7 @@ impl SynthEngine {
         true
     }
 
+    #[allow(dead_code)]
     pub fn voices(&self) -> &Vec<Voice> {
         &self.voices
     }
@@ -759,6 +801,7 @@ impl SynthController {
     }
 
     /// Get the latest snapshot from the audio thread (reference)
+    #[allow(dead_code)]
     pub fn get_snapshot(&self) -> &SynthSnapshot {
         self.snapshot_rx.get()
     }

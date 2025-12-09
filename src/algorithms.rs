@@ -310,9 +310,7 @@ fn algorithm_16(ops: &mut [Operator; 6]) -> f32 {
 
     // Op2, Op3, Op5 -> Op1
     let op2_out = ops[1].process(0.0);
-    let op1_out = ops[0].process(op2_out + op3_out + op5_out);
-
-    op1_out
+    ops[0].process(op2_out + op3_out + op5_out)
 }
 
 /// Algorithm 17: Tree Mod
@@ -328,9 +326,7 @@ fn algorithm_17(ops: &mut [Operator; 6]) -> f32 {
 
     // Op2 with feedback, Op3, Op5 -> Op1
     let op2_out = ops[1].process(ops[1].get_feedback_output());
-    let op1_out = ops[0].process(op2_out + op3_out + op5_out);
-
-    op1_out
+    ops[0].process(op2_out + op3_out + op5_out)
 }
 
 /// Algorithm 18: Quad + Stack
@@ -346,9 +342,7 @@ fn algorithm_18(ops: &mut [Operator; 6]) -> f32 {
 
     // Op2, Op3, Op4 -> Op1
     let op2_out = ops[1].process(0.0);
-    let op1_out = ops[0].process(op2_out + op3_out + op4_out);
-
-    op1_out
+    ops[0].process(op2_out + op3_out + op4_out)
 }
 
 /// Algorithm 19: Triple + Tree

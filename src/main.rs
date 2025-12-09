@@ -53,13 +53,13 @@ fn play_startup_melody(controller: Arc<Mutex<SynthController>>) {
 fn main() -> Result<(), eframe::Error> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-    log::info!("Starting Yamaha DX7 Emulator");
+    log::info!("Starting DX7-Style FM Synthesizer");
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([960.0, 720.0])
             .with_resizable(false)
-            .with_title("Yamaha DX7 Emulator"),
+            .with_title("DX7-Style FM Synthesizer"),
         ..Default::default()
     };
 
@@ -100,7 +100,7 @@ fn main() -> Result<(), eframe::Error> {
     play_startup_melody(controller.clone());
 
     eframe::run_native(
-        "Yamaha DX7 Emulator",
+        "DX7-Style FM Synthesizer",
         options,
         Box::new(move |_cc| {
             Ok(Box::new(Dx7App::new(

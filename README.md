@@ -1,6 +1,6 @@
-# Yamaha DX7 Emulator
+# DX7-Style FM Synthesizer
 
-A high-fidelity emulator of the legendary Yamaha DX7 synthesizer, built in Rust with real-time FM synthesis, MIDI support, and a graphical interface that simulates the original experience.
+A high-fidelity DX7-style FM synthesizer, built in Rust with real-time FM synthesis, MIDI support, and a graphical interface that simulates the original experience.
 
 ## Features
 
@@ -114,7 +114,7 @@ The DX7 includes 32 algorithms that define how the 6 operators connect:
 ### Audio Engine
 - **Sample Rate**: 44.1kHz/48kHz adaptive
 - **Backend**: CPAL (Cross-Platform Audio Library)
-- **Processing**: Lock-free with Arc<Mutex> for updates
+- **Processing**: Fully lock-free architecture (ringbuffer + triple buffer)
 - **Latency**: Buffer optimized for real-time
 - **Performance Optimizations**: Lookup table system for critical performance
 
@@ -167,11 +167,11 @@ cargo check                   # Quick syntax check
 ```
 
 ### System Architecture
-The emulator uses a **multi-thread architecture** with shared state:
-- **GUI Thread**: egui interface and user interaction
-- **Audio Thread**: Real-time processing (CPAL callback)
-- **MIDI Thread**: MIDI input handling
-- **Shared state**: `Arc<Mutex<FmSynthesizer>>` for synchronization
+The emulator uses a **lock-free multi-thread architecture**:
+- **GUI Thread**: egui interface, reads snapshots, sends commands
+- **Audio Thread**: Real-time processing via SynthEngine (owns all audio state)
+- **MIDI Thread**: MIDI input, sends commands via SynthController
+- **Communication**: SPSC ringbuffer (commands) + triple buffer (state snapshots)
 
 ### Algorithm System
 Visual diagrams use a **column-centric layout** where:

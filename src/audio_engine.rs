@@ -22,24 +22,15 @@ impl AudioEngine {
         let sample_rate = config.sample_rate().0;
 
         let stream = match config.sample_format() {
-            cpal::SampleFormat::F32 => Self::build_stream::<f32>(
-                &device,
-                &config.into(),
-                engine,
-                underrun_counter.clone(),
-            ),
-            cpal::SampleFormat::I16 => Self::build_stream::<i16>(
-                &device,
-                &config.into(),
-                engine,
-                underrun_counter.clone(),
-            ),
-            cpal::SampleFormat::U16 => Self::build_stream::<u16>(
-                &device,
-                &config.into(),
-                engine,
-                underrun_counter.clone(),
-            ),
+            cpal::SampleFormat::F32 => {
+                Self::build_stream::<f32>(&device, &config.into(), engine, underrun_counter.clone())
+            }
+            cpal::SampleFormat::I16 => {
+                Self::build_stream::<i16>(&device, &config.into(), engine, underrun_counter.clone())
+            }
+            cpal::SampleFormat::U16 => {
+                Self::build_stream::<u16>(&device, &config.into(), engine, underrun_counter.clone())
+            }
             format => panic!("Unsupported sample format: {:?}", format),
         };
 
@@ -113,7 +104,7 @@ impl AudioEngine {
                         }
                         Err(_) => {
                             let underrun_count = underrun_counter.fetch_add(1, Ordering::Relaxed);
-                            if underrun_count % 500 == 0 {
+                            if underrun_count.is_multiple_of(500) {
                                 log::warn!(
                                     "AUDIO WARNING: {} buffer underruns detected",
                                     underrun_count

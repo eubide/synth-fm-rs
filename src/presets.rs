@@ -1,11 +1,13 @@
 use crate::fm_synth::SynthEngine;
 
+#[allow(dead_code)]
+#[allow(clippy::type_complexity)]
 pub struct Dx7Preset {
     pub name: &'static str,
     pub algorithm: u8,
     pub operators: [(f32, f32, f32, f32); 6], // (ratio, level, detune, feedback)
     pub envelopes: [(f32, f32, f32, f32, f32, f32, f32, f32); 6], // (r1-r4, l1-l4)
-    // Function Mode parameters (optional, using DX7 defaults if not specified)
+    // Function Mode parameters (reserved for future use)
     pub master_tune: Option<f32>,        // ±150 cents
     pub mono_mode: Option<bool>,         // false = poly, true = mono
     pub pitch_bend_range: Option<f32>,   // 0-12 semitones

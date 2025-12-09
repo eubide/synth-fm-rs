@@ -47,8 +47,75 @@ impl Default for OperatorSnapshot {
     }
 }
 
+/// Snapshot of chorus effect state
+#[derive(Debug, Clone, Copy)]
+pub struct ChorusSnapshot {
+    pub enabled: bool,
+    pub rate: f32,
+    pub depth: f32,
+    pub mix: f32,
+    pub feedback: f32,
+}
+
+impl Default for ChorusSnapshot {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            rate: 1.5,
+            depth: 3.0,
+            mix: 0.5,
+            feedback: 0.2,
+        }
+    }
+}
+
+/// Snapshot of delay effect state
+#[derive(Debug, Clone, Copy)]
+pub struct DelaySnapshot {
+    pub enabled: bool,
+    pub time_ms: f32,
+    pub feedback: f32,
+    pub mix: f32,
+    pub ping_pong: bool,
+}
+
+impl Default for DelaySnapshot {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            time_ms: 300.0,
+            feedback: 0.4,
+            mix: 0.3,
+            ping_pong: true,
+        }
+    }
+}
+
+/// Snapshot of reverb effect state
+#[derive(Debug, Clone, Copy)]
+pub struct ReverbSnapshot {
+    pub enabled: bool,
+    pub room_size: f32,
+    pub damping: f32,
+    pub mix: f32,
+    pub width: f32,
+}
+
+impl Default for ReverbSnapshot {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            room_size: 0.7,
+            damping: 0.5,
+            mix: 0.25,
+            width: 1.0,
+        }
+    }
+}
+
 /// Read-only snapshot of synthesizer state for GUI display.
 /// Updated by audio thread, read by GUI thread without blocking.
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct SynthSnapshot {
     // Voice info
@@ -79,10 +146,10 @@ pub struct SynthSnapshot {
     pub lfo_frequency_hz: f32,
     pub lfo_delay_seconds: f32,
 
-    // Effects state
-    pub chorus_enabled: bool,
-    pub delay_enabled: bool,
-    pub reverb_enabled: bool,
+    // Effects state (detailed for effects panel)
+    pub chorus: ChorusSnapshot,
+    pub delay: DelaySnapshot,
+    pub reverb: ReverbSnapshot,
 
     // Operator states (detailed for editor)
     pub operators: [OperatorSnapshot; 6],
@@ -115,9 +182,9 @@ impl Default for SynthSnapshot {
             lfo_frequency_hz: 0.0,
             lfo_delay_seconds: 0.0,
 
-            chorus_enabled: false,
-            delay_enabled: false,
-            reverb_enabled: false,
+            chorus: ChorusSnapshot::default(),
+            delay: DelaySnapshot::default(),
+            reverb: ReverbSnapshot::default(),
 
             operators: [OperatorSnapshot::default(); 6],
         }
@@ -137,6 +204,7 @@ impl SnapshotSender {
 }
 
 /// Receiver side of snapshot channel (GUI thread)
+#[allow(dead_code)]
 pub struct SnapshotReceiver {
     buffer: Arc<TripleBuffer<SynthSnapshot>>,
 }
@@ -149,6 +217,7 @@ impl SnapshotReceiver {
     }
 
     /// Peek at current snapshot without swapping
+    #[allow(dead_code)]
     pub fn peek(&self) -> &SynthSnapshot {
         self.buffer.peek()
     }
