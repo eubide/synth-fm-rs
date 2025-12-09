@@ -1,4 +1,4 @@
-use crate::fm_synth::FmSynthesizer;
+use crate::fm_synth::SynthController;
 use midir::{MidiInput, MidiInputConnection};
 use std::sync::{Arc, Mutex};
 
@@ -7,7 +7,7 @@ pub struct MidiHandler {
 }
 
 impl MidiHandler {
-    pub fn new(synthesizer: Arc<Mutex<FmSynthesizer>>) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn new(controller: Arc<Mutex<SynthController>>) -> Result<Self, Box<dyn std::error::Error>> {
         let midi_in = MidiInput::new("DX7 MIDI Input")?;
 
         let ports = midi_in.ports();
@@ -27,7 +27,7 @@ impl MidiHandler {
             port,
             "DX7 MIDI",
             move |_timestamp, message, _| {
-                Self::handle_midi_message(&synthesizer, message);
+                Self::handle_midi_message(&controller, message);
             },
             (),
         )?;
@@ -37,7 +37,7 @@ impl MidiHandler {
         })
     }
 
-    fn handle_midi_message(synthesizer: &Arc<Mutex<FmSynthesizer>>, message: &[u8]) {
+    fn handle_midi_message(controller: &Arc<Mutex<SynthController>>, message: &[u8]) {
         if message.len() < 2 {
             return;
         }
@@ -59,10 +59,10 @@ impl MidiHandler {
                             Self::note_name(note),
                             velocity
                         );
-                        if let Ok(mut synth) = synthesizer.lock() {
-                            synth.note_on(note, velocity);
+                        if let Ok(mut ctrl) = controller.lock() {
+                            ctrl.note_on(note, velocity);
                         } else {
-                            log::error!("Failed to acquire synth lock for note on");
+                            log::error!("Failed to acquire controller lock for note on");
                         }
                     } else {
                         log::debug!(
@@ -71,10 +71,10 @@ impl MidiHandler {
                             note,
                             Self::note_name(note)
                         );
-                        if let Ok(mut synth) = synthesizer.lock() {
-                            synth.note_off(note);
+                        if let Ok(mut ctrl) = controller.lock() {
+                            ctrl.note_off(note);
                         } else {
-                            log::error!("Failed to acquire synth lock for note off");
+                            log::error!("Failed to acquire controller lock for note off");
                         }
                     }
                 }
@@ -89,20 +89,20 @@ impl MidiHandler {
                         note,
                         Self::note_name(note)
                     );
-                    if let Ok(mut synth) = synthesizer.lock() {
-                        synth.note_off(note);
+                    if let Ok(mut ctrl) = controller.lock() {
+                        ctrl.note_off(note);
                     } else {
-                        log::error!("Failed to acquire synth lock for note off");
+                        log::error!("Failed to acquire controller lock for note off");
                     }
                 }
             }
 
             0xB0 => {
                 if message.len() >= 3 {
-                    let controller = message[1];
+                    let controller_num = message[1];
                     let value = message[2];
 
-                    let cc_name = match controller {
+                    let cc_name = match controller_num {
                         1 => "Mod Wheel",
                         64 => "Sustain Pedal",
                         123 => "All Notes Off",
@@ -112,14 +112,19 @@ impl MidiHandler {
                     log::debug!(
                         "Control Change Ch{} CC{} ({}) Value:{}",
                         channel,
-                        controller,
+                        controller_num,
                         cc_name,
                         value
                     );
-                    if let Ok(mut synth) = synthesizer.lock() {
-                        synth.control_change(controller, value);
+                    if let Ok(mut ctrl) = controller.lock() {
+                        match controller_num {
+                            1 => ctrl.mod_wheel(value as f32 / 127.0),
+                            64 => ctrl.sustain_pedal(value >= 64),
+                            123 => ctrl.panic(),
+                            _ => {}
+                        }
                     } else {
-                        log::error!("Failed to acquire synth lock for control change");
+                        log::error!("Failed to acquire controller lock for control change");
                     }
                 }
             }
@@ -130,10 +135,10 @@ impl MidiHandler {
                     let msb = message[2] as i16;
                     let value = ((msb << 7) | lsb) - 8192;
                     log::debug!("Pitch Bend Ch{} Value:{}", channel, value);
-                    if let Ok(mut synth) = synthesizer.lock() {
-                        synth.pitch_bend(value);
+                    if let Ok(mut ctrl) = controller.lock() {
+                        ctrl.pitch_bend(value);
                     } else {
-                        log::error!("Failed to acquire synth lock for pitch bend");
+                        log::error!("Failed to acquire controller lock for pitch bend");
                     }
                 }
             }

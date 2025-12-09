@@ -1,4 +1,4 @@
-use crate::fm_synth::FmSynthesizer;
+use crate::fm_synth::SynthEngine;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -9,28 +9,7 @@ pub struct AudioEngine {
 }
 
 impl AudioEngine {
-    pub fn new_with_synth_setup() -> (Self, Arc<Mutex<FmSynthesizer>>) {
-        let host = cpal::default_host();
-        let device = host
-            .default_output_device()
-            .expect("No output device available");
-
-        let config = device
-            .default_output_config()
-            .expect("Failed to get default output config");
-
-        let sample_rate = config.sample_rate().0 as f32;
-
-        // Create synthesizer with correct sample rate
-        let synthesizer = Arc::new(Mutex::new(FmSynthesizer::new_with_sample_rate(sample_rate)));
-
-        let underrun_counter = Arc::new(AtomicUsize::new(0));
-        let audio_engine = Self::new(synthesizer.clone(), underrun_counter.clone());
-
-        (audio_engine, synthesizer)
-    }
-
-    pub fn new(synthesizer: Arc<Mutex<FmSynthesizer>>, underrun_counter: Arc<AtomicUsize>) -> Self {
+    pub fn new(engine: Arc<Mutex<SynthEngine>>, underrun_counter: Arc<AtomicUsize>) -> Self {
         let host = cpal::default_host();
         let device = host
             .default_output_device()
@@ -46,19 +25,19 @@ impl AudioEngine {
             cpal::SampleFormat::F32 => Self::build_stream::<f32>(
                 &device,
                 &config.into(),
-                synthesizer,
+                engine,
                 underrun_counter.clone(),
             ),
             cpal::SampleFormat::I16 => Self::build_stream::<i16>(
                 &device,
                 &config.into(),
-                synthesizer,
+                engine,
                 underrun_counter.clone(),
             ),
             cpal::SampleFormat::U16 => Self::build_stream::<u16>(
                 &device,
                 &config.into(),
-                synthesizer,
+                engine,
                 underrun_counter.clone(),
             ),
             format => panic!("Unsupported sample format: {:?}", format),
@@ -77,43 +56,62 @@ impl AudioEngine {
         }
     }
 
+    /// Get the default sample rate from the audio device
+    pub fn get_default_sample_rate() -> f32 {
+        let host = cpal::default_host();
+        let device = host
+            .default_output_device()
+            .expect("No output device available");
+
+        let config = device
+            .default_output_config()
+            .expect("Failed to get default output config");
+
+        config.sample_rate().0 as f32
+    }
+
     fn build_stream<T>(
         device: &cpal::Device,
         config: &cpal::StreamConfig,
-        synthesizer: Arc<Mutex<FmSynthesizer>>,
+        engine: Arc<Mutex<SynthEngine>>,
         underrun_counter: Arc<AtomicUsize>,
     ) -> cpal::Stream
     where
         T: cpal::Sample + cpal::SizedSample + cpal::FromSample<f32>,
     {
         let channels = config.channels as usize;
+        let mut samples_since_snapshot = 0u32;
+        let snapshot_interval = 1024; // Update snapshot every N samples
 
         device
             .build_output_stream(
                 config,
                 move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
-                    // Use try_lock but with better limiting and reduced dropouts
-                    match synthesizer.try_lock() {
+                    match engine.try_lock() {
                         Ok(mut synth) => {
-                            for frame in data.chunks_mut(channels) {
-                                // Process with effects (stereo output)
-                                let (left, right) = synth.process_stereo();
-                                // Apply soft limiting
-                                let left = Self::soft_limit(left);
-                                let right = Self::soft_limit(right);
+                            // Process commands at the start of each buffer
+                            synth.process_commands();
 
-                                // Write stereo to output
+                            for frame in data.chunks_mut(channels) {
+                                let (left, right) = synth.process_stereo();
+
                                 if channels >= 2 {
                                     frame[0] = T::from_sample(left);
                                     frame[1] = T::from_sample(right);
                                 } else {
-                                    // Mono output: mix to mono
                                     frame[0] = T::from_sample((left + right) * 0.5);
                                 }
+
+                                samples_since_snapshot += 1;
+                            }
+
+                            // Update snapshot periodically (not every sample)
+                            if samples_since_snapshot >= snapshot_interval {
+                                synth.update_snapshot();
+                                samples_since_snapshot = 0;
                             }
                         }
                         Err(_) => {
-                            // Reduced underrun logging frequency for less console spam
                             let underrun_count = underrun_counter.fetch_add(1, Ordering::Relaxed);
                             if underrun_count % 500 == 0 {
                                 log::warn!(
@@ -122,7 +120,6 @@ impl AudioEngine {
                                 );
                             }
 
-                            // Fill with silence
                             for frame in data.chunks_mut(channels) {
                                 let value = T::from_sample(0.0);
                                 for channel_sample in frame.iter_mut() {
@@ -136,32 +133,5 @@ impl AudioEngine {
                 None,
             )
             .expect("Failed to build output stream")
-    }
-
-    /// Final safety limiter with double limiting strategy
-    /// First: hard clamp for extreme protection
-    /// Second: soft limiting for musical compression
-    fn soft_limit(sample: f32) -> f32 {
-        // First pass: hard clamp for safety (should never engage in normal operation)
-        let sample = sample.clamp(-1.0, 1.0);
-
-        // Second pass: soft limiting for musical compression
-        const THRESHOLD: f32 = 0.98; // Maximum threshold - preserve DX7 clarity
-        const KNEE: f32 = 0.02; // Very gentle knee for transparent limiting
-
-        if sample.abs() <= THRESHOLD {
-            sample
-        } else {
-            let sign = sample.signum();
-            let abs_sample = sample.abs();
-
-            // Minimal compression only at extreme levels
-            let excess = abs_sample - THRESHOLD;
-            let compressed_excess = excess / (1.0 + excess / KNEE);
-            let limited = THRESHOLD + compressed_excess;
-
-            // Hard limit at 0.999 to prevent clipping
-            sign * limited.min(0.999)
-        }
     }
 }

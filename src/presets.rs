@@ -1,4 +1,4 @@
-use crate::fm_synth::FmSynthesizer;
+use crate::fm_synth::SynthEngine;
 
 pub struct Dx7Preset {
     pub name: &'static str,
@@ -14,29 +14,12 @@ pub struct Dx7Preset {
 }
 
 impl Dx7Preset {
-    pub fn apply_to_synth(&self, synth: &mut FmSynthesizer) {
+    pub fn apply_to_synth(&self, synth: &mut SynthEngine) {
         synth.set_algorithm(self.algorithm);
-        synth.preset_name = self.name.to_string();
-
-        // Apply Function Mode parameters if specified
-        if let Some(master_tune) = self.master_tune {
-            synth.set_master_tune(master_tune);
-        }
-        if let Some(mono_mode) = self.mono_mode {
-            synth.set_mono_mode(mono_mode);
-        }
-        if let Some(pitch_bend_range) = self.pitch_bend_range {
-            synth.set_pitch_bend_range(pitch_bend_range);
-        }
-        if let Some(portamento_enable) = self.portamento_enable {
-            synth.set_portamento_enable(portamento_enable);
-        }
-        if let Some(portamento_time) = self.portamento_time {
-            synth.set_portamento_time(portamento_time);
-        }
+        synth.set_preset_name(self.name.to_string());
 
         // Apply operator settings to all voices
-        for voice in &mut synth.voices {
+        for voice in synth.voices_mut() {
             for (i, op) in voice.operators.iter_mut().enumerate() {
                 let (ratio, level, detune, feedback) = self.operators[i];
                 op.frequency_ratio = ratio;

@@ -1,51 +1,113 @@
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
-/// Lock-free triple buffer for real-time parameter updates
-/// GUI writes to one buffer, audio reads from another, third is for swapping
-pub struct TripleBuffer<T: Clone> {
-    buffers: [T; 3],
-    write_index: AtomicUsize,
-    read_index: AtomicUsize,
-    swap_requested: AtomicBool,
+/// Lock-free triple buffer for real-time parameter updates.
+///
+/// Uses a single atomic byte to track buffer indices, ensuring atomic swaps.
+/// The byte layout is: [unused:2][back:2][read:2][write:2]
+///
+/// Writer (GUI thread): writes to write buffer, then swaps write<->back
+/// Reader (Audio thread): swaps read<->back, then reads from read buffer
+pub struct TripleBuffer<T: Clone + Send> {
+    buffers: [std::cell::UnsafeCell<T>; 3],
+    /// Packed indices: bits 0-1 = write, bits 2-3 = read, bits 4-5 = back
+    indices: AtomicU8,
 }
 
-impl<T: Clone> TripleBuffer<T> {
+impl<T: Clone + Send> TripleBuffer<T> {
+    const WRITE_MASK: u8 = 0b00000011;
+    const READ_MASK: u8 = 0b00001100;
+    const BACK_MASK: u8 = 0b00110000;
+    const WRITE_SHIFT: u8 = 0;
+    const READ_SHIFT: u8 = 2;
+    const BACK_SHIFT: u8 = 4;
+
     pub fn new(initial_value: T) -> Self {
+        // Initial state: write=0, read=1, back=2
+        let initial_indices = 0 | (1 << Self::READ_SHIFT) | (2 << Self::BACK_SHIFT);
+
         Self {
-            buffers: [initial_value.clone(), initial_value.clone(), initial_value],
-            write_index: AtomicUsize::new(0),
-            read_index: AtomicUsize::new(1),
-            swap_requested: AtomicBool::new(false),
+            buffers: [
+                std::cell::UnsafeCell::new(initial_value.clone()),
+                std::cell::UnsafeCell::new(initial_value.clone()),
+                std::cell::UnsafeCell::new(initial_value),
+            ],
+            indices: AtomicU8::new(initial_indices),
         }
     }
 
-    /// Non-blocking write for GUI thread
-    pub fn write(&mut self, data: T) {
-        let write_idx = self.write_index.load(Ordering::Relaxed);
-        self.buffers[write_idx] = data;
-        self.swap_requested.store(true, Ordering::Release);
+    /// Write new data (GUI thread only).
+    /// After writing, atomically swaps write and back buffers.
+    pub fn write(&self, data: T) {
+        // Get current write index
+        let current = self.indices.load(Ordering::Acquire);
+        let write_idx = (current & Self::WRITE_MASK) >> Self::WRITE_SHIFT;
+
+        // Write to the write buffer (safe: we're the only writer)
+        unsafe {
+            *self.buffers[write_idx as usize].get() = data;
+        }
+
+        // Atomically swap write and back buffers using CAS loop
+        loop {
+            let current = self.indices.load(Ordering::Acquire);
+            let write_idx = (current & Self::WRITE_MASK) >> Self::WRITE_SHIFT;
+            let back_idx = (current & Self::BACK_MASK) >> Self::BACK_SHIFT;
+
+            // New state: swap write and back
+            let new_indices = (current & Self::READ_MASK) // keep read
+                | (back_idx << Self::WRITE_SHIFT)  // back becomes write
+                | (write_idx << Self::BACK_SHIFT); // write becomes back
+
+            match self.indices.compare_exchange_weak(
+                current,
+                new_indices,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => break,
+                Err(_) => continue, // Retry if indices changed
+            }
+        }
     }
 
-    /// Lock-free read for audio thread
+    /// Read current data (Audio thread only).
+    /// Atomically swaps read and back buffers, then returns reference to read buffer.
     pub fn read(&self) -> &T {
-        // Check if GUI requested a swap
-        if self
-            .swap_requested
-            .compare_exchange(true, false, Ordering::Acquire, Ordering::Relaxed)
-            .is_ok()
-        {
-            // Swap read and write buffers
-            let old_read = self.read_index.load(Ordering::Relaxed);
-            let old_write = self.write_index.load(Ordering::Relaxed);
+        // Atomically swap read and back buffers using CAS loop
+        loop {
+            let current = self.indices.load(Ordering::Acquire);
+            let read_idx = (current & Self::READ_MASK) >> Self::READ_SHIFT;
+            let back_idx = (current & Self::BACK_MASK) >> Self::BACK_SHIFT;
 
-            self.read_index.store(old_write, Ordering::Relaxed);
-            self.write_index.store(old_read, Ordering::Relaxed);
+            // New state: swap read and back
+            let new_indices = (current & Self::WRITE_MASK) // keep write
+                | (back_idx << Self::READ_SHIFT)  // back becomes read
+                | (read_idx << Self::BACK_SHIFT); // read becomes back
+
+            if self
+                .indices
+                .compare_exchange_weak(current, new_indices, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+            {
+                // Return reference to the new read buffer (was back)
+                return unsafe { &*self.buffers[back_idx as usize].get() };
+            }
+            // Retry if indices changed
         }
+    }
 
-        let read_idx = self.read_index.load(Ordering::Relaxed);
-        &self.buffers[read_idx]
+    /// Peek at current read buffer without swapping.
+    /// Use this when you just need to check the current value.
+    pub fn peek(&self) -> &T {
+        let current = self.indices.load(Ordering::Acquire);
+        let read_idx = (current & Self::READ_MASK) >> Self::READ_SHIFT;
+        unsafe { &*self.buffers[read_idx as usize].get() }
     }
 }
+
+// Safety: T is Send, and we use proper atomic synchronization
+unsafe impl<T: Clone + Send> Send for TripleBuffer<T> {}
+unsafe impl<T: Clone + Send> Sync for TripleBuffer<T> {}
 
 /// Real-time safe synthesizer parameters
 #[derive(Debug, Clone)]
@@ -80,8 +142,6 @@ impl Default for SynthParameters {
 /// Lock-free synthesizer state for real-time audio processing
 pub struct LockFreeSynth {
     pub global_params: TripleBuffer<SynthParameters>,
-
-    // Atomic values for simple parameters
     pub sustain_pedal: AtomicBool,
     pub panic_requested: AtomicBool,
 }
@@ -96,13 +156,18 @@ impl LockFreeSynth {
     }
 
     /// Update global parameter (GUI thread)
-    pub fn set_global_param(&mut self, params: SynthParameters) {
+    pub fn set_global_param(&self, params: SynthParameters) {
         self.global_params.write(params);
     }
 
     /// Get current global parameters (audio thread)
     pub fn get_global_params(&self) -> &SynthParameters {
         self.global_params.read()
+    }
+
+    /// Peek at parameters without consuming the back buffer
+    pub fn peek_global_params(&self) -> &SynthParameters {
+        self.global_params.peek()
     }
 
     /// Request panic (from any thread)
@@ -113,7 +178,7 @@ impl LockFreeSynth {
     /// Check and clear panic request (audio thread)
     pub fn check_panic_request(&self) -> bool {
         self.panic_requested
-            .compare_exchange(true, false, Ordering::Acquire, Ordering::Relaxed)
+            .compare_exchange(true, false, Ordering::AcqRel, Ordering::Acquire)
             .is_ok()
     }
 
@@ -128,5 +193,116 @@ impl LockFreeSynth {
     }
 }
 
-unsafe impl<T: Clone + Send> Send for TripleBuffer<T> {}
-unsafe impl<T: Clone + Send> Sync for TripleBuffer<T> {}
+impl Default for LockFreeSynth {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use std::thread;
+
+    #[test]
+    fn test_triple_buffer_basic() {
+        let buffer = TripleBuffer::new(0u32);
+        assert_eq!(*buffer.peek(), 0);
+
+        buffer.write(42);
+        assert_eq!(*buffer.read(), 42);
+    }
+
+    #[test]
+    fn test_triple_buffer_multiple_writes() {
+        let buffer = TripleBuffer::new(0u32);
+
+        buffer.write(1);
+        buffer.write(2);
+        buffer.write(3);
+
+        // Should get the latest value
+        assert_eq!(*buffer.read(), 3);
+    }
+
+    #[test]
+    fn test_triple_buffer_concurrent() {
+        let buffer = Arc::new(TripleBuffer::new(0u64));
+        let b1 = buffer.clone();
+        let b2 = buffer.clone();
+
+        let writer = thread::spawn(move || {
+            for i in 0..10000u64 {
+                b1.write(i);
+            }
+        });
+
+        let reader = thread::spawn(move || {
+            for _ in 0..10000 {
+                let value = *b2.read();
+                // Triple buffers don't guarantee monotonic reads, but they guarantee
+                // no data corruption. Value must be in valid range [0, 10000).
+                assert!(value < 10000, "Value {} is out of range", value);
+            }
+        });
+
+        writer.join().unwrap();
+        reader.join().unwrap();
+    }
+
+    #[test]
+    fn test_synth_parameters() {
+        let synth = LockFreeSynth::new();
+
+        let mut params = SynthParameters::default();
+        params.algorithm = 5;
+        params.master_volume = 0.5;
+
+        synth.set_global_param(params);
+
+        let read_params = synth.get_global_params();
+        assert_eq!(read_params.algorithm, 5);
+        assert!((read_params.master_volume - 0.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_panic_request() {
+        let synth = LockFreeSynth::new();
+
+        assert!(!synth.check_panic_request());
+
+        synth.request_panic();
+        assert!(synth.check_panic_request());
+
+        // Should be cleared after check
+        assert!(!synth.check_panic_request());
+    }
+}
+
+#[cfg(all(test, loom))]
+mod loom_tests {
+    use super::*;
+    use loom::sync::Arc;
+    use loom::thread;
+
+    #[test]
+    fn test_triple_buffer_loom() {
+        loom::model(|| {
+            let buffer = Arc::new(TripleBuffer::new(0u32));
+            let b1 = buffer.clone();
+            let b2 = buffer.clone();
+
+            let t1 = thread::spawn(move || {
+                b1.write(42);
+            });
+
+            let t2 = thread::spawn(move || {
+                let _ = b2.read();
+            });
+
+            t1.join().unwrap();
+            t2.join().unwrap();
+        });
+    }
+}

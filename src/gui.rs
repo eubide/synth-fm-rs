@@ -1,13 +1,16 @@
 use crate::algorithms;
 use crate::audio_engine::AudioEngine;
-use crate::fm_synth::FmSynthesizer;
+use crate::command_queue::{EnvelopeParam, LfoParam, OperatorParam};
+use crate::fm_synth::{SynthController, SynthEngine};
 use crate::midi_handler::MidiHandler;
 use crate::presets::{get_dx7_presets, Dx7Preset};
+use crate::state_snapshot::SynthSnapshot;
 use eframe::egui;
 use std::sync::{Arc, Mutex};
 
 pub struct Dx7App {
-    synthesizer: Arc<Mutex<FmSynthesizer>>,
+    engine: Arc<Mutex<SynthEngine>>,
+    controller: Arc<Mutex<SynthController>>,
     _audio_engine: AudioEngine,
     _midi_handler: Option<MidiHandler>,
     selected_operator: usize,
@@ -17,6 +20,8 @@ pub struct Dx7App {
     current_octave: i32,
     presets: Vec<Dx7Preset>,
     selected_preset: usize,
+    /// Cached snapshot from audio thread (updated each frame)
+    snapshot: SynthSnapshot,
 }
 
 #[derive(PartialEq)]
@@ -30,21 +35,18 @@ enum DisplayMode {
 
 impl Dx7App {
     pub fn new(
-        synthesizer: Arc<Mutex<FmSynthesizer>>,
+        engine: Arc<Mutex<SynthEngine>>,
+        controller: Arc<Mutex<SynthController>>,
         audio_engine: AudioEngine,
         midi_handler: Option<MidiHandler>,
     ) -> Self {
         let presets = get_dx7_presets();
-
-        // Apply the first preset (E.PIANO 1)
-        if !presets.is_empty() {
-            if let Ok(mut synth) = synthesizer.lock() {
-                presets[0].apply_to_synth(&mut synth);
-            }
-        }
+        // Get initial snapshot from controller
+        let snapshot = controller.lock().map(|c| c.snapshot()).unwrap_or_default();
 
         Self {
-            synthesizer,
+            engine,
+            controller,
             _audio_engine: audio_engine,
             _midi_handler: midi_handler,
             selected_operator: 0,
@@ -54,16 +56,33 @@ impl Dx7App {
             current_octave: 4,
             presets,
             selected_preset: 0,
+            snapshot,
         }
     }
 
-    fn lock_synth(
+    /// Update the cached snapshot from the audio thread (call once per frame)
+    fn update_snapshot(&mut self) {
+        if let Ok(ctrl) = self.controller.lock() {
+            self.snapshot = ctrl.snapshot();
+        }
+    }
+
+    fn lock_engine(
         &self,
     ) -> Result<
-        std::sync::MutexGuard<'_, FmSynthesizer>,
-        std::sync::PoisonError<std::sync::MutexGuard<'_, FmSynthesizer>>,
+        std::sync::MutexGuard<'_, SynthEngine>,
+        std::sync::PoisonError<std::sync::MutexGuard<'_, SynthEngine>>,
     > {
-        self.synthesizer.lock()
+        self.engine.lock()
+    }
+
+    fn lock_controller(
+        &self,
+    ) -> Result<
+        std::sync::MutexGuard<'_, SynthController>,
+        std::sync::PoisonError<std::sync::MutexGuard<'_, SynthController>>,
+    > {
+        self.controller.lock()
     }
 
     fn draw_dx7_display(&mut self, ui: &mut egui::Ui) {
@@ -93,56 +112,32 @@ impl Dx7App {
                         .color(display_color),
                 );
 
-                // Mode-specific sub text
+                // Mode-specific sub text (using cached snapshot)
                 let sub_text = match self.display_mode {
                     DisplayMode::Voice => {
-                        if let Ok(synth) = self.lock_synth() {
-                            format!(
-                                "VOICE: {} | ALG: {:02}",
-                                synth.preset_name,
-                                synth.get_algorithm()
-                            )
-                        } else {
-                            "VOICE: ERROR".to_string()
-                        }
+                        format!(
+                            "VOICE: {} | ALG: {:02}",
+                            self.snapshot.preset_name,
+                            self.snapshot.algorithm
+                        )
                     }
                     DisplayMode::Operator => {
                         format!("OP{} EDIT", self.selected_operator + 1)
                     }
                     DisplayMode::LFO => {
-                        if let Ok(synth) = self.lock_synth() {
-                            let waveform_name = synth.get_lfo_waveform().name();
-                            format!(
-                                "LFO: {} | Rate: {:.0} | Mod: {:.0}%",
-                                waveform_name,
-                                synth.get_lfo_rate(),
-                                synth.get_mod_wheel() * 100.0
-                            )
-                        } else {
-                            "LFO: ERROR".to_string()
-                        }
+                        let waveform_name = self.snapshot.lfo_waveform.name();
+                        format!(
+                            "LFO: {} | Rate: {:.0} | Mod: {:.0}%",
+                            waveform_name,
+                            self.snapshot.lfo_rate,
+                            self.snapshot.mod_wheel * 100.0
+                        )
                     }
                     DisplayMode::Effects => {
-                        if let Ok(synth) = self.lock_synth() {
-                            let chorus = if synth.effects.chorus.enabled {
-                                "CHO"
-                            } else {
-                                "-"
-                            };
-                            let delay = if synth.effects.delay.enabled {
-                                "DLY"
-                            } else {
-                                "-"
-                            };
-                            let reverb = if synth.effects.reverb.enabled {
-                                "REV"
-                            } else {
-                                "-"
-                            };
-                            format!("EFFECTS: {} {} {}", chorus, delay, reverb)
-                        } else {
-                            "EFFECTS: ERROR".to_string()
-                        }
+                        let chorus = if self.snapshot.chorus_enabled { "CHO" } else { "-" };
+                        let delay = if self.snapshot.delay_enabled { "DLY" } else { "-" };
+                        let reverb = if self.snapshot.reverb_enabled { "REV" } else { "-" };
+                        format!("EFFECTS: {} {} {}", chorus, delay, reverb)
                     }
                 };
 
@@ -155,30 +150,17 @@ impl Dx7App {
                 ui.add_space(5.0);
                 ui.separator();
 
-                // Always display current status information
-                let synth = self.synthesizer.lock().unwrap();
-                let mode_text = if synth.get_mono_mode() {
-                    "MONO"
-                } else {
-                    "POLY"
-                };
-                let midi_text = if self._midi_handler.is_some() {
-                    "MIDI OK"
-                } else {
-                    "NO MIDI"
-                };
+                // Always display current status information (from snapshot)
+                let mode_text = if self.snapshot.mono_mode { "MONO" } else { "POLY" };
+                let midi_text = if self._midi_handler.is_some() { "MIDI OK" } else { "NO MIDI" };
 
-                let status_line = if synth.get_mono_mode() {
+                let status_line = if self.snapshot.mono_mode {
                     // Show portamento only in MONO mode
-                    let porta_text = if synth.get_portamento_enable() {
-                        "ON"
-                    } else {
-                        "OFF"
-                    };
+                    let porta_text = if self.snapshot.portamento_enable { "ON" } else { "OFF" };
                     format!(
                         "VOICE: {} | ALG: {:02} | MODE: {} | PORTA: {} | {}",
-                        synth.preset_name,
-                        synth.get_algorithm(),
+                        self.snapshot.preset_name,
+                        self.snapshot.algorithm,
                         mode_text,
                         porta_text,
                         midi_text
@@ -187,8 +169,8 @@ impl Dx7App {
                     // In POLY mode, don't show portamento
                     format!(
                         "VOICE: {} | ALG: {:02} | MODE: {} | {}",
-                        synth.preset_name,
-                        synth.get_algorithm(),
+                        self.snapshot.preset_name,
+                        self.snapshot.algorithm,
                         mode_text,
                         midi_text
                     )
@@ -225,25 +207,14 @@ impl Dx7App {
                         ui.vertical(|ui| {
                             ui.horizontal(|ui| {
                                 ui.label("MASTER VOL:");
-                                if let Ok(mut synth) = self.lock_synth() {
-                                    ui.allocate_ui_with_layout(
-                                        egui::vec2(60.0, 20.0),
-                                        egui::Layout::left_to_right(egui::Align::Center),
-                                        |ui| {
-                                            let mut volume = synth.get_master_volume();
-                                            if ui
-                                                .add(
-                                                    egui::Slider::new(&mut volume, 0.0..=1.0)
-                                                        .show_value(false),
-                                                )
-                                                .changed()
-                                            {
-                                                synth.set_master_volume(volume);
-                                            }
-                                        },
-                                    );
-                                    ui.label(format!("{:.0}", synth.get_master_volume() * 100.0));
+                                let mut volume = self.snapshot.master_volume;
+                                let slider_response = ui.add(egui::Slider::new(&mut volume, 0.0..=1.0).show_value(false));
+                                if slider_response.changed() {
+                                    if let Ok(mut ctrl) = self.lock_controller() {
+                                        ctrl.set_master_volume(volume);
+                                    }
                                 }
+                                ui.label(format!("{:.0}", self.snapshot.master_volume * 100.0));
                             });
                         });
 
@@ -272,25 +243,13 @@ impl Dx7App {
                             ui.set_min_width(120.0);
                             ui.horizontal(|ui| {
                                 ui.label("MASTER VOL:");
-                                if let Ok(mut synth) = self.lock_synth() {
-                                    ui.allocate_ui_with_layout(
-                                        egui::vec2(60.0, 20.0),
-                                        egui::Layout::left_to_right(egui::Align::Center),
-                                        |ui| {
-                                            let mut volume = synth.get_master_volume();
-                                            if ui
-                                                .add(
-                                                    egui::Slider::new(&mut volume, 0.0..=1.0)
-                                                        .show_value(false),
-                                                )
-                                                .changed()
-                                            {
-                                                synth.set_master_volume(volume);
-                                            }
-                                        },
-                                    );
-                                    ui.label(format!("{:.0}", synth.get_master_volume() * 100.0));
+                                let mut volume = self.snapshot.master_volume;
+                                if ui.add(egui::Slider::new(&mut volume, 0.0..=1.0).show_value(false)).changed() {
+                                    if let Ok(mut ctrl) = self.lock_controller() {
+                                        ctrl.set_master_volume(volume);
+                                    }
                                 }
+                                ui.label(format!("{:.0}", self.snapshot.master_volume * 100.0));
                             });
                         });
 
@@ -299,58 +258,34 @@ impl Dx7App {
                         // Center-left section: Tuning controls
                         ui.vertical(|ui| {
                             ui.set_min_width(180.0);
-                            if let Ok(mut synth) = self.lock_synth() {
-                                // Master Tune
-                                ui.horizontal(|ui| {
-                                    ui.label("MASTER TUNE:");
-                                    let mut master_tune = synth.get_master_tune();
-                                    ui.allocate_ui_with_layout(
-                                        egui::vec2(70.0, 20.0),
-                                        egui::Layout::left_to_right(egui::Align::Center),
-                                        |ui| {
-                                            if ui
-                                                .add(
-                                                    egui::Slider::new(
-                                                        &mut master_tune,
-                                                        -150.0..=150.0,
-                                                    )
-                                                    .show_value(false),
-                                                )
-                                                .changed()
-                                            {
-                                                synth.set_master_tune(master_tune);
-                                            }
-                                        },
-                                    );
-                                    ui.label(format!("{:.0}c", master_tune));
-
-                                    if ui.small_button("RST").clicked() {
-                                        synth.set_master_tune(0.0);
+                            // Master Tune
+                            ui.horizontal(|ui| {
+                                ui.label("MASTER TUNE:");
+                                let mut master_tune = self.snapshot.master_tune;
+                                if ui.add(egui::Slider::new(&mut master_tune, -150.0..=150.0).show_value(false)).changed() {
+                                    if let Ok(mut ctrl) = self.lock_controller() {
+                                        ctrl.set_master_tune(master_tune);
                                     }
-                                });
+                                }
+                                ui.label(format!("{:.0}c", self.snapshot.master_tune));
+                                if ui.small_button("RST").clicked() {
+                                    if let Ok(mut ctrl) = self.lock_controller() {
+                                        ctrl.set_master_tune(0.0);
+                                    }
+                                }
+                            });
 
-                                // Pitch Bend Range
-                                ui.horizontal(|ui| {
-                                    ui.label("PITCH BEND:");
-                                    let mut pb_range = synth.get_pitch_bend_range();
-                                    ui.allocate_ui_with_layout(
-                                        egui::vec2(50.0, 20.0),
-                                        egui::Layout::left_to_right(egui::Align::Center),
-                                        |ui| {
-                                            if ui
-                                                .add(
-                                                    egui::Slider::new(&mut pb_range, 0.0..=12.0)
-                                                        .show_value(false),
-                                                )
-                                                .changed()
-                                            {
-                                                synth.set_pitch_bend_range(pb_range);
-                                            }
-                                        },
-                                    );
-                                    ui.label(format!("{:.0}", pb_range));
-                                });
-                            }
+                            // Pitch Bend Range
+                            ui.horizontal(|ui| {
+                                ui.label("PITCH BEND:");
+                                let mut pb_range = self.snapshot.pitch_bend_range;
+                                if ui.add(egui::Slider::new(&mut pb_range, 0.0..=12.0).show_value(false)).changed() {
+                                    if let Ok(mut ctrl) = self.lock_controller() {
+                                        ctrl.set_pitch_bend_range(pb_range);
+                                    }
+                                }
+                                ui.label(format!("{:.0}", self.snapshot.pitch_bend_range));
+                            });
                         });
 
                         ui.separator();
@@ -358,65 +293,47 @@ impl Dx7App {
                         // Center-right section: Mode controls
                         ui.vertical(|ui| {
                             ui.set_min_width(150.0);
-                            if let Ok(mut synth) = self.lock_synth() {
+                            let mono_mode = self.snapshot.mono_mode;
+                            let porta_enable = self.snapshot.portamento_enable;
+                            let porta_time = self.snapshot.portamento_time;
+
+                            ui.horizontal(|ui| {
+                                ui.label("MODE:");
+                                let mut mode = mono_mode;
+                                if ui.selectable_value(&mut mode, false, "POLY").clicked() && mono_mode {
+                                    if let Ok(mut ctrl) = self.lock_controller() {
+                                        ctrl.set_mono_mode(false);
+                                    }
+                                }
+                                if ui.selectable_value(&mut mode, true, "MONO").clicked() && !mono_mode {
+                                    if let Ok(mut ctrl) = self.lock_controller() {
+                                        ctrl.set_mono_mode(true);
+                                    }
+                                }
+                            });
+
+                            // Portamento (only visible in MONO mode)
+                            if mono_mode {
                                 ui.horizontal(|ui| {
-                                    ui.label("MODE:");
-
-                                    let was_mono = synth.get_mono_mode();
-
-                                    if ui
-                                        .selectable_value(&mut synth.get_mono_mode(), false, "POLY")
-                                        .clicked()
-                                    {
-                                        if was_mono {
-                                            synth.set_mono_mode(false);
+                                    ui.label("PORTAMENTO:");
+                                    let mut porta_on = porta_enable;
+                                    if ui.checkbox(&mut porta_on, "").changed() {
+                                        if let Ok(mut ctrl) = self.lock_controller() {
+                                            ctrl.set_portamento_enable(porta_on);
                                         }
                                     }
 
-                                    if ui
-                                        .selectable_value(&mut synth.get_mono_mode(), true, "MONO")
-                                        .clicked()
-                                    {
-                                        if !was_mono {
-                                            synth.set_mono_mode(true);
+                                    if porta_enable {
+                                        ui.label("TIME:");
+                                        let mut pt = porta_time;
+                                        if ui.add(egui::Slider::new(&mut pt, 0.0..=99.0).show_value(false)).changed() {
+                                            if let Ok(mut ctrl) = self.lock_controller() {
+                                                ctrl.set_portamento_time(pt);
+                                            }
                                         }
+                                        ui.label(format!("{:.0}", porta_time));
                                     }
                                 });
-
-                                // Portamento (only visible in MONO mode)
-                                if synth.get_mono_mode() {
-                                    ui.horizontal(|ui| {
-                                        ui.label("PORTAMENTO:");
-                                        let mut porta_on = synth.get_portamento_enable();
-                                        if ui.checkbox(&mut porta_on, "").changed() {
-                                            synth.set_portamento_enable(porta_on);
-                                        }
-
-                                        if synth.get_portamento_enable() {
-                                            ui.label("TIME:");
-                                            let mut porta_time = synth.get_portamento_time();
-                                            ui.allocate_ui_with_layout(
-                                                egui::vec2(50.0, 20.0),
-                                                egui::Layout::left_to_right(egui::Align::Center),
-                                                |ui| {
-                                                    if ui
-                                                        .add(
-                                                            egui::Slider::new(
-                                                                &mut porta_time,
-                                                                0.0..=99.0,
-                                                            )
-                                                            .show_value(false),
-                                                        )
-                                                        .changed()
-                                                    {
-                                                        synth.set_portamento_time(porta_time);
-                                                    }
-                                                },
-                                            );
-                                            ui.label(format!("{:.0}", porta_time));
-                                        }
-                                    });
-                                }
                             }
                         });
 
@@ -427,14 +344,14 @@ impl Dx7App {
                             ui.set_min_width(100.0);
                             ui.horizontal(|ui| {
                                 if ui.small_button("PANIC").clicked() {
-                                    if let Ok(mut synth) = self.lock_synth() {
-                                        synth.panic();
+                                    if let Ok(mut ctrl) = self.lock_controller() {
+                                        ctrl.panic();
                                     }
                                 }
 
                                 if ui.small_button("INIT").clicked() {
-                                    if let Ok(mut synth) = self.lock_synth() {
-                                        synth.voice_initialize();
+                                    if let Ok(mut ctrl) = self.lock_controller() {
+                                        ctrl.voice_initialize();
                                     }
                                 }
                             });
@@ -446,122 +363,96 @@ impl Dx7App {
     }
 
     fn draw_mode_controls_compact(&mut self, ui: &mut egui::Ui) {
-        if let Ok(mut synth) = self.lock_synth() {
+        let mono_mode = self.snapshot.mono_mode;
+        ui.horizontal(|ui| {
+            ui.label("MODE:");
+            let mut mode = mono_mode;
+            if ui.selectable_value(&mut mode, false, "POLY").clicked() && mono_mode {
+                if let Ok(mut ctrl) = self.lock_controller() {
+                    ctrl.set_mono_mode(false);
+                }
+            }
+            if ui.selectable_value(&mut mode, true, "MONO").clicked() && !mono_mode {
+                if let Ok(mut ctrl) = self.lock_controller() {
+                    ctrl.set_mono_mode(true);
+                }
+            }
+        });
+
+        // Portamento (only visible in MONO mode)
+        if mono_mode {
+            let porta_enable = self.snapshot.portamento_enable;
+            let porta_time = self.snapshot.portamento_time;
             ui.horizontal(|ui| {
-                ui.label("MODE:");
-
-                let was_mono = synth.get_mono_mode();
-
-                if ui
-                    .selectable_value(&mut synth.get_mono_mode(), false, "POLY")
-                    .clicked()
-                {
-                    if was_mono {
-                        synth.set_mono_mode(false);
+                ui.label("PORTA:");
+                let mut porta_on = porta_enable;
+                if ui.checkbox(&mut porta_on, "").changed() {
+                    if let Ok(mut ctrl) = self.lock_controller() {
+                        ctrl.set_portamento_enable(porta_on);
                     }
                 }
 
-                if ui
-                    .selectable_value(&mut synth.get_mono_mode(), true, "MONO")
-                    .clicked()
-                {
-                    if !was_mono {
-                        synth.set_mono_mode(true);
+                if porta_enable {
+                    ui.label("TIME:");
+                    let mut pt = porta_time;
+                    if ui.add(egui::Slider::new(&mut pt, 0.0..=99.0).show_value(false)).changed() {
+                        if let Ok(mut ctrl) = self.lock_controller() {
+                            ctrl.set_portamento_time(pt);
+                        }
                     }
+                    ui.label(format!("{:.0}", porta_time));
                 }
             });
-
-            // Portamento (only visible in MONO mode)
-            if synth.get_mono_mode() {
-                ui.horizontal(|ui| {
-                    ui.label("PORTA:");
-                    let mut porta_on = synth.get_portamento_enable();
-                    if ui.checkbox(&mut porta_on, "").changed() {
-                        synth.set_portamento_enable(porta_on);
-                    }
-
-                    if synth.get_portamento_enable() {
-                        ui.label("TIME:");
-                        let mut porta_time = synth.get_portamento_time();
-                        ui.allocate_ui_with_layout(
-                            egui::vec2(40.0, 20.0),
-                            egui::Layout::left_to_right(egui::Align::Center),
-                            |ui| {
-                                if ui
-                                    .add(
-                                        egui::Slider::new(&mut porta_time, 0.0..=99.0)
-                                            .show_value(false),
-                                    )
-                                    .changed()
-                                {
-                                    synth.set_portamento_time(porta_time);
-                                }
-                            },
-                        );
-                        ui.label(format!("{:.0}", porta_time));
-                    }
-                });
-            }
         }
     }
 
     fn draw_tune_and_utilities_compact(&mut self, ui: &mut egui::Ui) {
-        if let Ok(mut synth) = self.lock_synth() {
-            // First row: Master Tune
-            ui.horizontal(|ui| {
-                ui.label("TUNE:");
-                let mut master_tune = synth.get_master_tune();
-                ui.allocate_ui_with_layout(
-                    egui::vec2(50.0, 20.0),
-                    egui::Layout::left_to_right(egui::Align::Center),
-                    |ui| {
-                        if ui
-                            .add(
-                                egui::Slider::new(&mut master_tune, -150.0..=150.0)
-                                    .show_value(false),
-                            )
-                            .changed()
-                        {
-                            synth.set_master_tune(master_tune);
-                        }
-                    },
-                );
-                ui.label(format!("{:.0}c", master_tune));
+        let master_tune = self.snapshot.master_tune;
+        let pb_range = self.snapshot.pitch_bend_range;
 
-                if ui.small_button("RST").clicked() {
-                    synth.set_master_tune(0.0);
+        // First row: Master Tune
+        ui.horizontal(|ui| {
+            ui.label("TUNE:");
+            let mut tune = master_tune;
+            if ui.add(egui::Slider::new(&mut tune, -150.0..=150.0).show_value(false)).changed() {
+                if let Ok(mut ctrl) = self.lock_controller() {
+                    ctrl.set_master_tune(tune);
                 }
-            });
+            }
+            ui.label(format!("{:.0}c", master_tune));
 
-            // Second row: Pitch Bend and utilities
-            ui.horizontal(|ui| {
-                ui.label("BEND:");
-                let mut pb_range = synth.get_pitch_bend_range();
-                ui.allocate_ui_with_layout(
-                    egui::vec2(40.0, 20.0),
-                    egui::Layout::left_to_right(egui::Align::Center),
-                    |ui| {
-                        if ui
-                            .add(egui::Slider::new(&mut pb_range, 0.0..=12.0).show_value(false))
-                            .changed()
-                        {
-                            synth.set_pitch_bend_range(pb_range);
-                        }
-                    },
-                );
-                ui.label(format!("{:.0}", pb_range));
-
-                ui.separator();
-
-                if ui.small_button("PANIC").clicked() {
-                    synth.panic();
+            if ui.small_button("RST").clicked() {
+                if let Ok(mut ctrl) = self.lock_controller() {
+                    ctrl.set_master_tune(0.0);
                 }
+            }
+        });
 
-                if ui.small_button("INIT").clicked() {
-                    synth.voice_initialize();
+        // Second row: Pitch Bend and utilities
+        ui.horizontal(|ui| {
+            ui.label("BEND:");
+            let mut pb = pb_range;
+            if ui.add(egui::Slider::new(&mut pb, 0.0..=12.0).show_value(false)).changed() {
+                if let Ok(mut ctrl) = self.lock_controller() {
+                    ctrl.set_pitch_bend_range(pb);
                 }
-            });
-        }
+            }
+            ui.label(format!("{:.0}", pb_range));
+
+            ui.separator();
+
+            if ui.small_button("PANIC").clicked() {
+                if let Ok(mut ctrl) = self.lock_controller() {
+                    ctrl.panic();
+                }
+            }
+
+            if ui.small_button("INIT").clicked() {
+                if let Ok(mut ctrl) = self.lock_controller() {
+                    ctrl.voice_initialize();
+                }
+            }
+        });
     }
 
     fn draw_membrane_buttons(&mut self, ui: &mut egui::Ui) {
@@ -669,7 +560,7 @@ impl Dx7App {
                                 self.selected_preset = i;
                                 let preset_name = preset.name.to_string();
                                 // Apply preset to synthesizer
-                                if let Ok(mut synth) = self.lock_synth() {
+                                if let Ok(mut synth) = self.lock_engine() {
                                     preset.apply_to_synth(&mut synth);
                                 };
                                 self.display_text = format!("LOADED: {}", preset_name);
@@ -737,12 +628,16 @@ impl Dx7App {
         for (key, semitone) in &key_map {
             if ctx.input(|i| i.key_pressed(*key)) {
                 let note = (self.current_octave * 12 + 12 + semitone) as u8;
-                self.synthesizer.lock().unwrap().note_on(note, 100);
+                if let Ok(mut ctrl) = self.lock_controller() {
+                    ctrl.note_on(note, 100);
+                }
                 self.last_key_times.insert(*key, now);
             } else if ctx.input(|i| i.key_released(*key)) {
                 if let Some(&_press_time) = self.last_key_times.get(key) {
                     let note = (self.current_octave * 12 + 12 + semitone) as u8;
-                    self.synthesizer.lock().unwrap().note_off(note);
+                    if let Ok(mut ctrl) = self.lock_controller() {
+                        ctrl.note_off(note);
+                    }
                     self.last_key_times.remove(key);
                 }
             }
@@ -756,13 +651,18 @@ impl Dx7App {
         }
 
         if ctx.input(|i| i.key_pressed(Key::Space)) {
-            self.synthesizer.lock().unwrap().panic();
+            if let Ok(mut ctrl) = self.lock_controller() {
+                ctrl.panic();
+            }
         }
     }
 }
 
 impl eframe::App for Dx7App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Update snapshot from audio thread once per frame
+        self.update_snapshot();
+
         self.handle_keyboard_input(ctx);
 
         // Set light theme with soft colors
@@ -842,27 +742,12 @@ impl Dx7App {
                 ui.label("LFO CONTROLS");
                 ui.separator();
 
-                let (
-                    mut lfo_rate,
-                    mut lfo_delay,
-                    mut lfo_pitch_depth,
-                    mut lfo_amp_depth,
-                    lfo_waveform,
-                    mut lfo_key_sync,
-                ) = {
-                    if let Ok(synth) = self.synthesizer.lock() {
-                        (
-                            synth.get_lfo_rate(),
-                            synth.get_lfo_delay(),
-                            synth.get_lfo_pitch_depth(),
-                            synth.get_lfo_amp_depth(),
-                            synth.get_lfo_waveform(),
-                            synth.get_lfo_key_sync(),
-                        )
-                    } else {
-                        (0.0, 0.0, 0.0, 0.0, crate::lfo::LFOWaveform::Triangle, false)
-                    }
-                };
+                let mut lfo_rate = self.snapshot.lfo_rate;
+                let mut lfo_delay = self.snapshot.lfo_delay;
+                let mut lfo_pitch_depth = self.snapshot.lfo_pitch_depth;
+                let mut lfo_amp_depth = self.snapshot.lfo_amp_depth;
+                let lfo_waveform = self.snapshot.lfo_waveform;
+                let mut lfo_key_sync = self.snapshot.lfo_key_sync;
 
                 ui.columns(2, |columns| {
                     // Left column: Timing
@@ -870,33 +755,25 @@ impl Dx7App {
                         ui.label("TIMING");
                         ui.horizontal(|ui| {
                             ui.label("Rate:");
-                            if ui
-                                .add(egui::Slider::new(&mut lfo_rate, 0.0..=99.0).integer())
-                                .changed()
-                            {
-                                if let Ok(mut synth) = self.synthesizer.lock() {
-                                    synth.set_lfo_rate(lfo_rate);
+                            if ui.add(egui::Slider::new(&mut lfo_rate, 0.0..=99.0).integer()).changed() {
+                                if let Ok(mut ctrl) = self.lock_controller() {
+                                    ctrl.set_lfo_param(LfoParam::Rate, lfo_rate);
                                 }
                             }
                         });
                         ui.horizontal(|ui| {
                             ui.label("Delay:");
-                            if ui
-                                .add(egui::Slider::new(&mut lfo_delay, 0.0..=99.0).integer())
-                                .changed()
-                            {
-                                if let Ok(mut synth) = self.synthesizer.lock() {
-                                    synth.set_lfo_delay(lfo_delay);
+                            if ui.add(egui::Slider::new(&mut lfo_delay, 0.0..=99.0).integer()).changed() {
+                                if let Ok(mut ctrl) = self.lock_controller() {
+                                    ctrl.set_lfo_param(LfoParam::Delay, lfo_delay);
                                 }
                             }
                         });
-                        if let Ok(synth) = self.synthesizer.lock() {
-                            ui.label(format!(
-                                "Freq: {:.2} Hz | Delay: {:.2}s",
-                                synth.get_lfo_frequency_hz(),
-                                synth.get_lfo_delay_seconds()
-                            ));
-                        }
+                        ui.label(format!(
+                            "Freq: {:.2} Hz | Delay: {:.2}s",
+                            self.snapshot.lfo_frequency_hz,
+                            self.snapshot.lfo_delay_seconds
+                        ));
                     });
 
                     // Right column: Modulation
@@ -904,23 +781,17 @@ impl Dx7App {
                         ui.label("MODULATION");
                         ui.horizontal(|ui| {
                             ui.label("Pitch:");
-                            if ui
-                                .add(egui::Slider::new(&mut lfo_pitch_depth, 0.0..=99.0).integer())
-                                .changed()
-                            {
-                                if let Ok(mut synth) = self.synthesizer.lock() {
-                                    synth.set_lfo_pitch_depth(lfo_pitch_depth);
+                            if ui.add(egui::Slider::new(&mut lfo_pitch_depth, 0.0..=99.0).integer()).changed() {
+                                if let Ok(mut ctrl) = self.lock_controller() {
+                                    ctrl.set_lfo_param(LfoParam::PitchDepth, lfo_pitch_depth);
                                 }
                             }
                         });
                         ui.horizontal(|ui| {
                             ui.label("Amp:");
-                            if ui
-                                .add(egui::Slider::new(&mut lfo_amp_depth, 0.0..=99.0).integer())
-                                .changed()
-                            {
-                                if let Ok(mut synth) = self.synthesizer.lock() {
-                                    synth.set_lfo_amp_depth(lfo_amp_depth);
+                            if ui.add(egui::Slider::new(&mut lfo_amp_depth, 0.0..=99.0).integer()).changed() {
+                                if let Ok(mut ctrl) = self.lock_controller() {
+                                    ctrl.set_lfo_param(LfoParam::AmpDepth, lfo_amp_depth);
                                 }
                             }
                         });
@@ -929,17 +800,10 @@ impl Dx7App {
                             egui::ComboBox::from_id_source("lfo_waveform")
                                 .selected_text(lfo_waveform.name())
                                 .show_ui(ui, |ui| {
-                                    for &waveform in crate::lfo::LFOWaveform::all() {
-                                        if ui
-                                            .selectable_value(
-                                                &mut lfo_waveform.clone(),
-                                                waveform,
-                                                waveform.name(),
-                                            )
-                                            .clicked()
-                                        {
-                                            if let Ok(mut synth) = self.synthesizer.lock() {
-                                                synth.set_lfo_waveform(waveform);
+                                    for (i, &waveform) in crate::lfo::LFOWaveform::all().iter().enumerate() {
+                                        if ui.selectable_value(&mut lfo_waveform.clone(), waveform, waveform.name()).clicked() {
+                                            if let Ok(mut ctrl) = self.lock_controller() {
+                                                ctrl.set_lfo_param(LfoParam::Waveform(i as u8), 0.0);
                                             }
                                         }
                                     }
@@ -948,8 +812,8 @@ impl Dx7App {
                         ui.horizontal(|ui| {
                             ui.label("Key Sync:");
                             if ui.checkbox(&mut lfo_key_sync, "").changed() {
-                                if let Ok(mut synth) = self.synthesizer.lock() {
-                                    synth.set_lfo_key_sync(lfo_key_sync);
+                                if let Ok(mut ctrl) = self.lock_controller() {
+                                    ctrl.set_lfo_param(LfoParam::KeySync, if lfo_key_sync { 1.0 } else { 0.0 });
                                 }
                             }
                         });
@@ -957,14 +821,12 @@ impl Dx7App {
                 });
 
                 ui.separator();
-                if let Ok(synth) = self.synthesizer.lock() {
-                    let mod_pct = (synth.get_mod_wheel() * 100.0) as i32;
-                    ui.label(format!(
-                        "Mod Wheel: {}%{}",
-                        mod_pct,
-                        if mod_pct == 0 { " (move to enable)" } else { "" }
-                    ));
-                }
+                let mod_pct = (self.snapshot.mod_wheel * 100.0) as i32;
+                ui.label(format!(
+                    "Mod Wheel: {}%{}",
+                    mod_pct,
+                    if mod_pct == 0 { " (move to enable)" } else { "" }
+                ));
             });
         });
     }
@@ -992,7 +854,7 @@ impl Dx7App {
             ui.vertical(|ui| {
                 ui.label(egui::RichText::new("CHORUS").strong());
 
-                if let Ok(mut synth) = self.lock_synth() {
+                if let Ok(mut synth) = self.lock_engine() {
                     let chorus = &mut synth.effects.chorus;
 
                     ui.horizontal(|ui| {
@@ -1041,7 +903,7 @@ impl Dx7App {
             ui.vertical(|ui| {
                 ui.label(egui::RichText::new("DELAY").strong());
 
-                if let Ok(mut synth) = self.lock_synth() {
+                if let Ok(mut synth) = self.lock_engine() {
                     let delay = &mut synth.effects.delay;
 
                     ui.horizontal(|ui| {
@@ -1086,7 +948,7 @@ impl Dx7App {
             ui.vertical(|ui| {
                 ui.label(egui::RichText::new("REVERB").strong());
 
-                if let Ok(mut synth) = self.lock_synth() {
+                if let Ok(mut synth) = self.lock_engine() {
                     let reverb = &mut synth.effects.reverb;
 
                     ui.horizontal(|ui| {
@@ -1128,43 +990,34 @@ impl Dx7App {
     }
 
     fn draw_algorithm_diagram_compact(&mut self, ui: &mut egui::Ui) {
-        let current_alg = if let Ok(synth) = self.lock_synth() {
-            synth.get_algorithm()
-        } else {
-            1
-        };
-
+        let current_alg = self.snapshot.algorithm;
         let alg_info = algorithms::get_algorithm_info(current_alg);
-
-        let enabled_states: [bool; 6] = if let Ok(synth) = self.lock_synth() {
-            [
-                synth.get_operator_enabled(0),
-                synth.get_operator_enabled(1),
-                synth.get_operator_enabled(2),
-                synth.get_operator_enabled(3),
-                synth.get_operator_enabled(4),
-                synth.get_operator_enabled(5),
-            ]
-        } else {
-            [true; 6]
-        };
+        let enabled_states = [
+            self.snapshot.operators[0].enabled,
+            self.snapshot.operators[1].enabled,
+            self.snapshot.operators[2].enabled,
+            self.snapshot.operators[3].enabled,
+            self.snapshot.operators[4].enabled,
+            self.snapshot.operators[5].enabled,
+        ];
 
         ui.group(|ui| {
             ui.vertical(|ui| {
                 // Compact header with algorithm selector
                 ui.horizontal(|ui| {
                     ui.label(egui::RichText::new("ALG").strong());
-                    if let Ok(mut synth) = self.lock_synth() {
-                        let current = synth.get_algorithm();
-                        if ui.small_button("<").clicked() && current > 1 {
-                            synth.set_algorithm(current - 1);
+                    if ui.small_button("<").clicked() && current_alg > 1 {
+                        if let Ok(mut ctrl) = self.lock_controller() {
+                            ctrl.set_algorithm(current_alg - 1);
                         }
-                        ui.label(egui::RichText::new(format!("{:02}", current)).strong());
-                        if ui.small_button(">").clicked() && current < 32 {
-                            synth.set_algorithm(current + 1);
-                        }
-                        ui.label(algorithms::get_algorithm_name(current));
                     }
+                    ui.label(egui::RichText::new(format!("{:02}", current_alg)).strong());
+                    if ui.small_button(">").clicked() && current_alg < 32 {
+                        if let Ok(mut ctrl) = self.lock_controller() {
+                            ctrl.set_algorithm(current_alg + 1);
+                        }
+                    }
+                    ui.label(algorithms::get_algorithm_name(current_alg));
                 });
 
                 // Compact diagram canvas
@@ -1263,11 +1116,7 @@ impl Dx7App {
 
     /// Minimal operator selector strip - just clickable buttons to select operator
     fn draw_operator_selector_strip(&mut self, ui: &mut egui::Ui) {
-        let current_alg = if let Ok(synth) = self.lock_synth() {
-            synth.get_algorithm()
-        } else {
-            1
-        };
+        let current_alg = self.snapshot.algorithm;
         let alg_info = algorithms::get_algorithm_info(current_alg);
 
         ui.group(|ui| {
@@ -1279,17 +1128,8 @@ impl Dx7App {
                     let is_selected = self.selected_operator == op_idx;
                     let has_feedback = alg_info.feedback_op == op_num;
 
-                    let (enabled, level) = {
-                        if let Ok(synth) = self.lock_synth() {
-                            if let Some(voice) = synth.voices.first() {
-                                (voice.operators[op_idx].enabled, voice.operators[op_idx].output_level)
-                            } else {
-                                (true, 99.0)
-                            }
-                        } else {
-                            (true, 99.0)
-                        }
-                    };
+                    let enabled = self.snapshot.operators[op_idx].enabled;
+                    let level = self.snapshot.operators[op_idx].output_level;
 
                     let base_color = if !enabled {
                         egui::Color32::from_rgb(80, 80, 80)
@@ -1341,48 +1181,30 @@ impl Dx7App {
     /// Full operator panel with all parameters and envelope
     fn draw_operator_full_panel(&mut self, ui: &mut egui::Ui) {
         let op_idx = self.selected_operator;
-        let current_alg = if let Ok(synth) = self.lock_synth() {
-            synth.get_algorithm()
-        } else {
-            1
-        };
+        let current_alg = self.snapshot.algorithm;
         let alg_info = algorithms::get_algorithm_info(current_alg);
         let op_num = (op_idx + 1) as u8;
         let is_carrier = alg_info.carriers.contains(&op_num);
         let has_feedback = alg_info.feedback_op == op_num;
 
-        let (
-            mut enabled,
-            mut freq_ratio,
-            mut output_level,
-            mut detune,
-            mut feedback,
-            mut vel_sens,
-            mut key_scale_lvl,
-            mut key_scale_rt,
-            mut rate1, mut rate2, mut rate3, mut rate4,
-            mut level1, mut level2, mut level3, mut level4,
-        ) = {
-            let synth = self.synthesizer.lock().unwrap();
-            if let Some(voice) = synth.voices.first() {
-                let op = &voice.operators[op_idx];
-                let env = &op.envelope;
-                (
-                    op.enabled,
-                    op.frequency_ratio,
-                    op.output_level,
-                    op.detune,
-                    op.feedback,
-                    op.velocity_sensitivity,
-                    op.key_scale_level,
-                    op.key_scale_rate,
-                    env.rate1, env.rate2, env.rate3, env.rate4,
-                    env.level1, env.level2, env.level3, env.level4,
-                )
-            } else {
-                (true, 1.0, 99.0, 0.0, 0.0, 0.0, 0.0, 0.0, 99.0, 50.0, 35.0, 50.0, 99.0, 75.0, 50.0, 0.0)
-            }
-        };
+        // Read all operator parameters from snapshot (lock-free)
+        let op_snap = &self.snapshot.operators[op_idx];
+        let mut enabled = op_snap.enabled;
+        let mut freq_ratio = op_snap.frequency_ratio;
+        let mut output_level = op_snap.output_level;
+        let mut detune = op_snap.detune;
+        let mut feedback = op_snap.feedback;
+        let mut vel_sens = op_snap.velocity_sensitivity;
+        let mut key_scale_lvl = op_snap.key_scale_level;
+        let mut key_scale_rt = op_snap.key_scale_rate;
+        let mut rate1 = op_snap.rate1;
+        let mut rate2 = op_snap.rate2;
+        let mut rate3 = op_snap.rate3;
+        let mut rate4 = op_snap.rate4;
+        let mut level1 = op_snap.level1;
+        let mut level2 = op_snap.level2;
+        let mut level3 = op_snap.level3;
+        let mut level4 = op_snap.level4;
 
         ui.group(|ui| {
             // Header
@@ -1392,8 +1214,8 @@ impl Dx7App {
                 ui.label(egui::RichText::new(format!("OPERATOR {} - {}{}", op_num, role, fb_text)).strong());
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.checkbox(&mut enabled, "ON").changed() {
-                        if let Ok(mut synth) = self.lock_synth() {
-                            synth.set_operator_param(op_idx, "enabled", if enabled { 1.0 } else { 0.0 });
+                        if let Ok(mut ctrl) = self.lock_controller() {
+                            ctrl.set_operator_param(op_idx as u8, OperatorParam::Enabled, if enabled { 1.0 } else { 0.0 });
                         }
                     }
                 });
@@ -1408,28 +1230,38 @@ impl Dx7App {
                     if ui.add(egui::Slider::new(&mut freq_ratio, 0.5..=31.0).step_by(1.0)
                         .custom_formatter(|n, _| format!("{:.2}", crate::dx7_frequency::quantize_frequency_ratio(n as f32)))).changed() {
                         let q = crate::dx7_frequency::quantize_frequency_ratio(freq_ratio);
-                        self.synthesizer.lock().unwrap().set_operator_param(op_idx, "ratio", q);
+                        if let Ok(mut ctrl) = self.lock_controller() {
+                            ctrl.set_operator_param(op_idx as u8, OperatorParam::Ratio, q);
+                        }
                     }
                     ui.label("Level:");
                     if ui.add(egui::Slider::new(&mut output_level, 0.0..=99.0).integer()).changed() {
-                        self.synthesizer.lock().unwrap().set_operator_param(op_idx, "level", output_level);
+                        if let Ok(mut ctrl) = self.lock_controller() {
+                            ctrl.set_operator_param(op_idx as u8, OperatorParam::Level, output_level);
+                        }
                     }
                     ui.end_row();
 
                     ui.label("Detune:");
                     if ui.add(egui::Slider::new(&mut detune, -7.0..=7.0).integer()).changed() {
-                        self.synthesizer.lock().unwrap().set_operator_param(op_idx, "detune", detune);
+                        if let Ok(mut ctrl) = self.lock_controller() {
+                            ctrl.set_operator_param(op_idx as u8, OperatorParam::Detune, detune);
+                        }
                     }
                     ui.label("Vel Sens:");
                     if ui.add(egui::Slider::new(&mut vel_sens, 0.0..=7.0).integer()).changed() {
-                        self.synthesizer.lock().unwrap().set_operator_param(op_idx, "vel_sens", vel_sens);
+                        if let Ok(mut ctrl) = self.lock_controller() {
+                            ctrl.set_operator_param(op_idx as u8, OperatorParam::VelocitySensitivity, vel_sens);
+                        }
                     }
                     ui.end_row();
 
                     if has_feedback {
                         ui.label("Feedback:");
                         if ui.add(egui::Slider::new(&mut feedback, 0.0..=7.0).integer()).changed() {
-                            self.synthesizer.lock().unwrap().set_operator_param(op_idx, "feedback", feedback);
+                            if let Ok(mut ctrl) = self.lock_controller() {
+                                ctrl.set_operator_param(op_idx as u8, OperatorParam::Feedback, feedback);
+                            }
                         }
                     } else {
                         ui.label("");
@@ -1437,7 +1269,9 @@ impl Dx7App {
                     }
                     ui.label("Key Lvl:");
                     if ui.add(egui::Slider::new(&mut key_scale_lvl, 0.0..=99.0).integer()).changed() {
-                        self.synthesizer.lock().unwrap().set_operator_param(op_idx, "key_scale_level", key_scale_lvl);
+                        if let Ok(mut ctrl) = self.lock_controller() {
+                            ctrl.set_operator_param(op_idx as u8, OperatorParam::KeyScaleLevel, key_scale_lvl);
+                        }
                     }
                     ui.end_row();
 
@@ -1445,7 +1279,9 @@ impl Dx7App {
                     ui.label("");
                     ui.label("Key Rate:");
                     if ui.add(egui::Slider::new(&mut key_scale_rt, 0.0..=7.0).integer()).changed() {
-                        self.synthesizer.lock().unwrap().set_operator_param(op_idx, "key_scale_rate", key_scale_rt);
+                        if let Ok(mut ctrl) = self.lock_controller() {
+                            ctrl.set_operator_param(op_idx as u8, OperatorParam::KeyScaleRate, key_scale_rt);
+                        }
                     }
                     ui.end_row();
                 });
@@ -1458,41 +1294,57 @@ impl Dx7App {
                     // Row 1: Rates
                     ui.label("R1:");
                     if ui.add(egui::Slider::new(&mut rate1, 0.0..=99.0).integer()).changed() {
-                        self.synthesizer.lock().unwrap().set_envelope_param(op_idx, "rate1", rate1);
+                        if let Ok(mut ctrl) = self.lock_controller() {
+                            ctrl.set_envelope_param(op_idx as u8, EnvelopeParam::Rate1, rate1);
+                        }
                     }
                     ui.label("R2:");
                     if ui.add(egui::Slider::new(&mut rate2, 0.0..=99.0).integer()).changed() {
-                        self.synthesizer.lock().unwrap().set_envelope_param(op_idx, "rate2", rate2);
+                        if let Ok(mut ctrl) = self.lock_controller() {
+                            ctrl.set_envelope_param(op_idx as u8, EnvelopeParam::Rate2, rate2);
+                        }
                     }
                     ui.end_row();
 
                     ui.label("L1:");
                     if ui.add(egui::Slider::new(&mut level1, 0.0..=99.0).integer()).changed() {
-                        self.synthesizer.lock().unwrap().set_envelope_param(op_idx, "level1", level1);
+                        if let Ok(mut ctrl) = self.lock_controller() {
+                            ctrl.set_envelope_param(op_idx as u8, EnvelopeParam::Level1, level1);
+                        }
                     }
                     ui.label("L2:");
                     if ui.add(egui::Slider::new(&mut level2, 0.0..=99.0).integer()).changed() {
-                        self.synthesizer.lock().unwrap().set_envelope_param(op_idx, "level2", level2);
+                        if let Ok(mut ctrl) = self.lock_controller() {
+                            ctrl.set_envelope_param(op_idx as u8, EnvelopeParam::Level2, level2);
+                        }
                     }
                     ui.end_row();
 
                     ui.label("R3:");
                     if ui.add(egui::Slider::new(&mut rate3, 0.0..=99.0).integer()).changed() {
-                        self.synthesizer.lock().unwrap().set_envelope_param(op_idx, "rate3", rate3);
+                        if let Ok(mut ctrl) = self.lock_controller() {
+                            ctrl.set_envelope_param(op_idx as u8, EnvelopeParam::Rate3, rate3);
+                        }
                     }
                     ui.label("R4:");
                     if ui.add(egui::Slider::new(&mut rate4, 0.0..=99.0).integer()).changed() {
-                        self.synthesizer.lock().unwrap().set_envelope_param(op_idx, "rate4", rate4);
+                        if let Ok(mut ctrl) = self.lock_controller() {
+                            ctrl.set_envelope_param(op_idx as u8, EnvelopeParam::Rate4, rate4);
+                        }
                     }
                     ui.end_row();
 
                     ui.label("L3:");
                     if ui.add(egui::Slider::new(&mut level3, 0.0..=99.0).integer()).changed() {
-                        self.synthesizer.lock().unwrap().set_envelope_param(op_idx, "level3", level3);
+                        if let Ok(mut ctrl) = self.lock_controller() {
+                            ctrl.set_envelope_param(op_idx as u8, EnvelopeParam::Level3, level3);
+                        }
                     }
                     ui.label("L4:");
                     if ui.add(egui::Slider::new(&mut level4, 0.0..=99.0).integer()).changed() {
-                        self.synthesizer.lock().unwrap().set_envelope_param(op_idx, "level4", level4);
+                        if let Ok(mut ctrl) = self.lock_controller() {
+                            ctrl.set_envelope_param(op_idx as u8, EnvelopeParam::Level4, level4);
+                        }
                     }
                     ui.end_row();
                 });

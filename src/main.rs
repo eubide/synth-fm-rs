@@ -1,9 +1,12 @@
 use eframe::egui;
+use std::sync::atomic::AtomicUsize;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
 mod algorithms;
 mod audio_engine;
+mod command_queue;
 mod dx7_frequency;
 mod effects;
 mod envelope;
@@ -15,30 +18,31 @@ mod midi_handler;
 mod operator;
 mod optimization;
 mod presets;
+mod state_snapshot;
 
 use audio_engine::AudioEngine;
-use fm_synth::FmSynthesizer;
+use fm_synth::{create_synth, SynthController};
 use gui::Dx7App;
 use midi_handler::MidiHandler;
+use presets::get_dx7_presets;
 
-fn play_startup_melody(synth: std::sync::Arc<std::sync::Mutex<FmSynthesizer>>) {
+fn play_startup_melody(controller: Arc<Mutex<SynthController>>) {
     thread::spawn(move || {
         thread::sleep(Duration::from_millis(500));
 
-        // Play a simple C major triad as startup sound
         let notes = [60, 64, 67]; // C4, E4, G4
         let note_duration = Duration::from_millis(300);
         let note_gap = Duration::from_millis(50);
 
         for &note in &notes {
-            if let Ok(mut synth_guard) = synth.lock() {
-                synth_guard.note_on(note, 80);
+            if let Ok(mut ctrl) = controller.lock() {
+                ctrl.note_on(note, 80);
             }
 
             thread::sleep(note_duration);
 
-            if let Ok(mut synth_guard) = synth.lock() {
-                synth_guard.note_off(note);
+            if let Ok(mut ctrl) = controller.lock() {
+                ctrl.note_off(note);
             }
 
             thread::sleep(note_gap);
@@ -47,7 +51,6 @@ fn play_startup_melody(synth: std::sync::Arc<std::sync::Mutex<FmSynthesizer>>) {
 }
 
 fn main() -> Result<(), eframe::Error> {
-    // Initialize logging system
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     log::info!("Starting Yamaha DX7 Emulator");
@@ -60,9 +63,28 @@ fn main() -> Result<(), eframe::Error> {
         ..Default::default()
     };
 
-    let (audio_engine, synth) = AudioEngine::new_with_synth_setup();
+    // Get sample rate from audio device
+    let sample_rate = AudioEngine::get_default_sample_rate();
 
-    let _midi_handler = match MidiHandler::new(synth.clone()) {
+    // Create synthesizer engine and controller
+    let (engine, controller) = create_synth(sample_rate);
+    let engine = Arc::new(Mutex::new(engine));
+    let controller = Arc::new(Mutex::new(controller));
+
+    // Apply the first preset to the engine
+    let presets = get_dx7_presets();
+    if !presets.is_empty() {
+        if let Ok(mut eng) = engine.lock() {
+            presets[0].apply_to_synth(&mut eng);
+        }
+    }
+
+    // Create audio engine
+    let underrun_counter = Arc::new(AtomicUsize::new(0));
+    let audio_engine = AudioEngine::new(engine.clone(), underrun_counter);
+
+    // Create MIDI handler
+    let _midi_handler = match MidiHandler::new(controller.clone()) {
         Ok(handler) => {
             log::info!("MIDI input initialized successfully");
             Some(handler)
@@ -75,11 +97,18 @@ fn main() -> Result<(), eframe::Error> {
     };
 
     // Play startup melody
-    play_startup_melody(synth.clone());
+    play_startup_melody(controller.clone());
 
     eframe::run_native(
         "Yamaha DX7 Emulator",
         options,
-        Box::new(move |_cc| Ok(Box::new(Dx7App::new(synth, audio_engine, _midi_handler)))),
+        Box::new(move |_cc| {
+            Ok(Box::new(Dx7App::new(
+                engine,
+                controller,
+                audio_engine,
+                _midi_handler,
+            )))
+        }),
     )
 }
