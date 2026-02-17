@@ -182,6 +182,14 @@ Visual diagrams use a **column-centric layout** where:
 - Feedback loops appear as clean vertical lines
 - Automatic centering in 400x280px canvas
 
+## References & Acknowledgments
+
+This project was built using the following references for authentic DX7 behavior:
+
+- **[Dexed](https://github.com/asb2m10/dexed)** - Open source DX7 emulator. Used as primary reference for algorithm routing verification and FM synthesis behavior.
+- **[MSFA (Music Synthesizer for Android)](https://github.com/google/music-synthesizer-for-android)** - Google's original open source DX7 engine that Dexed is based on. Reference for operator processing, feedback implementation, and envelope timing.
+- **[VX7](https://github.com/gpasquero/vx7)** - Python DX7 emulator with hardcoded ROM1A factory presets. Used to obtain authentic DX7 ROM1A preset parameters (operator ratios, levels, envelope rates/levels, algorithms, and feedback values).
+
 ## License
 
 Open source project under MIT license.
