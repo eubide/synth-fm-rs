@@ -40,6 +40,7 @@ pub struct Operator {
     phase: f32,
     phase_increment: f32,
     last_output: f32,
+    prev_output: f32, // DX7-authentic: two-sample average for feedback stability
     sample_rate: f32,
     base_frequency: f32,         // Store base frequency for real-time updates
     current_velocity: f32,       // Store velocity for real-time updates
@@ -64,6 +65,7 @@ impl Operator {
             phase: 0.0,
             phase_increment: 0.0,
             last_output: 0.0,
+            prev_output: 0.0,
             sample_rate,
             base_frequency: 440.0,
             current_velocity: 1.0,
@@ -85,6 +87,7 @@ impl Operator {
 
         self.phase = 0.0;
         self.last_output = 0.0;
+        self.prev_output = 0.0;
         self.cached_values.params_dirty = true;
     }
 
@@ -172,12 +175,32 @@ impl Operator {
         self.update_frequency();
     }
 
-    /// Get the previous output for feedback routing
-    pub fn get_feedback_output(&self) -> f32 {
-        self.last_output * self.feedback
+    pub fn process(&mut self, modulation: f32) -> f32 {
+        self.process_inner(modulation, true)
     }
 
-    pub fn process(&mut self, modulation: f32) -> f32 {
+    /// Process without self-feedback. Used by cross-feedback algorithms (4, 6)
+    /// where feedback is routed between operators instead of self-loop.
+    pub fn process_no_self_feedback(&mut self, modulation: f32) -> f32 {
+        self.process_inner(modulation, false)
+    }
+
+    /// Two-sample averaged output for cross-feedback routing (DX7 algorithms 4, 6).
+    /// `fb_depth` is the feedback parameter (0-7) that controls depth.
+    /// Returns a pre-scaled value: after MOD_INDEX_SCALE in process(), produces
+    /// the same depth as self-feedback (~π radians max at feedback=7).
+    pub fn cross_feedback_signal(&self, fb_depth: f32) -> f32 {
+        if fb_depth > 0.0 {
+            let avg = (self.last_output + self.prev_output) * 0.5;
+            // Pre-divide by MOD_INDEX_SCALE so process() scaling gives correct depth:
+            // avg * fb * PI/7 / MOD_INDEX_SCALE = avg * fb / 28
+            avg * fb_depth / 28.0
+        } else {
+            0.0
+        }
+    }
+
+    fn process_inner(&mut self, modulation: f32, apply_self_feedback: bool) -> f32 {
         if !self.enabled {
             return 0.0;
         }
@@ -189,16 +212,26 @@ impl Operator {
             return 0.0;
         }
 
-        // Apply feedback modulation (DX7: 0-7 maps to 0-π radians max)
-        let feedback_mod = if self.feedback > 0.0 {
-            self.last_output * self.feedback * PI / 7.0
+        // DX7-authentic modulation index scaling
+        // In the real DX7, output level 99 produces ~4π radians of maximum
+        // phase deviation. Our level table normalizes to 0-1.0, so we scale
+        // modulation inputs to match the authentic modulation depth.
+        const MOD_INDEX_SCALE: f32 = 4.0 * PI;
+
+        // DX7-authentic self-feedback using two-sample average for stability.
+        // The real DX7 uses (y[n-1] + y[n-2]) >> (9 - fb) which averages
+        // the last two outputs to reduce aliasing in the feedback loop.
+        // At feedback=7: ~π radians max phase deviation.
+        let feedback_mod = if apply_self_feedback && self.feedback > 0.0 {
+            let avg_output = (self.last_output + self.prev_output) * 0.5;
+            avg_output * self.feedback * PI / 7.0
         } else {
             0.0
         };
 
-        // Generate output with phase modulation
-        // Modulation already includes modulator amplitude, apply directly
-        let total_modulation = modulation + feedback_mod;
+        // Scale incoming modulation to DX7-authentic depth
+        // Feedback has its own independent scaling (not multiplied by MOD_INDEX_SCALE)
+        let total_modulation = (modulation * MOD_INDEX_SCALE) + feedback_mod;
         let sin_result = OPTIMIZATION_TABLES.fast_sin(self.phase + total_modulation);
         let output = sin_result
             * env_value
@@ -224,6 +257,7 @@ impl Operator {
             self.phase_increment = 0.0;
         }
 
+        self.prev_output = self.last_output;
         self.last_output = output;
         output
     }
@@ -235,6 +269,7 @@ impl Operator {
     pub fn reset(&mut self) {
         self.phase = 0.0;
         self.last_output = 0.0;
+        self.prev_output = 0.0;
         self.envelope.reset();
     }
 

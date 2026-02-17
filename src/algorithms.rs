@@ -48,7 +48,7 @@ fn algorithm_1(ops: &mut [Operator; 6]) -> f32 {
     let op1_out = ops[0].process(op2_out);
 
     // Stack 2: Op6 -> Op5 -> Op4 -> Op3 (with Op6 feedback)
-    let op6_out = ops[5].process(ops[5].get_feedback_output());
+    let op6_out = ops[5].process(0.0);
     let op5_out = ops[4].process(op6_out);
     let op4_out = ops[3].process(op5_out);
     let op3_out = ops[2].process(op4_out);
@@ -60,7 +60,7 @@ fn algorithm_1(ops: &mut [Operator; 6]) -> f32 {
 /// Carriers: [1, 3] - Connections: [(2,1), (4,3), (5,4), (6,5), (2,2)]
 fn algorithm_2(ops: &mut [Operator; 6]) -> f32 {
     // Stack 1: Op2 -> Op1 (with Op2 feedback)
-    let op2_out = ops[1].process(ops[1].get_feedback_output());
+    let op2_out = ops[1].process(0.0);
     let op1_out = ops[0].process(op2_out);
 
     // Stack 2: Op6 -> Op5 -> Op4 -> Op3
@@ -81,70 +81,71 @@ fn algorithm_3(ops: &mut [Operator; 6]) -> f32 {
     let op1_out = ops[0].process(op2_out);
 
     // Stack 2: Op6 -> Op5 -> Op4 (with Op6 feedback)
-    let op6_out = ops[5].process(ops[5].get_feedback_output());
+    let op6_out = ops[5].process(0.0);
     let op5_out = ops[4].process(op6_out);
     let op4_out = ops[3].process(op5_out);
 
     (op1_out + op4_out) * 0.71 // √2 = 1.41, inverse = 0.71
 }
 
-/// Algorithm 4: Stack Loop
-/// Carriers: [1, 4] - Connections: [(2,1), (3,2), (5,4), (6,5), (4,6)]
+/// Algorithm 4: Stack Loop (cross-feedback)
+/// Carriers: [1, 4] - Connections: [(3,2), (2,1), (6,5), (5,4)] - Feedback: Op4→Op6 loop
 fn algorithm_4(ops: &mut [Operator; 6]) -> f32 {
     // Stack 1: Op3 -> Op2 -> Op1
     let op3_out = ops[2].process(0.0);
     let op2_out = ops[1].process(op3_out);
     let op1_out = ops[0].process(op2_out);
 
-    // Stack 2 with loop: Op6 -> Op5 -> Op4, Op4 -> Op6
-    // Use Op6's feedback parameter for the feedback loop strength
-    let op6_out = ops[5].process(ops[5].get_feedback_output());
+    // Stack 2: Op6 -> Op5 -> Op4 with cross-feedback loop (Op4 output → Op6 input)
+    // Op4's averaged previous output feeds Op6, depth controlled by Op4's feedback param
+    let fb_depth = ops[3].feedback;
+    let op4_cross_fb = ops[3].cross_feedback_signal(fb_depth);
+    let op6_out = ops[5].process(op4_cross_fb);
     let op5_out = ops[4].process(op6_out);
-    let op4_out = ops[3].process(op5_out);
+    let op4_out = ops[3].process_no_self_feedback(op5_out);
 
     (op1_out + op4_out) * 0.71 // √2 = 1.41, inverse = 0.71
 }
 
-/// Algorithm 5: Triple Output
-/// Carriers: [1, 3, 4] - Connections: [(6,2), (2,1), (5,3), (6,6)]
+/// Algorithm 5: Three Pairs
+/// Carriers: [1, 3, 5] - Connections: [(2,1), (4,3), (6,5)] - Feedback: Op6
 fn algorithm_5(ops: &mut [Operator; 6]) -> f32 {
-    // Op6 with feedback modulates Op2
-    let op6_out = ops[5].process(ops[5].get_feedback_output());
-    let op2_out = ops[1].process(op6_out);
-
-    // Op2 modulates Op1
+    // Three independent modulator-carrier pairs
+    // Op2 -> Op1 (carrier)
+    let op2_out = ops[1].process(0.0);
     let op1_out = ops[0].process(op2_out);
 
-    // Op5 modulates Op3
-    let op5_out = ops[4].process(0.0);
-    let op3_out = ops[2].process(op5_out);
-
-    // Op4 is carrier (no modulation)
+    // Op4 -> Op3 (carrier)
     let op4_out = ops[3].process(0.0);
+    let op3_out = ops[2].process(op4_out);
 
-    (op1_out + op3_out + op4_out) * 0.58 // √3 = 1.73, inverse = 0.58
+    // Op6 (feedback) -> Op5 (carrier)
+    let op6_out = ops[5].process(0.0);
+    let op5_out = ops[4].process(op6_out);
+
+    (op1_out + op3_out + op5_out) * 0.58 // √3 = 1.73, inverse = 0.58
 }
 
-/// Algorithm 6: Triple Split
-/// Carriers: [1, 3, 4] - Connections: [(6,2), (2,1), (5,3), (5,6)]
+/// Algorithm 6: Three Pairs (cross-feedback)
+/// Carriers: [1, 3, 5] - Connections: [(2,1), (4,3), (6,5)] - Feedback: Op5→Op6 loop
 fn algorithm_6(ops: &mut [Operator; 6]) -> f32 {
-    // Op5 generates output (no modulation input)
-    let op5_out = ops[4].process(0.0);
-
-    // Op5 modulates Op6 and Op3
-    // Op6 uses feedback to control its response
-    let op6_out = ops[5].process(op5_out + ops[5].get_feedback_output());
-    let op3_out = ops[2].process(op5_out);
-
-    // Op6 modulates Op2, Op2 modulates Op1
-    let op2_out = ops[1].process(op6_out);
+    // Three modulator-carrier pairs, with cross-feedback (Op5 output → Op6 input)
+    // Op2 -> Op1 (carrier)
+    let op2_out = ops[1].process(0.0);
     let op1_out = ops[0].process(op2_out);
 
-    // Op4 is carrier (no modulation)
+    // Op4 -> Op3 (carrier)
     let op4_out = ops[3].process(0.0);
+    let op3_out = ops[2].process(op4_out);
 
-    // Only carriers contribute to output: Op1, Op3, Op4
-    (op1_out + op3_out + op4_out) * 0.58 // √3 = 1.73, inverse = 0.58
+    // Op6 -> Op5 (carrier) with cross-feedback (Op5's previous output → Op6 input)
+    // Depth controlled by Op6's feedback param (presets set feedback_op: 6)
+    let fb_depth = ops[5].feedback;
+    let op5_cross_fb = ops[4].cross_feedback_signal(fb_depth);
+    let op6_out = ops[5].process_no_self_feedback(op5_cross_fb);
+    let op5_out = ops[4].process(op6_out);
+
+    (op1_out + op3_out + op5_out) * 0.58 // √3 = 1.73, inverse = 0.58
 }
 
 /// Algorithm 7: Dual + Stack
@@ -155,7 +156,7 @@ fn algorithm_7(ops: &mut [Operator; 6]) -> f32 {
     let op1_out = ops[0].process(op2_out);
 
     // Stack: Op6 -> Op5 -> Op4 -> Op3 (with Op6 feedback)
-    let op6_out = ops[5].process(ops[5].get_feedback_output());
+    let op6_out = ops[5].process(0.0);
     let op5_out = ops[4].process(op6_out);
     let op4_out = ops[3].process(0.0);
     let op3_out = ops[2].process(op4_out + op5_out);
@@ -175,7 +176,7 @@ fn algorithm_8(ops: &mut [Operator; 6]) -> f32 {
     let op5_out = ops[4].process(op6_out);
 
     // Op4 with feedback and Op5 -> Op3
-    let op4_out = ops[3].process(ops[3].get_feedback_output());
+    let op4_out = ops[3].process(0.0);
     let op3_out = ops[2].process(op4_out + op5_out);
 
     (op1_out + op3_out) * 0.71 // √2 = 1.41, inverse = 0.71
@@ -185,7 +186,7 @@ fn algorithm_8(ops: &mut [Operator; 6]) -> f32 {
 /// Carriers: [1, 3] - Connections: [(2,1), (4,3), (5,3), (6,5), (2,2)]
 fn algorithm_9(ops: &mut [Operator; 6]) -> f32 {
     // Op2 with feedback -> Op1
-    let op2_out = ops[1].process(ops[1].get_feedback_output());
+    let op2_out = ops[1].process(0.0);
     let op1_out = ops[0].process(op2_out);
 
     // Op6 -> Op5
@@ -203,7 +204,7 @@ fn algorithm_9(ops: &mut [Operator; 6]) -> f32 {
 /// Carriers: [1, 4] - Connections: [(5,4), (6,4), (3,2), (2,1), (3,3)]
 fn algorithm_10(ops: &mut [Operator; 6]) -> f32 {
     // Op3 with feedback
-    let op3_out = ops[2].process(ops[2].get_feedback_output());
+    let op3_out = ops[2].process(0.0);
 
     // Op3 -> Op2 -> Op1 (first carrier path)
     let op2_out = ops[1].process(op3_out);
@@ -226,7 +227,7 @@ fn algorithm_11(ops: &mut [Operator; 6]) -> f32 {
     let op1_out = ops[0].process(op2_out);
 
     // Op6 with feedback and Op5 -> Op4 (second carrier path)
-    let op6_out = ops[5].process(ops[5].get_feedback_output());
+    let op6_out = ops[5].process(0.0);
     let op5_out = ops[4].process(0.0);
     let op4_out = ops[3].process(op5_out + op6_out);
 
@@ -237,7 +238,7 @@ fn algorithm_11(ops: &mut [Operator; 6]) -> f32 {
 /// Carriers: [1, 3] - Connections: [(2,1), (4,3), (5,3), (6,3), (2,2)]
 fn algorithm_12(ops: &mut [Operator; 6]) -> f32 {
     // Op2 with feedback -> Op1
-    let op2_out = ops[1].process(ops[1].get_feedback_output());
+    let op2_out = ops[1].process(0.0);
     let op1_out = ops[0].process(op2_out);
 
     // Op4, Op5, Op6 -> Op3
@@ -257,7 +258,7 @@ fn algorithm_13(ops: &mut [Operator; 6]) -> f32 {
     let op1_out = ops[0].process(op2_out);
 
     // Op4, Op5, Op6 with feedback -> Op3
-    let op6_out = ops[5].process(ops[5].get_feedback_output());
+    let op6_out = ops[5].process(0.0);
     let op4_out = ops[3].process(0.0);
     let op5_out = ops[4].process(0.0);
     let op3_out = ops[2].process(op4_out + op5_out + op6_out);
@@ -273,7 +274,7 @@ fn algorithm_14(ops: &mut [Operator; 6]) -> f32 {
     let op1_out = ops[0].process(op2_out);
 
     // Op6 with feedback and Op5 -> Op4 -> Op3
-    let op6_out = ops[5].process(ops[5].get_feedback_output());
+    let op6_out = ops[5].process(0.0);
     let op5_out = ops[4].process(0.0);
     let op4_out = ops[3].process(op5_out + op6_out);
     let op3_out = ops[2].process(op4_out);
@@ -285,7 +286,7 @@ fn algorithm_14(ops: &mut [Operator; 6]) -> f32 {
 /// Carriers: [1, 3] - Connections: [(2,1), (4,3), (5,4), (6,4), (2,2)]
 fn algorithm_15(ops: &mut [Operator; 6]) -> f32 {
     // Op2 with feedback -> Op1
-    let op2_out = ops[1].process(ops[1].get_feedback_output());
+    let op2_out = ops[1].process(0.0);
     let op1_out = ops[0].process(op2_out);
 
     // Op6 and Op5 -> Op4 -> Op3
@@ -301,7 +302,7 @@ fn algorithm_15(ops: &mut [Operator; 6]) -> f32 {
 /// Carriers: [1] - Connections: [(2,1), (3,1), (5,1), (4,3), (6,5), (6,6)]
 fn algorithm_16(ops: &mut [Operator; 6]) -> f32 {
     // Op6 with feedback -> Op5
-    let op6_out = ops[5].process(ops[5].get_feedback_output());
+    let op6_out = ops[5].process(0.0);
     let op5_out = ops[4].process(op6_out);
 
     // Op4 -> Op3
@@ -325,7 +326,7 @@ fn algorithm_17(ops: &mut [Operator; 6]) -> f32 {
     let op3_out = ops[2].process(op4_out);
 
     // Op2 with feedback, Op3, Op5 -> Op1
-    let op2_out = ops[1].process(ops[1].get_feedback_output());
+    let op2_out = ops[1].process(0.0);
     ops[0].process(op2_out + op3_out + op5_out)
 }
 
@@ -338,29 +339,25 @@ fn algorithm_18(ops: &mut [Operator; 6]) -> f32 {
     let op4_out = ops[3].process(op5_out);
 
     // Op3 with feedback
-    let op3_out = ops[2].process(ops[2].get_feedback_output());
+    let op3_out = ops[2].process(0.0);
 
     // Op2, Op3, Op4 -> Op1
     let op2_out = ops[1].process(0.0);
     ops[0].process(op2_out + op3_out + op4_out)
 }
 
-/// Algorithm 19: Triple + Tree
-/// Carriers: [1, 4, 5] - Connections: [(2,1), (3,1), (4,1), (5,4), (6,5), (3,3)]
+/// Algorithm 19: Fan + Stack
+/// Carriers: [1, 4, 5] - Connections: [(3,2), (2,1), (6,5), (6,4)] - Feedback: Op6
 fn algorithm_19(ops: &mut [Operator; 6]) -> f32 {
-    // Op6 -> Op5 (carrier)
+    // Op6 (feedback) modulates both Op5 and Op4
     let op6_out = ops[5].process(0.0);
-    let op5_out = ops[4].process(op6_out);
+    let op5_out = ops[4].process(op6_out); // Op6 -> Op5 (carrier)
+    let op4_out = ops[3].process(op6_out); // Op6 -> Op4 (carrier)
 
-    // Op5 -> Op4 (carrier)
-    let op4_out = ops[3].process(op5_out);
-
-    // Op3 with feedback
-    let op3_out = ops[2].process(ops[2].get_feedback_output());
-
-    // Op2, Op3, Op4 -> Op1 (carrier)
-    let op2_out = ops[1].process(0.0);
-    let op1_out = ops[0].process(op2_out + op3_out + op4_out);
+    // Op3 -> Op2 -> Op1 (carrier)
+    let op3_out = ops[2].process(0.0);
+    let op2_out = ops[1].process(op3_out);
+    let op1_out = ops[0].process(op2_out);
 
     (op1_out + op4_out + op5_out) * 0.58 // √3 = 1.73, inverse = 0.58
 }
@@ -369,7 +366,7 @@ fn algorithm_19(ops: &mut [Operator; 6]) -> f32 {
 /// Carriers: [1, 2, 4] - Connections: [(3,1), (3,2), (5,4), (6,4), (3,3)]
 fn algorithm_20(ops: &mut [Operator; 6]) -> f32 {
     // Op3 with feedback
-    let op3_out = ops[2].process(ops[2].get_feedback_output());
+    let op3_out = ops[2].process(0.0);
 
     // Op5 and Op6 -> Op4 (carrier)
     let op5_out = ops[4].process(0.0);
@@ -387,7 +384,7 @@ fn algorithm_20(ops: &mut [Operator; 6]) -> f32 {
 /// Carriers: [1, 2, 4, 5] - Connections: [(3,1), (3,2), (6,4), (6,5), (3,3)]
 fn algorithm_21(ops: &mut [Operator; 6]) -> f32 {
     // Op3 with feedback
-    let op3_out = ops[2].process(ops[2].get_feedback_output());
+    let op3_out = ops[2].process(0.0);
 
     // Op6 -> Op4 and Op5 (carriers)
     let op6_out = ops[5].process(0.0);
@@ -409,7 +406,7 @@ fn algorithm_22(ops: &mut [Operator; 6]) -> f32 {
     let op1_out = ops[0].process(op2_out);
 
     // Op6 with feedback -> Op3, Op4, Op5 (carriers)
-    let op6_out = ops[5].process(ops[5].get_feedback_output());
+    let op6_out = ops[5].process(0.0);
     let op5_out = ops[4].process(op6_out);
     let op4_out = ops[3].process(op6_out);
     let op3_out = ops[2].process(op6_out);
@@ -425,7 +422,7 @@ fn algorithm_23(ops: &mut [Operator; 6]) -> f32 {
     let op2_out = ops[1].process(op3_out);
 
     // Op6 with feedback -> Op4 and Op5 (carriers)
-    let op6_out = ops[5].process(ops[5].get_feedback_output());
+    let op6_out = ops[5].process(0.0);
     let op5_out = ops[4].process(op6_out);
     let op4_out = ops[3].process(op6_out);
 
@@ -439,7 +436,7 @@ fn algorithm_23(ops: &mut [Operator; 6]) -> f32 {
 /// Carriers: [1, 2, 3, 4, 5] - Connections: [(6,3), (6,4), (6,5), (6,6)]
 fn algorithm_24(ops: &mut [Operator; 6]) -> f32 {
     // Op6 with feedback -> Op3, Op4, Op5 (carriers)
-    let op6_out = ops[5].process(ops[5].get_feedback_output());
+    let op6_out = ops[5].process(0.0);
     let op5_out = ops[4].process(op6_out);
     let op4_out = ops[3].process(op6_out);
     let op3_out = ops[2].process(op6_out);
@@ -455,7 +452,7 @@ fn algorithm_24(ops: &mut [Operator; 6]) -> f32 {
 /// Carriers: [1, 2, 3, 4, 5] - Connections: [(6,4), (6,5), (6,6)]
 fn algorithm_25(ops: &mut [Operator; 6]) -> f32 {
     // Op6 with feedback -> Op4 and Op5 (carriers)
-    let op6_out = ops[5].process(ops[5].get_feedback_output());
+    let op6_out = ops[5].process(0.0);
     let op5_out = ops[4].process(op6_out);
     let op4_out = ops[3].process(op6_out);
 
@@ -475,7 +472,7 @@ fn algorithm_26(ops: &mut [Operator; 6]) -> f32 {
     let op2_out = ops[1].process(op3_out);
 
     // Op6 with feedback and Op5 -> Op4 (carrier)
-    let op6_out = ops[5].process(ops[5].get_feedback_output());
+    let op6_out = ops[5].process(0.0);
     let op5_out = ops[4].process(0.0);
     let op4_out = ops[3].process(op5_out + op6_out);
 
@@ -489,7 +486,7 @@ fn algorithm_26(ops: &mut [Operator; 6]) -> f32 {
 /// Carriers: [1, 2, 4] - Connections: [(3,2), (5,4), (6,4), (3,3)]
 fn algorithm_27(ops: &mut [Operator; 6]) -> f32 {
     // Op3 with feedback -> Op2 (carrier)
-    let op3_out = ops[2].process(ops[2].get_feedback_output());
+    let op3_out = ops[2].process(0.0);
     let op2_out = ops[1].process(op3_out);
 
     // Op5 and Op6 -> Op4 (carrier)
@@ -511,7 +508,7 @@ fn algorithm_28(ops: &mut [Operator; 6]) -> f32 {
     let op1_out = ops[0].process(op2_out);
 
     // Op5 with feedback -> Op4 -> Op3 (carrier)
-    let op5_out = ops[4].process(ops[4].get_feedback_output());
+    let op5_out = ops[4].process(0.0);
     let op4_out = ops[3].process(op5_out);
     let op3_out = ops[2].process(op4_out);
 
@@ -529,7 +526,7 @@ fn algorithm_29(ops: &mut [Operator; 6]) -> f32 {
     let op3_out = ops[2].process(op4_out);
 
     // Op6 with feedback -> Op5 (carrier)
-    let op6_out = ops[5].process(ops[5].get_feedback_output());
+    let op6_out = ops[5].process(0.0);
     let op5_out = ops[4].process(op6_out);
 
     // Op1 and Op2 are carriers (no modulation)
@@ -543,7 +540,7 @@ fn algorithm_29(ops: &mut [Operator; 6]) -> f32 {
 /// Carriers: [1, 2, 3, 6] - Connections: [(4,3), (5,4), (5,5)]
 fn algorithm_30(ops: &mut [Operator; 6]) -> f32 {
     // Op5 with feedback -> Op4 -> Op3 (carrier)
-    let op5_out = ops[4].process(ops[4].get_feedback_output());
+    let op5_out = ops[4].process(0.0);
     let op4_out = ops[3].process(op5_out);
     let op3_out = ops[2].process(op4_out);
 
@@ -555,25 +552,27 @@ fn algorithm_30(ops: &mut [Operator; 6]) -> f32 {
     (op1_out + op2_out + op3_out + op6_out) * 0.5 // √4 = 2.0, inverse = 0.5
 }
 
-/// Algorithm 31: Six Operators
-/// Carriers: [1, 2, 3, 4, 5, 6] - Connections: [(6,6)]
+/// Algorithm 31: Five Carriers + Modulator
+/// Carriers: [1, 2, 3, 4, 5] - Connections: [(6,5)] - Feedback: Op6
 fn algorithm_31(ops: &mut [Operator; 6]) -> f32 {
-    // All operators are carriers (with Op6 feedback)
-    let op6_out = ops[5].process(ops[5].get_feedback_output());
-    let op5_out = ops[4].process(0.0);
+    // Op6 (feedback) modulates Op5
+    let op6_out = ops[5].process(0.0);
+    let op5_out = ops[4].process(op6_out);
+
+    // Op1-4 are standalone carriers
     let op4_out = ops[3].process(0.0);
     let op3_out = ops[2].process(0.0);
     let op2_out = ops[1].process(0.0);
     let op1_out = ops[0].process(0.0);
 
-    (op1_out + op2_out + op3_out + op4_out + op5_out + op6_out) * 0.41 // √6 = 2.45, inverse = 0.41
+    (op1_out + op2_out + op3_out + op4_out + op5_out) * 0.45 // √5 = 2.24, inverse = 0.45
 }
 
 /// Algorithm 32: All Carriers
 /// Carriers: [1, 2, 3, 4, 5, 6] - Connections: [(6,6)]
 fn algorithm_32(ops: &mut [Operator; 6]) -> f32 {
     // All operators are carriers (with Op6 feedback)
-    let op6_out = ops[5].process(ops[5].get_feedback_output());
+    let op6_out = ops[5].process(0.0);
     let op5_out = ops[4].process(0.0);
     let op4_out = ops[3].process(0.0);
     let op3_out = ops[2].process(0.0);
@@ -590,8 +589,8 @@ pub fn get_algorithm_name(algorithm_number: u8) -> &'static str {
         2 => "2: Stack + Self",
         3 => "3: Dual Stacks",
         4 => "4: Stack Loop",
-        5 => "5: Triple Output",
-        6 => "6: Triple Split",
+        5 => "5: Three Pairs",
+        6 => "6: Three Pairs FB",
         7 => "7: Dual + Stack",
         8 => "8: Dual Split",
         9 => "9: Dual + Self",
@@ -604,7 +603,7 @@ pub fn get_algorithm_name(algorithm_number: u8) -> &'static str {
         16 => "16: Tree + Self",
         17 => "17: Tree Mod",
         18 => "18: Quad + Stack",
-        19 => "19: Triple + Tree",
+        19 => "19: Fan + Stack",
         20 => "20: Triple + Dual",
         21 => "21: Quad + Dual",
         22 => "22: Quad + Stack",
@@ -616,7 +615,7 @@ pub fn get_algorithm_name(algorithm_number: u8) -> &'static str {
         28 => "28: Triple + Stack",
         29 => "29: Quad + Stack",
         30 => "30: Quad + Self",
-        31 => "31: Six Operators",
+        31 => "31: Five + Mod",
         32 => "32: All Carriers",
         _ => "1: Two Stacks",
     }
@@ -653,18 +652,18 @@ pub fn get_algorithm_info(algorithm_number: u8) -> AlgorithmInfo {
         },
         4 => AlgorithmInfo {
             carriers: vec![1, 4],
-            connections: vec![(2, 1), (3, 2), (5, 4), (6, 5)],
-            feedback_op: 6,
+            connections: vec![(3, 2), (2, 1), (6, 5), (5, 4)],
+            feedback_op: 4, // Cross-feedback: Op4→Op6 loop
         },
         5 => AlgorithmInfo {
-            carriers: vec![1, 3, 4],
-            connections: vec![(2, 1), (5, 3), (6, 2)],
+            carriers: vec![1, 3, 5],
+            connections: vec![(2, 1), (4, 3), (6, 5)],
             feedback_op: 6,
         },
         6 => AlgorithmInfo {
-            carriers: vec![1, 3, 4],
-            connections: vec![(2, 1), (5, 3), (5, 6), (6, 2)],
-            feedback_op: 6,
+            carriers: vec![1, 3, 5],
+            connections: vec![(2, 1), (4, 3), (6, 5)],
+            feedback_op: 6, // Cross-feedback: Op5→Op6 loop
         },
         7 => AlgorithmInfo {
             carriers: vec![1, 3],
@@ -728,8 +727,8 @@ pub fn get_algorithm_info(algorithm_number: u8) -> AlgorithmInfo {
         },
         19 => AlgorithmInfo {
             carriers: vec![1, 4, 5],
-            connections: vec![(2, 1), (3, 1), (5, 4), (6, 5)],
-            feedback_op: 3,
+            connections: vec![(3, 2), (2, 1), (6, 5), (6, 4)],
+            feedback_op: 6,
         },
         20 => AlgorithmInfo {
             carriers: vec![1, 2, 4],
@@ -787,8 +786,8 @@ pub fn get_algorithm_info(algorithm_number: u8) -> AlgorithmInfo {
             feedback_op: 5,
         },
         31 => AlgorithmInfo {
-            carriers: vec![1, 2, 3, 4, 5, 6],
-            connections: vec![],
+            carriers: vec![1, 2, 3, 4, 5],
+            connections: vec![(6, 5)],
             feedback_op: 6,
         },
         32 => AlgorithmInfo {
