@@ -102,10 +102,12 @@ impl Envelope {
         self.update_rate_smoothing();
 
         // Exponential approach for natural envelope curves
+        // DX7-authentic timing: approach_factor = -ln(threshold) * rate_per_sample
+        // where -ln(0.001) ≈ 6.908. This gives correct DX7 rate-to-time mapping:
+        // Rate 99 → ~10ms, Rate 50 → ~600ms, Rate 25 → ~5s, Rate 0 → held
         let distance = self.target_level - self.current_level;
         if distance.abs() > 0.0001 {
-            // Approach factor based on rate - higher rate = faster approach
-            let approach_factor = (self.rate * 0.5).clamp(0.001, 0.3);
+            let approach_factor = (self.rate * 6.908).clamp(0.0000001, 0.5);
             self.current_level += distance * approach_factor;
 
             // Check if we're close enough to target to advance stage

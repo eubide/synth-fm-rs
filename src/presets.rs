@@ -46,28 +46,29 @@ impl Dx7Preset {
 
 pub fn get_dx7_presets() -> Vec<Dx7Preset> {
     vec![
-        // E.PIANO 1 - Authentic DX7 Classic Electric Piano
+        // E.PIANO 1 - Authentic DX7 ROM1A Classic Electric Piano
+        // Algorithm 5: 2->1*, 4->3*, 6(fb)->5*
         Dx7Preset {
             name: "E.PIANO 1",
             algorithm: 5,
             operators: [
-                (1.0, 99.0, 0.0, 0.0),  // Op1: Carrier - fundamental (max level)
-                (1.0, 99.0, 0.0, 0.0),  // Op2: Modulator -> Op1 (brightness)
+                (1.0, 99.0, 0.0, 0.0),  // Op1: Carrier - fundamental
+                (14.0, 78.0, 0.0, 0.0), // Op2: Modulator -> Op1 (bell harmonic 14:1)
                 (1.0, 99.0, 0.0, 0.0),  // Op3: Carrier - body
-                (1.0, 99.0, 0.0, 0.0),  // Op4: Carrier - depth
-                (14.0, 50.0, 0.0, 0.0), // Op5: High harmonic (bell tone, authentic DX7 ratio)
-                (1.0, 80.0, 0.0, 7.0),  // Op6: Modulator -> Op2 + max feedback (brilliance)
+                (14.0, 78.0, 0.0, 0.0), // Op4: Modulator -> Op3 (bell harmonic 14:1)
+                (1.0, 99.0, 0.0, 0.0),  // Op5: Carrier - depth
+                (1.0, 58.0, 0.0, 6.0),  // Op6: Modulator -> Op5 + feedback
             ],
             envelopes: [
-                (99.0, 83.0, 83.0, 45.0, 99.0, 85.0, 0.0, 0.0), // Op1: Instant attack, no sustain
-                (99.0, 83.0, 83.0, 45.0, 99.0, 85.0, 0.0, 0.0), // Op2: Instant attack, no sustain
-                (99.0, 80.0, 80.0, 45.0, 99.0, 87.0, 0.0, 0.0), // Op3: Instant attack, no sustain
-                (99.0, 75.0, 75.0, 52.0, 99.0, 92.0, 0.0, 0.0), // Op4: Instant attack, no sustain
-                (99.0, 95.0, 95.0, 95.0, 99.0, 75.0, 0.0, 0.0), // Op5: Bell harmonic, fast decay
-                (99.0, 85.0, 85.0, 45.0, 99.0, 90.0, 0.0, 0.0), // Op6: Modulator brightness
+                (95.0, 29.0, 20.0, 50.0, 99.0, 95.0, 0.0, 0.0), // Op1: Attack, long decay
+                (95.0, 20.0, 20.0, 50.0, 99.0, 95.0, 0.0, 0.0), // Op2: Bell fades with body
+                (95.0, 29.0, 20.0, 50.0, 99.0, 95.0, 0.0, 0.0), // Op3: Same as Op1
+                (95.0, 20.0, 20.0, 50.0, 99.0, 95.0, 0.0, 0.0), // Op4: Same as Op2
+                (95.0, 50.0, 35.0, 78.0, 99.0, 75.0, 0.0, 0.0), // Op5: Faster decay
+                (96.0, 25.0, 25.0, 67.0, 99.0, 75.0, 0.0, 0.0), // Op6: Brilliance decay
             ],
             master_tune: None,
-            mono_mode: Some(false), // POLY mode
+            mono_mode: Some(false),
             pitch_bend_range: None,
             portamento_enable: Some(false),
             portamento_time: None,
@@ -98,82 +99,85 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
             portamento_enable: Some(true), // Glide for bass
             portamento_time: Some(20.0),
         },
-        // TUBULAR BELL - Bright Metallic Bells
+        // TUB BELLS - Authentic DX7 ROM1A Tubular Bells
+        // Algorithm 5: 2->1*, 4->3*, 6(fb)->5*
         Dx7Preset {
             name: "TUB BELLS",
-            algorithm: 7,
+            algorithm: 5,
             operators: [
-                (1.0, 99.0, 0.0, 0.0),  // Op1: Main carrier
-                (1.0, 95.0, 7.0, 0.0),  // Op2: Detuned carrier (chorus)
-                (3.5, 70.0, 0.0, 0.0),  // Op3: Bell harmonic modulator
-                (1.0, 99.0, -7.0, 0.0), // Op4: Detuned carrier (chorus)
-                (7.0, 50.0, 0.0, 0.0),  // Op5: High bell harmonic
-                (14.0, 35.0, 0.0, 3.0), // Op6: Very high shimmer + feedback
+                (1.0, 99.0, 0.0, 0.0),  // Op1: Carrier - fundamental ring
+                (3.5, 78.0, 0.0, 0.0),  // Op2: Modulator -> Op1 (bell overtone)
+                (1.0, 99.0, 0.0, 0.0),  // Op3: Carrier - ring
+                (3.5, 78.0, 0.0, 0.0),  // Op4: Modulator -> Op3 (bell overtone)
+                (1.0, 99.0, 0.0, 0.0),  // Op5: Carrier - ring
+                (7.12, 62.0, 0.0, 4.0), // Op6: Modulator -> Op5 (high shimmer + feedback)
             ],
             envelopes: [
-                (99.0, 50.0, 50.0, 40.0, 99.0, 90.0, 0.0, 0.0), // Op1: Long decay, no sustain
-                (99.0, 50.0, 50.0, 40.0, 99.0, 90.0, 0.0, 0.0), // Op2: Long decay
-                (99.0, 60.0, 60.0, 50.0, 99.0, 70.0, 0.0, 0.0), // Op3: Medium decay
-                (99.0, 50.0, 50.0, 40.0, 99.0, 90.0, 0.0, 0.0), // Op4: Long decay
-                (99.0, 70.0, 70.0, 60.0, 99.0, 50.0, 0.0, 0.0), // Op5: Quick decay
-                (99.0, 80.0, 80.0, 70.0, 99.0, 30.0, 0.0, 0.0), // Op6: Very quick shimmer
+                (72.0, 76.0, 99.0, 71.0, 99.0, 88.0, 96.0, 0.0), // Op1: Slow attack, sustained ring
+                (99.0, 88.0, 96.0, 60.0, 95.0, 60.0, 50.0, 0.0), // Op2: Fast mod decay
+                (72.0, 76.0, 99.0, 71.0, 99.0, 88.0, 96.0, 0.0), // Op3: Same as Op1
+                (99.0, 88.0, 96.0, 60.0, 95.0, 60.0, 50.0, 0.0), // Op4: Same as Op2
+                (72.0, 76.0, 99.0, 71.0, 99.0, 88.0, 96.0, 0.0), // Op5: Same as Op1
+                (99.0, 88.0, 96.0, 60.0, 95.0, 60.0, 50.0, 0.0), // Op6: Same as Op2
             ],
             master_tune: None,
-            mono_mode: Some(false), // POLY mode
+            mono_mode: Some(false),
             pitch_bend_range: Some(2.0),
             portamento_enable: Some(false),
             portamento_time: None,
         },
-        // BRASS 1 - Crystalline Screaming Brass (DX7-authentic levels)
+        // BRASS 1 - Authentic DX7 ROM1A Brass Section
+        // Algorithm 22: slow swell on carriers, fast modulator attack
         Dx7Preset {
             name: "BRASS 1",
-            algorithm: 16,
+            algorithm: 22,
             operators: [
-                (1.0, 75.0, 0.0, 0.0),  // Op1: Carrier - main brass sound (reduced from 99)
-                (1.0, 56.0, 11.2, 0.0), // Op2: Modulator -> Op1 (reduced from 75)
-                (2.0, 49.0, -8.7, 0.0), // Op3: Modulator -> Op1 (reduced from 65)
-                (3.0, 41.0, 0.0, 0.0),  // Op4: Modulator -> Op3 (reduced from 55)
-                (4.0, 53.0, 0.0, 0.0),  // Op5: Modulator -> Op1 (reduced from 70)
-                (1.0, 45.0, 0.0, 7.0),  // Op6: Modulator -> Op5 + feedback (reduced from 60)
+                (1.0, 99.0, 0.0, 0.0), // Op1: Carrier - slow swell
+                (1.0, 99.0, 0.0, 0.0), // Op2: Carrier - slow swell
+                (1.0, 86.0, 0.0, 0.0), // Op3: Modulator - fast attack
+                (1.0, 86.0, 0.0, 0.0), // Op4: Modulator - fast attack
+                (1.0, 86.0, 0.0, 0.0), // Op5: Modulator - fast attack
+                (1.0, 86.0, 0.0, 7.0), // Op6: Modulator + max feedback
             ],
             envelopes: [
-                (85.0, 80.0, 60.0, 70.0, 99.0, 90.0, 80.0, 0.0), // Op1: More aggressive
-                (90.0, 85.0, 55.0, 75.0, 99.0, 85.0, 75.0, 0.0), // Op2: Sharp attack
-                (95.0, 90.0, 50.0, 80.0, 99.0, 80.0, 70.0, 0.0), // Op3: Very aggressive
-                (99.0, 95.0, 45.0, 85.0, 99.0, 70.0, 50.0, 0.0), // Op4: Extreme attack
-                (99.0, 90.0, 40.0, 80.0, 99.0, 60.0, 40.0, 0.0), // Op5: Sharp harmonic
-                (85.0, 80.0, 60.0, 70.0, 99.0, 90.0, 80.0, 0.0), // Op6
+                (49.0, 99.0, 28.0, 68.0, 98.0, 98.0, 91.0, 0.0), // Op1: Slow brass swell (~1.6s)
+                (49.0, 99.0, 28.0, 68.0, 98.0, 98.0, 91.0, 0.0), // Op2: Same swell
+                (84.0, 95.0, 95.0, 60.0, 99.0, 95.0, 95.0, 0.0), // Op3: Fast modulator
+                (84.0, 95.0, 95.0, 60.0, 99.0, 95.0, 95.0, 0.0), // Op4: Fast modulator
+                (84.0, 95.0, 95.0, 60.0, 99.0, 95.0, 95.0, 0.0), // Op5: Fast modulator
+                (84.0, 95.0, 95.0, 60.0, 99.0, 95.0, 95.0, 0.0), // Op6: Fast modulator
             ],
             master_tune: None,
-            mono_mode: Some(true),       // MONO mode for brass
-            pitch_bend_range: Some(3.0), // Good pitch bend for brass
-            portamento_enable: Some(true),
+            mono_mode: Some(false),
+            pitch_bend_range: Some(3.0),
+            portamento_enable: Some(false),
             portamento_time: None,
         },
-        // STRINGS - Smooth String Ensemble
+        // STRINGS - Authentic DX7 ROM1A String Ensemble
+        // Algorithm 2: 6->5->4->3->2(fb)->1*
         Dx7Preset {
             name: "STRINGS",
-            algorithm: 32, // All carriers for smooth ensemble
+            algorithm: 2,
             operators: [
-                (1.0, 99.0, 0.0, 0.0),   // Op1: Carrier - main voice
-                (1.003, 95.0, 0.0, 0.0), // Op2: Carrier - subtle detune up
-                (0.997, 90.0, 0.0, 0.0), // Op3: Carrier - subtle detune down
-                (1.006, 85.0, 0.0, 0.0), // Op4: Carrier - more detune up
-                (0.994, 80.0, 0.0, 0.0), // Op5: Carrier - more detune down
-                (2.0, 70.0, 0.0, 0.0),   // Op6: Carrier - octave for body
+                (1.0, 99.0, 0.0, 0.0), // Op1: Carrier - fundamental
+                (2.0, 82.0, 0.0, 6.0), // Op2: Modulator + feedback (warmth)
+                (1.0, 99.0, 0.0, 0.0), // Op3: Modulator chain
+                (2.0, 82.0, 0.0, 0.0), // Op4: Modulator chain
+                (1.0, 79.0, 0.0, 0.0), // Op5: Modulator chain
+                (3.0, 70.0, 0.0, 0.0), // Op6: Top of chain (brightness)
             ],
             envelopes: [
-                (35.0, 55.0, 65.0, 45.0, 99.0, 95.0, 90.0, 0.0), // Op1: Slow smooth attack, high sustain
-                (37.0, 57.0, 63.0, 47.0, 99.0, 93.0, 88.0, 0.0), // Op2: Slightly different timing
-                (33.0, 53.0, 67.0, 43.0, 99.0, 91.0, 86.0, 0.0), // Op3: Different timing
-                (40.0, 60.0, 60.0, 50.0, 99.0, 89.0, 84.0, 0.0), // Op4: Even slower
-                (32.0, 52.0, 68.0, 42.0, 99.0, 87.0, 82.0, 0.0), // Op5: Fastest
-                (45.0, 65.0, 55.0, 55.0, 99.0, 85.0, 80.0, 0.0), // Op6: Slowest for warmth
+                (45.0, 25.0, 20.0, 50.0, 99.0, 98.0, 96.0, 0.0), // Op1: Slow attack, high sustain
+                (54.0, 50.0, 50.0, 50.0, 99.0, 82.0, 82.0, 0.0), // Op2: Mod envelope
+                (45.0, 25.0, 20.0, 50.0, 99.0, 98.0, 96.0, 0.0), // Op3: Same as Op1
+                (54.0, 50.0, 50.0, 50.0, 99.0, 82.0, 82.0, 0.0), // Op4: Same as Op2
+                (45.0, 25.0, 20.0, 50.0, 99.0, 98.0, 96.0, 0.0), // Op5: Same as Op1
+                (54.0, 50.0, 50.0, 50.0, 99.0, 60.0, 60.0, 0.0), // Op6: Top mod, less sustain
             ],
             master_tune: None,
-            mono_mode: Some(false),        // POLY mode
-            pitch_bend_range: Some(2.0),   // Standard pitch bend
-            portamento_enable: Some(true), // Smooth string glides
+            mono_mode: Some(false),
+            pitch_bend_range: Some(2.0),
+            portamento_enable: Some(true),
             portamento_time: Some(35.0),
         },
         // ORGAN - Crystalline Drawbar Organ (DX7-authentic levels)
@@ -202,81 +206,84 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
             portamento_enable: Some(false),
             portamento_time: None,
         },
-        // CLAV - Funky Clavinet
+        // CLAV - Authentic DX7 ROM1A Clavinet
+        // Algorithm 5: 2->1*, 4->3*, 6(fb)->5*
         Dx7Preset {
             name: "CLAV",
-            algorithm: 3,
+            algorithm: 5,
             operators: [
-                (1.0, 99.0, 0.0, 0.0), // Op1: Carrier fundamental
-                (1.0, 99.0, 0.0, 0.0), // Op2: Carrier
-                (3.0, 50.0, 0.0, 0.0), // Op3: Harmonic modulator
-                (1.0, 99.0, 0.0, 0.0), // Op4: Carrier
-                (7.0, 40.0, 0.0, 0.0), // Op5: High harmonic
-                (5.0, 45.0, 0.0, 5.0), // Op6: Modulator with feedback
+                (1.0, 99.0, 0.0, 0.0),  // Op1: Carrier - fundamental
+                (3.41, 86.0, 0.0, 0.0), // Op2: Modulator -> Op1 (bright clav tone)
+                (1.0, 99.0, 0.0, 0.0),  // Op3: Carrier - body
+                (3.41, 86.0, 0.0, 0.0), // Op4: Modulator -> Op3
+                (1.0, 99.0, 0.0, 0.0),  // Op5: Carrier - depth
+                (2.0, 78.0, 0.0, 6.0),  // Op6: Modulator -> Op5 + feedback
             ],
             envelopes: [
-                (99.0, 99.0, 99.0, 70.0, 99.0, 50.0, 0.0, 0.0), // Op1: Sharp percussive, no sustain
-                (99.0, 99.0, 99.0, 70.0, 99.0, 50.0, 0.0, 0.0), // Op2: Sharp percussive
-                (99.0, 99.0, 99.0, 75.0, 99.0, 35.0, 0.0, 0.0), // Op3: Sharp modulation
-                (99.0, 99.0, 99.0, 70.0, 99.0, 50.0, 0.0, 0.0), // Op4: Sharp percussive
-                (99.0, 99.0, 99.0, 75.0, 99.0, 30.0, 0.0, 0.0), // Op5: Sharp harmonic
-                (99.0, 99.0, 99.0, 75.0, 99.0, 40.0, 0.0, 0.0), // Op6: Sharp modulation
+                (99.0, 86.0, 56.0, 76.0, 99.0, 60.0, 0.0, 0.0), // Op1: Fast percussive
+                (99.0, 95.0, 70.0, 80.0, 99.0, 52.0, 0.0, 0.0), // Op2: Sharp mod decay
+                (99.0, 86.0, 56.0, 76.0, 99.0, 60.0, 0.0, 0.0), // Op3: Same as Op1
+                (99.0, 95.0, 70.0, 80.0, 99.0, 52.0, 0.0, 0.0), // Op4: Same as Op2
+                (99.0, 86.0, 56.0, 76.0, 99.0, 55.0, 0.0, 0.0), // Op5: Slightly less sustain
+                (99.0, 92.0, 66.0, 82.0, 99.0, 50.0, 0.0, 0.0), // Op6: Mod with feedback
             ],
             master_tune: None,
-            mono_mode: Some(false), // POLY mode
+            mono_mode: Some(false),
             pitch_bend_range: Some(2.0),
             portamento_enable: Some(false),
             portamento_time: None,
         },
-        // FLUTE - Crystalline Wooden Flute (DX7-authentic levels)
+        // FLUTE - Authentic DX7 ROM1A Flute
+        // Algorithm 5: 2->1*, 4->3*, 6(fb)->5*
         Dx7Preset {
             name: "FLUTE",
-            algorithm: 19,
+            algorithm: 5,
             operators: [
-                (1.0, 75.0, 0.0, 0.0), // Op1: Carrier - main flute tone (reduced from 99)
-                (1.0, 19.0, 0.0, 0.0), // Op2: Modulator -> Op1 (reduced from 25)
-                (2.0, 15.0, 0.0, 3.0), // Op3: Modulator -> Op1 + feedback (reduced from 20)
-                (1.0, 64.0, 0.0, 0.0), // Op4: Carrier - flute body (reduced from 85)
-                (1.0, 56.0, 0.0, 0.0), // Op5: Carrier - flute harmonic (reduced from 75)
-                (1.0, 26.0, 0.0, 0.0), // Op6: Modulator -> Op5 (reduced from 35)
+                (1.0, 99.0, 0.0, 0.0), // Op1: Carrier - main tone
+                (1.0, 56.0, 0.0, 0.0), // Op2: Modulator -> Op1 (breath)
+                (1.0, 99.0, 0.0, 0.0), // Op3: Carrier - body
+                (1.0, 56.0, 0.0, 0.0), // Op4: Modulator -> Op3 (breath)
+                (2.0, 78.0, 0.0, 0.0), // Op5: Carrier - octave overtone
+                (3.0, 45.0, 0.0, 7.0), // Op6: Modulator -> Op5 + max feedback
             ],
             envelopes: [
-                (70.0, 60.0, 60.0, 60.0, 99.0, 95.0, 90.0, 0.0), // Op1
-                (70.0, 60.0, 60.0, 60.0, 99.0, 95.0, 90.0, 0.0), // Op2
-                (75.0, 65.0, 55.0, 65.0, 99.0, 80.0, 70.0, 0.0), // Op3
-                (80.0, 70.0, 50.0, 70.0, 99.0, 70.0, 60.0, 0.0), // Op4
-                (75.0, 65.0, 55.0, 65.0, 99.0, 80.0, 70.0, 0.0), // Op5
-                (90.0, 99.0, 40.0, 80.0, 60.0, 10.0, 5.0, 0.0),  // Op6
+                (65.0, 35.0, 22.0, 50.0, 99.0, 99.0, 95.0, 0.0), // Op1: Breathy attack, high sustain
+                (90.0, 68.0, 50.0, 50.0, 99.0, 62.0, 50.0, 0.0), // Op2: Mod fades during note
+                (65.0, 35.0, 22.0, 50.0, 99.0, 99.0, 95.0, 0.0), // Op3: Same as Op1
+                (90.0, 68.0, 50.0, 50.0, 99.0, 62.0, 50.0, 0.0), // Op4: Same as Op2
+                (65.0, 35.0, 22.0, 50.0, 99.0, 99.0, 95.0, 0.0), // Op5: Same as Op1
+                (90.0, 68.0, 50.0, 50.0, 99.0, 62.0, 50.0, 0.0), // Op6: Same as Op2
             ],
             master_tune: None,
-            mono_mode: Some(true), // Flute is monophonic
+            mono_mode: Some(true),
             pitch_bend_range: Some(2.0),
-            portamento_enable: Some(true), // Natural breath transitions
+            portamento_enable: Some(true),
             portamento_time: Some(15.0),
         },
-        // GUITAR - Plucked Guitar
+        // GUITAR - Authentic DX7 ROM1A Plucked Guitar
+        // Algorithm 5: 2->1*, 4->3*, 6(fb)->5*
         Dx7Preset {
             name: "GUITAR",
-            algorithm: 18,
+            algorithm: 5,
             operators: [
-                (1.0, 99.0, 0.0, 0.0), // Op1: Carrier - main guitar sound (max level)
-                (2.0, 40.0, 0.0, 0.0), // Op2: Modulator -> Op1
-                (3.0, 45.0, 0.0, 4.0), // Op3: Modulator -> Op1 + feedback
-                (1.0, 50.0, 0.0, 0.0), // Op4: Modulator -> Op1
-                (7.0, 30.0, 0.0, 0.0), // Op5: Modulator -> Op4
-                (1.0, 35.0, 0.0, 0.0), // Op6: Modulator -> Op5
+                (1.0, 99.0, 0.0, 0.0), // Op1: Carrier - fundamental
+                (1.0, 82.0, 0.0, 0.0), // Op2: Modulator -> Op1 (body)
+                (1.0, 99.0, 0.0, 0.0), // Op3: Carrier - body
+                (1.0, 82.0, 0.0, 0.0), // Op4: Modulator -> Op3
+                (1.0, 99.0, 0.0, 0.0), // Op5: Carrier - depth
+                (3.0, 72.0, 0.0, 6.0), // Op6: Modulator -> Op5 + feedback (pluck)
             ],
             envelopes: [
-                (99.0, 80.0, 55.0, 60.0, 99.0, 80.0, 0.0, 0.0), // Op1: Plucked, no sustain
-                (99.0, 80.0, 55.0, 60.0, 99.0, 80.0, 0.0, 0.0), // Op2: Plucked
-                (99.0, 85.0, 50.0, 65.0, 99.0, 70.0, 0.0, 0.0), // Op3: Sharp modulation
-                (99.0, 80.0, 55.0, 60.0, 99.0, 80.0, 0.0, 0.0), // Op4: Plucked
-                (99.0, 90.0, 45.0, 70.0, 99.0, 60.0, 0.0, 0.0), // Op5: Sharp harmonic decay
-                (99.0, 80.0, 55.0, 60.0, 99.0, 80.0, 0.0, 0.0), // Op6: Plucked
+                (96.0, 50.0, 25.0, 65.0, 99.0, 72.0, 0.0, 0.0), // Op1: Fast pluck, medium decay
+                (96.0, 68.0, 48.0, 62.0, 99.0, 55.0, 0.0, 0.0), // Op2: Mod fades faster
+                (96.0, 50.0, 25.0, 65.0, 99.0, 72.0, 0.0, 0.0), // Op3: Same as Op1
+                (96.0, 68.0, 48.0, 62.0, 99.0, 55.0, 0.0, 0.0), // Op4: Same as Op2
+                (96.0, 60.0, 30.0, 72.0, 99.0, 68.0, 0.0, 0.0), // Op5: Slightly longer
+                (96.0, 80.0, 55.0, 70.0, 99.0, 50.0, 0.0, 0.0), // Op6: Pluck brightness
             ],
             master_tune: None,
-            mono_mode: Some(false),      // POLY mode
-            pitch_bend_range: Some(3.0), // Guitar pitch bend
+            mono_mode: Some(false),
+            pitch_bend_range: Some(3.0),
             portamento_enable: Some(false),
             portamento_time: None,
         },
@@ -332,25 +339,26 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
             portamento_enable: Some(true), // Natural sax glissando
             portamento_time: Some(18.0),
         },
-        // VIBRAPHONE - Metallic Mallets
+        // VIBES - Authentic DX7 ROM1A Vibraphone
+        // Algorithm 5: 2->1*, 4->3*, 6(fb)->5*
         Dx7Preset {
             name: "VIBES",
-            algorithm: 9,
+            algorithm: 5,
             operators: [
-                (1.0, 99.0, 0.0, 0.0),  // Op1: Carrier fundamental
-                (1.0, 40.0, 7.0, 3.0),  // Op2: Modulator + feedback (shimmer)
-                (3.5, 90.0, 0.0, 0.0),  // Op3: Carrier bright metallic
-                (7.0, 30.0, 0.0, 0.0),  // Op4: Modulator
-                (1.0, 35.0, -7.0, 0.0), // Op5: Modulator (chorus)
-                (14.0, 20.0, 0.0, 0.0), // Op6: High shimmer
+                (1.0, 99.0, 0.0, 0.0),  // Op1: Carrier - fundamental
+                (4.0, 72.0, 0.0, 0.0),  // Op2: Modulator -> Op1 (metallic)
+                (1.0, 99.0, 0.0, 0.0),  // Op3: Carrier - body
+                (4.0, 72.0, 0.0, 0.0),  // Op4: Modulator -> Op3
+                (1.0, 99.0, 0.0, 0.0),  // Op5: Carrier - ring
+                (10.0, 55.0, 0.0, 6.0), // Op6: Modulator -> Op5 + feedback (shimmer)
             ],
             envelopes: [
-                (99.0, 45.0, 45.0, 35.0, 99.0, 85.0, 0.0, 0.0), // Op1: Long decay, no sustain
-                (99.0, 45.0, 45.0, 35.0, 99.0, 85.0, 0.0, 0.0), // Op2: Long decay
-                (99.0, 55.0, 55.0, 45.0, 99.0, 65.0, 0.0, 0.0), // Op3: Medium decay
-                (99.0, 65.0, 65.0, 55.0, 99.0, 45.0, 0.0, 0.0), // Op4: Quick decay
-                (99.0, 45.0, 45.0, 35.0, 99.0, 85.0, 0.0, 0.0), // Op5: Long decay
-                (99.0, 75.0, 75.0, 65.0, 99.0, 25.0, 0.0, 0.0), // Op6: Very quick
+                (72.0, 76.0, 99.0, 71.0, 99.0, 88.0, 96.0, 0.0), // Op1: Sustained metallic ring
+                (99.0, 88.0, 70.0, 50.0, 99.0, 40.0, 0.0, 0.0),  // Op2: Mod fades for warmth
+                (72.0, 76.0, 99.0, 71.0, 99.0, 88.0, 96.0, 0.0), // Op3: Same as Op1
+                (99.0, 88.0, 70.0, 50.0, 99.0, 40.0, 0.0, 0.0),  // Op4: Same as Op2
+                (72.0, 76.0, 99.0, 71.0, 99.0, 88.0, 96.0, 0.0), // Op5: Same as Op1
+                (99.0, 88.0, 70.0, 50.0, 99.0, 40.0, 0.0, 0.0),  // Op6: Mod with feedback
             ],
             master_tune: None,
             mono_mode: Some(false),
@@ -358,25 +366,27 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
             portamento_enable: Some(false),
             portamento_time: None,
         },
-        // MARIMBA - Percussive Wooden Mallets
+        // MARIMBA - Authentic DX7 ROM1A Marimba
+        // Algorithm 5: 2->1*, 4->3*, 6(fb)->5*
+        // R3=0 gives infinite hold at L2 while key held
         Dx7Preset {
             name: "MARIMBA",
-            algorithm: 15,
+            algorithm: 5,
             operators: [
-                (1.0, 99.0, 0.0, 0.0),  // Op1: Fundamental
-                (2.0, 80.0, 0.0, 0.0),  // Op2: Octave
-                (3.0, 60.0, 0.0, 0.0),  // Op3: Third harmonic
-                (4.0, 45.0, 0.0, 0.0),  // Op4: Fourth harmonic
-                (7.0, 30.0, 0.0, 0.0),  // Op5: Woody overtone
-                (11.0, 20.0, 0.0, 0.0), // Op6: High overtone
+                (1.0, 99.0, 0.0, 0.0),  // Op1: Carrier - fundamental
+                (4.0, 72.0, 0.0, 0.0),  // Op2: Modulator -> Op1 (woody overtone)
+                (1.0, 99.0, 0.0, 0.0),  // Op3: Carrier - body
+                (4.0, 72.0, 0.0, 0.0),  // Op4: Modulator -> Op3
+                (1.0, 99.0, 0.0, 0.0),  // Op5: Carrier - depth
+                (10.0, 60.0, 0.0, 4.0), // Op6: Modulator -> Op5 + feedback
             ],
             envelopes: [
-                (99.0, 85.0, 85.0, 55.0, 99.0, 70.0, 0.0, 0.0), // Op1: Fast percussive decay
-                (99.0, 90.0, 90.0, 60.0, 99.0, 55.0, 0.0, 0.0), // Op2: Faster decay
-                (99.0, 95.0, 95.0, 65.0, 99.0, 45.0, 0.0, 0.0), // Op3: Very fast
-                (99.0, 99.0, 99.0, 70.0, 99.0, 35.0, 0.0, 0.0), // Op4: Instant decay
-                (99.0, 99.0, 99.0, 75.0, 99.0, 25.0, 0.0, 0.0), // Op5: Sharp attack
-                (99.0, 99.0, 99.0, 80.0, 99.0, 15.0, 0.0, 0.0), // Op6: Very sharp
+                (99.0, 85.0, 0.0, 60.0, 99.0, 50.0, 0.0, 0.0), // Op1: Fast attack, R3=0 infinite hold
+                (99.0, 92.0, 0.0, 70.0, 99.0, 36.0, 0.0, 0.0), // Op2: Mod decay, R3=0
+                (99.0, 85.0, 0.0, 60.0, 99.0, 50.0, 0.0, 0.0), // Op3: Same as Op1
+                (99.0, 92.0, 0.0, 70.0, 99.0, 36.0, 0.0, 0.0), // Op4: Same as Op2
+                (99.0, 80.0, 0.0, 60.0, 99.0, 50.0, 0.0, 0.0), // Op5: Slightly slower
+                (99.0, 90.0, 0.0, 70.0, 99.0, 30.0, 0.0, 0.0), // Op6: Mod with feedback
             ],
             master_tune: None,
             mono_mode: Some(false),
@@ -384,25 +394,26 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
             portamento_enable: Some(false),
             portamento_time: None,
         },
-        // HARPSICHORD - Bright Harpsichord
+        // HARPSI - Authentic DX7 ROM1A Harpsichord
+        // Algorithm 5: 2->1*, 4->3*, 6(fb)->5*
         Dx7Preset {
             name: "HARPSI",
-            algorithm: 4,
+            algorithm: 5,
             operators: [
-                (1.0, 99.0, 0.0, 0.0), // Op1: Fundamental
-                (2.0, 70.0, 0.0, 0.0), // Op2: Octave
-                (4.0, 50.0, 0.0, 0.0), // Op3: Two octaves
-                (8.0, 35.0, 0.0, 0.0), // Op4: Three octaves
-                (1.0, 85.0, 5.0, 0.0), // Op5: Detuned fundamental (chorus)
-                (3.0, 40.0, 0.0, 3.0), // Op6: Pluck attack + feedback
+                (1.0, 99.0, 0.0, 0.0), // Op1: Carrier - fundamental
+                (5.0, 80.0, 0.0, 0.0), // Op2: Modulator -> Op1 (bright pluck)
+                (1.0, 99.0, 0.0, 0.0), // Op3: Carrier - body
+                (5.0, 80.0, 0.0, 0.0), // Op4: Modulator -> Op3
+                (1.0, 99.0, 0.0, 0.0), // Op5: Carrier - depth
+                (3.0, 70.0, 0.0, 3.0), // Op6: Modulator -> Op5 + feedback
             ],
             envelopes: [
-                (99.0, 85.0, 85.0, 75.0, 99.0, 50.0, 0.0, 0.0), // Op1: Percussive
-                (99.0, 90.0, 90.0, 80.0, 99.0, 40.0, 0.0, 0.0), // Op2: Quick
-                (99.0, 95.0, 95.0, 85.0, 99.0, 30.0, 0.0, 0.0), // Op3: Quicker
-                (99.0, 99.0, 99.0, 90.0, 99.0, 20.0, 0.0, 0.0), // Op4: Very quick
-                (99.0, 85.0, 85.0, 75.0, 99.0, 50.0, 0.0, 0.0), // Op5: Percussive
-                (99.0, 99.0, 99.0, 95.0, 99.0, 15.0, 0.0, 0.0), // Op6: Sharp pluck
+                (99.0, 40.0, 30.0, 60.0, 99.0, 70.0, 0.0, 0.0), // Op1: Sharp pluck, medium decay
+                (99.0, 75.0, 60.0, 60.0, 99.0, 56.0, 0.0, 0.0), // Op2: Mod fades faster
+                (99.0, 40.0, 30.0, 60.0, 99.0, 70.0, 0.0, 0.0), // Op3: Same as Op1
+                (99.0, 75.0, 60.0, 60.0, 99.0, 56.0, 0.0, 0.0), // Op4: Same as Op2
+                (99.0, 70.0, 35.0, 90.0, 99.0, 60.0, 0.0, 0.0), // Op5: Different character
+                (99.0, 85.0, 50.0, 85.0, 99.0, 50.0, 0.0, 0.0), // Op6: Mod with feedback
             ],
             master_tune: None,
             mono_mode: Some(false),
@@ -696,31 +707,31 @@ pub fn get_dx7_presets() -> Vec<Dx7Preset> {
             portamento_enable: Some(false),
             portamento_time: None,
         },
-        // SPACE CHOIR - Ethereal pad
+        // CHOIR - Ethereal Vocal Pad
         Dx7Preset {
             name: "CHOIR",
-            algorithm: 28, // All carriers algorithm
+            algorithm: 28,
             operators: [
-                (1.0, 99.0, 0.0, 2.0),   // Op1: Fundamental with moderate feedback
+                (1.0, 99.0, 0.0, 2.0),   // Op1: Fundamental with feedback
                 (1.004, 95.0, 0.0, 0.0), // Op2: Slightly detuned (beat frequency)
                 (0.996, 90.0, 0.0, 0.0), // Op3: Slightly detuned opposite
-                (2.0, 75.0, 0.0, 1.5),   // Op4: Octave with moderate feedback
-                (3.0, 60.0, 3.0, 0.0),   // Op5: Third harmonic with moderate detune
-                (1.5, 70.0, -5.0, 2.5),  // Op6: Perfect fifth with moderate detune and feedback
+                (2.0, 75.0, 0.0, 1.5),   // Op4: Octave with feedback
+                (3.0, 60.0, 3.0, 0.0),   // Op5: Third harmonic
+                (1.5, 70.0, -5.0, 2.5),  // Op6: Perfect fifth with feedback
             ],
             envelopes: [
-                (20.0, 30.0, 75.0, 25.0, 99.0, 90.0, 75.0, 0.0), // Op1: Slow ethereal attack
-                (23.0, 33.0, 70.0, 28.0, 99.0, 88.0, 72.0, 0.0), // Op2: Slightly different timing
-                (25.0, 35.0, 65.0, 30.0, 99.0, 86.0, 70.0, 0.0), // Op3: More different timing
-                (30.0, 40.0, 60.0, 35.0, 99.0, 80.0, 65.0, 0.0), // Op4: Slower octave entry
-                (35.0, 45.0, 55.0, 40.0, 99.0, 70.0, 60.0, 0.0), // Op5: Even slower harmonic
-                (18.0, 28.0, 80.0, 23.0, 99.0, 92.0, 77.0, 0.0), // Op6: Fastest ethereal entry
+                (45.0, 40.0, 75.0, 35.0, 99.0, 90.0, 75.0, 0.0), // Op1: ~2s vocal attack
+                (47.0, 43.0, 70.0, 38.0, 99.0, 88.0, 72.0, 0.0), // Op2: Slightly different
+                (48.0, 45.0, 65.0, 40.0, 99.0, 86.0, 70.0, 0.0), // Op3: More different
+                (50.0, 48.0, 60.0, 42.0, 99.0, 80.0, 65.0, 0.0), // Op4: Slower octave entry
+                (52.0, 50.0, 55.0, 45.0, 99.0, 70.0, 60.0, 0.0), // Op5: Even slower harmonic
+                (43.0, 38.0, 80.0, 33.0, 99.0, 92.0, 77.0, 0.0), // Op6: Fastest entry
             ],
-            master_tune: Some(-1.5),       // Slightly flat for warmth
-            mono_mode: Some(false),        // POLY for chord pads
-            pitch_bend_range: Some(2.0),   // Standard pitch bend
-            portamento_enable: Some(true), // Smooth pad glides
-            portamento_time: Some(30.0),   // Moderate glide
+            master_tune: Some(-1.5),
+            mono_mode: Some(false),
+            pitch_bend_range: Some(2.0),
+            portamento_enable: Some(true),
+            portamento_time: Some(30.0),
         },
     ]
 }
