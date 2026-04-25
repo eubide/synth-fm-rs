@@ -1,0 +1,103 @@
+{
+  "algorithm": 5,
+  "feedback": 6.0,
+  "name": "CLAV",
+  "operators": [
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 60.0,
+        "level3": 0.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 86.0,
+        "rate3": 56.0,
+        "rate4": 76.0
+      },
+      "feedback": 0.0,
+      "frequency": 1.0,
+      "outputLevel": 99.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 52.0,
+        "level3": 0.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 95.0,
+        "rate3": 70.0,
+        "rate4": 80.0
+      },
+      "feedback": 0.0,
+      "frequency": 3.4100000858306885,
+      "outputLevel": 86.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 60.0,
+        "level3": 0.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 86.0,
+        "rate3": 56.0,
+        "rate4": 76.0
+      },
+      "feedback": 0.0,
+      "frequency": 1.0,
+      "outputLevel": 99.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 52.0,
+        "level3": 0.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 95.0,
+        "rate3": 70.0,
+        "rate4": 80.0
+      },
+      "feedback": 0.0,
+      "frequency": 3.4100000858306885,
+      "outputLevel": 86.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 55.0,
+        "level3": 0.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 86.0,
+        "rate3": 56.0,
+        "rate4": 76.0
+      },
+      "feedback": 0.0,
+      "frequency": 1.0,
+      "outputLevel": 99.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 50.0,
+        "level3": 0.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 92.0,
+        "rate3": 66.0,
+        "rate4": 82.0
+      },
+      "feedback": 6.0,
+      "frequency": 2.0,
+      "outputLevel": 78.0
+    }
+  ]
+}

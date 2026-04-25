@@ -1,0 +1,103 @@
+{
+  "algorithm": 23,
+  "feedback": 7.0,
+  "name": "STAB",
+  "operators": [
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 30.0,
+        "level3": 0.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 99.0,
+        "rate3": 99.0,
+        "rate4": 99.0
+      },
+      "feedback": 0.0,
+      "frequency": 1.0,
+      "outputLevel": 99.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 25.0,
+        "level3": 0.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 99.0,
+        "rate3": 99.0,
+        "rate4": 99.0
+      },
+      "feedback": 0.0,
+      "frequency": 11.729999542236328,
+      "outputLevel": 85.0
+    },
+    {
+      "detune": 13.5,
+      "eg": {
+        "level1": 99.0,
+        "level2": 20.0,
+        "level3": 0.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 99.0,
+        "rate3": 99.0,
+        "rate4": 99.0
+      },
+      "feedback": 0.0,
+      "frequency": 17.31999969482422,
+      "outputLevel": 75.0
+    },
+    {
+      "detune": -19.200000762939453,
+      "eg": {
+        "level1": 99.0,
+        "level2": 15.0,
+        "level3": 0.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 99.0,
+        "rate3": 99.0,
+        "rate4": 99.0
+      },
+      "feedback": 0.0,
+      "frequency": 23.889999389648438,
+      "outputLevel": 65.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 30.0,
+        "level3": 0.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 99.0,
+        "rate3": 99.0,
+        "rate4": 99.0
+      },
+      "feedback": 7.0,
+      "frequency": 1.0,
+      "outputLevel": 90.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 35.0,
+        "level3": 0.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 99.0,
+        "rate3": 99.0,
+        "rate4": 99.0
+      },
+      "feedback": 7.0,
+      "frequency": 2.7182817459106445,
+      "outputLevel": 80.0
+    }
+  ]
+}

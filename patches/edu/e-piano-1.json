@@ -1,0 +1,103 @@
+{
+  "algorithm": 5,
+  "feedback": 6.0,
+  "name": "E.PIANO 1",
+  "operators": [
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 95.0,
+        "level3": 0.0,
+        "level4": 0.0,
+        "rate1": 95.0,
+        "rate2": 29.0,
+        "rate3": 20.0,
+        "rate4": 50.0
+      },
+      "feedback": 0.0,
+      "frequency": 1.0,
+      "outputLevel": 99.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 95.0,
+        "level3": 0.0,
+        "level4": 0.0,
+        "rate1": 95.0,
+        "rate2": 20.0,
+        "rate3": 20.0,
+        "rate4": 50.0
+      },
+      "feedback": 0.0,
+      "frequency": 14.0,
+      "outputLevel": 78.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 95.0,
+        "level3": 0.0,
+        "level4": 0.0,
+        "rate1": 95.0,
+        "rate2": 29.0,
+        "rate3": 20.0,
+        "rate4": 50.0
+      },
+      "feedback": 0.0,
+      "frequency": 1.0,
+      "outputLevel": 99.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 95.0,
+        "level3": 0.0,
+        "level4": 0.0,
+        "rate1": 95.0,
+        "rate2": 20.0,
+        "rate3": 20.0,
+        "rate4": 50.0
+      },
+      "feedback": 0.0,
+      "frequency": 14.0,
+      "outputLevel": 78.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 75.0,
+        "level3": 0.0,
+        "level4": 0.0,
+        "rate1": 95.0,
+        "rate2": 50.0,
+        "rate3": 35.0,
+        "rate4": 78.0
+      },
+      "feedback": 0.0,
+      "frequency": 1.0,
+      "outputLevel": 99.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 75.0,
+        "level3": 0.0,
+        "level4": 0.0,
+        "rate1": 96.0,
+        "rate2": 25.0,
+        "rate3": 25.0,
+        "rate4": 67.0
+      },
+      "feedback": 6.0,
+      "frequency": 1.0,
+      "outputLevel": 58.0
+    }
+  ]
+}

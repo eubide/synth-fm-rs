@@ -17,6 +17,7 @@ mod lock_free;
 mod midi_handler;
 mod operator;
 mod optimization;
+mod preset_loader;
 mod presets;
 mod state_snapshot;
 
@@ -24,7 +25,6 @@ use audio_engine::AudioEngine;
 use fm_synth::{create_synth, SynthController};
 use gui::Dx7App;
 use midi_handler::MidiHandler;
-use presets::get_dx7_presets;
 
 fn play_startup_melody(controller: Arc<Mutex<SynthController>>) {
     thread::spawn(move || {
@@ -71,11 +71,17 @@ fn main() -> Result<(), eframe::Error> {
     let engine = Arc::new(Mutex::new(engine));
     let controller = Arc::new(Mutex::new(controller));
 
-    // Apply the first preset to the engine
-    let presets = get_dx7_presets();
-    if !presets.is_empty() {
-        if let Ok(mut eng) = engine.lock() {
-            presets[0].apply_to_synth(&mut eng);
+    let patches_dir = std::path::Path::new("patches");
+    let presets = preset_loader::scan_patches_dir(patches_dir);
+    if presets.is_empty() {
+        log::warn!("No presets found in {:?} — add JSON files to patches/ subdirectories", patches_dir);
+    }
+
+    // Apply the first preset and hand the full list to the engine (for MIDI PC).
+    if let Ok(mut eng) = engine.lock() {
+        eng.set_presets(presets.clone());
+        if let Some(first) = presets.first() {
+            first.apply_to_synth(&mut eng);
         }
     }
 
@@ -108,6 +114,7 @@ fn main() -> Result<(), eframe::Error> {
                 controller,
                 audio_engine,
                 _midi_handler,
+                presets,
             )))
         }),
     )

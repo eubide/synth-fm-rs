@@ -1,0 +1,103 @@
+{
+  "algorithm": 1,
+  "feedback": 6.5,
+  "name": "BASS 1",
+  "operators": [
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 80.0,
+        "level3": 70.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 75.0,
+        "rate3": 40.0,
+        "rate4": 70.0
+      },
+      "feedback": 0.0,
+      "frequency": 1.0,
+      "outputLevel": 75.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 60.0,
+        "level3": 40.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 99.0,
+        "rate3": 20.0,
+        "rate4": 85.0
+      },
+      "feedback": 0.0,
+      "frequency": 2.0,
+      "outputLevel": 50.0
+    },
+    {
+      "detune": 4.199999809265137,
+      "eg": {
+        "level1": 99.0,
+        "level2": 60.0,
+        "level3": 30.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 85.0,
+        "rate3": 30.0,
+        "rate4": 80.0
+      },
+      "feedback": 0.0,
+      "frequency": 1.0,
+      "outputLevel": 68.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 30.0,
+        "level3": 15.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 99.0,
+        "rate3": 15.0,
+        "rate4": 90.0
+      },
+      "feedback": 0.0,
+      "frequency": 2.0,
+      "outputLevel": 38.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 20.0,
+        "level3": 10.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 99.0,
+        "rate3": 10.0,
+        "rate4": 95.0
+      },
+      "feedback": 0.0,
+      "frequency": 3.0,
+      "outputLevel": 30.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 80.0,
+        "level3": 70.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 75.0,
+        "rate3": 40.0,
+        "rate4": 70.0
+      },
+      "feedback": 6.5,
+      "frequency": 1.0,
+      "outputLevel": 53.0
+    }
+  ]
+}

@@ -3,7 +3,7 @@ use crate::audio_engine::AudioEngine;
 use crate::command_queue::{EffectParam, EffectType, EnvelopeParam, LfoParam, OperatorParam};
 use crate::fm_synth::{SynthController, SynthEngine};
 use crate::midi_handler::MidiHandler;
-use crate::presets::{get_dx7_presets, Dx7Preset};
+use crate::presets::Dx7Preset;
 use crate::state_snapshot::SynthSnapshot;
 use eframe::egui;
 use std::sync::{Arc, Mutex};
@@ -20,6 +20,9 @@ pub struct Dx7App {
     current_octave: i32,
     presets: Vec<Dx7Preset>,
     selected_preset: usize,
+    /// Active collection filter; None = show all collections.
+    selected_collection: Option<String>,
+    preset_search: String,
     /// Cached snapshot from audio thread (updated each frame)
     snapshot: SynthSnapshot,
 }
@@ -39,9 +42,8 @@ impl Dx7App {
         controller: Arc<Mutex<SynthController>>,
         audio_engine: AudioEngine,
         midi_handler: Option<MidiHandler>,
+        presets: Vec<Dx7Preset>,
     ) -> Self {
-        let presets = get_dx7_presets();
-        // Get initial snapshot from controller
         let snapshot = controller.lock().map(|c| c.snapshot()).unwrap_or_default();
 
         Self {
@@ -56,6 +58,8 @@ impl Dx7App {
             current_octave: 4,
             presets,
             selected_preset: 0,
+            selected_collection: None,
+            preset_search: String::new(),
             snapshot,
         }
     }
@@ -578,76 +582,132 @@ impl Dx7App {
 
     fn draw_preset_selector(&mut self, ui: &mut egui::Ui) {
         ui.group(|ui| {
-            ui.vertical(|ui| {
-                ui.label("SELECT VOICE:");
-                ui.separator();
+            ui.spacing_mut().item_spacing = egui::vec2(4.0, 3.0);
 
-                // Calculate responsive grid columns based on available width
-                let available_width = ui.available_width();
-                let button_width = 120.0;
-                let button_spacing = 10.0;
-                let min_columns = 2;
-                let max_columns = 6;
-
-                // Calculate how many columns fit, with padding for margins
-                let padding = 40.0; // Account for group padding and margins
-                let usable_width = available_width - padding;
-                let columns_that_fit =
-                    ((usable_width + button_spacing) / (button_width + button_spacing)) as usize;
-                let optimal_columns = columns_that_fit.clamp(min_columns, max_columns);
-
-                // Display presets in a responsive grid
-                egui::Grid::new("preset_grid")
-                    .num_columns(optimal_columns)
-                    .spacing([button_spacing, 10.0])
-                    .min_col_width(button_width)
-                    .max_col_width(button_width)
-                    .show(ui, |ui| {
-                        for (i, preset) in self.presets.iter().enumerate() {
-                            let is_selected = i == self.selected_preset;
-                            let button = if is_selected {
-                                egui::Button::new(preset.name)
-                                    .fill(egui::Color32::from_rgb(180, 200, 220))
-                                    .min_size(egui::vec2(button_width, 30.0))
-                            } else {
-                                egui::Button::new(preset.name)
-                                    .min_size(egui::vec2(button_width, 30.0))
-                            };
-
-                            if ui.add(button).clicked() {
-                                self.selected_preset = i;
-                                let preset_name = preset.name.to_string();
-                                // Apply preset to synthesizer
-                                if let Ok(mut synth) = self.lock_engine() {
-                                    preset.apply_to_synth(&mut synth);
-                                };
-                                self.display_text = format!("LOADED: {}", preset_name);
-                            }
-
-                            // End row when we reach the optimal column count
-                            if (i + 1) % optimal_columns == 0 {
-                                ui.end_row();
-                            }
-                        }
-
-                        // Handle the last row if it's incomplete
-                        let total_presets = self.presets.len();
-                        let last_row_items = total_presets % optimal_columns;
-                        if last_row_items != 0 {
-                            // Add empty cells to complete the last row for better alignment
-                            for _ in last_row_items..optimal_columns {
-                                ui.add_space(button_width);
-                            }
-                            ui.end_row();
-                        }
-                    });
-
-                ui.separator();
-                ui.horizontal(|ui| {
-                    ui.label("Current Voice:");
-                    ui.label(egui::RichText::new(self.presets[self.selected_preset].name).strong());
-                });
+            // --- Current voice header ---
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new("current:").size(11.0).strong());
+                if let Some(p) = self.presets.get(self.selected_preset) {
+                    ui.colored_label(egui::Color32::from_rgb(100, 220, 100), p.name.as_str());
+                    ui.label(
+                        egui::RichText::new(format!("[{}]", p.collection))
+                            .size(10.0)
+                            .color(egui::Color32::from_gray(140)),
+                    );
+                } else {
+                    ui.colored_label(egui::Color32::GRAY, "(none)");
+                }
             });
+            ui.separator();
+
+            // --- Search + collection filter ---
+            ui.horizontal(|ui| {
+                ui.label("search:");
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.preset_search)
+                        .hint_text("filter by name…")
+                        .desired_width(140.0),
+                );
+                if ui.small_button("×").on_hover_text("Clear").clicked() {
+                    self.preset_search.clear();
+                }
+            });
+
+            let collections: Vec<String> = {
+                let mut seen = std::collections::HashSet::new();
+                self.presets
+                    .iter()
+                    .map(|p| p.collection.clone())
+                    .filter(|c| seen.insert(c.clone()))
+                    .collect()
+            };
+
+            if collections.len() > 1 {
+                ui.horizontal(|ui| {
+                    ui.label("collection:");
+                    if ui
+                        .selectable_label(self.selected_collection.is_none(), "all")
+                        .clicked()
+                    {
+                        self.selected_collection = None;
+                    }
+                    for coll in &collections {
+                        let active = self.selected_collection.as_deref() == Some(coll.as_str());
+                        if ui.selectable_label(active, coll.as_str()).clicked() {
+                            self.selected_collection = Some(coll.clone());
+                        }
+                    }
+                });
+            }
+            ui.separator();
+
+            // --- Scrollable preset list grouped by collection ---
+            // Collect indices to avoid holding borrows across mutable self access.
+            let search_lower = self.preset_search.to_lowercase();
+            let filter_coll = self.selected_collection.clone();
+            let filtered_indices: Vec<usize> = self
+                .presets
+                .iter()
+                .enumerate()
+                .filter(|(_, p)| {
+                    let coll_ok = filter_coll.as_deref().is_none_or(|c| p.collection == c);
+                    let name_ok =
+                        search_lower.is_empty() || p.name.to_lowercase().contains(&search_lower);
+                    coll_ok && name_ok
+                })
+                .map(|(i, _)| i)
+                .collect();
+
+            if filtered_indices.is_empty() {
+                ui.colored_label(egui::Color32::GRAY, "no presets match");
+                return;
+            }
+
+            egui::ScrollArea::vertical()
+                .max_height(320.0)
+                .show(ui, |ui| {
+                    let mut last_coll: Option<String> = None;
+                    for &global_idx in &filtered_indices {
+                        let coll = self.presets[global_idx].collection.clone();
+                        let name = self.presets[global_idx].name.clone();
+                        let is_current = global_idx == self.selected_preset;
+
+                        // Section header when collection changes
+                        let new_section = last_coll.as_deref() != Some(coll.as_str());
+                        if new_section {
+                            if last_coll.is_some() {
+                                ui.add_space(4.0);
+                            }
+                            ui.label(
+                                egui::RichText::new(coll.to_uppercase())
+                                    .size(10.0)
+                                    .color(egui::Color32::from_rgb(180, 180, 80))
+                                    .strong(),
+                            );
+                            last_coll = Some(coll);
+                        }
+
+                        let button = egui::Button::new(name.as_str())
+                            .wrap_mode(egui::TextWrapMode::Truncate);
+                        let button = if is_current {
+                            button.fill(egui::Color32::from_rgb(60, 110, 60))
+                        } else {
+                            button
+                        };
+
+                        if ui
+                            .add_sized([ui.available_width(), 18.0], button)
+                            .clicked()
+                        {
+                            let preset = self.presets[global_idx].clone();
+                            self.selected_preset = global_idx;
+                            if let Ok(mut synth) = self.lock_engine() {
+                                preset.apply_to_synth(&mut synth);
+                            }
+                            self.display_text = format!("LOADED: {}", name);
+                        }
+                    }
+                });
         });
     }
 

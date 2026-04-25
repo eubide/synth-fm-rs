@@ -1,0 +1,103 @@
+{
+  "algorithm": 19,
+  "feedback": 4.0,
+  "name": "CLARINET",
+  "operators": [
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 95.0,
+        "level3": 90.0,
+        "level4": 0.0,
+        "rate1": 65.0,
+        "rate2": 60.0,
+        "rate3": 65.0,
+        "rate4": 55.0
+      },
+      "feedback": 0.0,
+      "frequency": 1.0,
+      "outputLevel": 75.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 80.0,
+        "level3": 70.0,
+        "level4": 0.0,
+        "rate1": 70.0,
+        "rate2": 65.0,
+        "rate3": 60.0,
+        "rate4": 60.0
+      },
+      "feedback": 0.0,
+      "frequency": 3.0,
+      "outputLevel": 45.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 65.0,
+        "level3": 55.0,
+        "level4": 0.0,
+        "rate1": 75.0,
+        "rate2": 70.0,
+        "rate3": 55.0,
+        "rate4": 65.0
+      },
+      "feedback": 0.0,
+      "frequency": 5.0,
+      "outputLevel": 30.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 50.0,
+        "level3": 40.0,
+        "level4": 0.0,
+        "rate1": 80.0,
+        "rate2": 75.0,
+        "rate3": 50.0,
+        "rate4": 70.0
+      },
+      "feedback": 0.0,
+      "frequency": 7.0,
+      "outputLevel": 19.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 95.0,
+        "level3": 90.0,
+        "level4": 0.0,
+        "rate1": 65.0,
+        "rate2": 60.0,
+        "rate3": 65.0,
+        "rate4": 55.0
+      },
+      "feedback": 0.0,
+      "frequency": 1.0,
+      "outputLevel": 64.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 50.0,
+        "level2": 15.0,
+        "level3": 10.0,
+        "level4": 0.0,
+        "rate1": 90.0,
+        "rate2": 95.0,
+        "rate3": 45.0,
+        "rate4": 80.0
+      },
+      "feedback": 4.0,
+      "frequency": 2.0,
+      "outputLevel": 23.0
+    }
+  ]
+}

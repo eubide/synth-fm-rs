@@ -1,0 +1,103 @@
+{
+  "algorithm": 28,
+  "feedback": 2.0,
+  "name": "SPACE",
+  "operators": [
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 95.0,
+        "level3": 90.0,
+        "level4": 0.0,
+        "rate1": 30.0,
+        "rate2": 40.0,
+        "rate3": 60.0,
+        "rate4": 35.0
+      },
+      "feedback": 0.0,
+      "frequency": 1.0,
+      "outputLevel": 99.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 95.0,
+        "level3": 90.0,
+        "level4": 0.0,
+        "rate1": 30.0,
+        "rate2": 40.0,
+        "rate3": 60.0,
+        "rate4": 35.0
+      },
+      "feedback": 0.0,
+      "frequency": 1.0099999904632568,
+      "outputLevel": 95.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 95.0,
+        "level3": 90.0,
+        "level4": 0.0,
+        "rate1": 30.0,
+        "rate2": 40.0,
+        "rate3": 60.0,
+        "rate4": 35.0
+      },
+      "feedback": 0.0,
+      "frequency": 0.9900000095367432,
+      "outputLevel": 90.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 85.0,
+        "level3": 80.0,
+        "level4": 0.0,
+        "rate1": 35.0,
+        "rate2": 45.0,
+        "rate3": 55.0,
+        "rate4": 40.0
+      },
+      "feedback": 0.0,
+      "frequency": 2.0,
+      "outputLevel": 60.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 75.0,
+        "level3": 70.0,
+        "level4": 0.0,
+        "rate1": 40.0,
+        "rate2": 50.0,
+        "rate3": 50.0,
+        "rate4": 45.0
+      },
+      "feedback": 0.0,
+      "frequency": 3.0,
+      "outputLevel": 40.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 65.0,
+        "level3": 60.0,
+        "level4": 0.0,
+        "rate1": 45.0,
+        "rate2": 55.0,
+        "rate3": 45.0,
+        "rate4": 50.0
+      },
+      "feedback": 2.0,
+      "frequency": 1.5,
+      "outputLevel": 50.0
+    }
+  ]
+}

@@ -7,7 +7,7 @@ use crate::effects::EffectsChain;
 use crate::lfo::{LFOWaveform, LFO};
 use crate::operator::Operator;
 use crate::optimization::OPTIMIZATION_TABLES;
-use crate::presets::{get_dx7_presets, Dx7Preset};
+use crate::presets::Dx7Preset;
 use crate::state_snapshot::{
     create_snapshot_channel, ChorusSnapshot, DelaySnapshot, OperatorSnapshot, ReverbSnapshot,
     SnapshotReceiver, SnapshotSender, SynthSnapshot,
@@ -258,7 +258,7 @@ impl SynthEngine {
             mono_mode: false,
             sustain_pedal: false,
             sample_rate,
-            presets: get_dx7_presets(),
+            presets: Vec::new(),
             current_preset_index: 0,
         }
     }
@@ -724,6 +724,11 @@ impl SynthEngine {
         if (1..=32).contains(&alg) {
             self.algorithm = alg;
         }
+    }
+
+    pub fn set_presets(&mut self, presets: Vec<Dx7Preset>) {
+        self.current_preset_index = 0;
+        self.presets = presets;
     }
 
     #[allow(dead_code)]

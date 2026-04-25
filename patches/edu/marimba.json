@@ -1,0 +1,103 @@
+{
+  "algorithm": 5,
+  "feedback": 4.0,
+  "name": "MARIMBA",
+  "operators": [
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 50.0,
+        "level3": 0.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 85.0,
+        "rate3": 0.0,
+        "rate4": 60.0
+      },
+      "feedback": 0.0,
+      "frequency": 1.0,
+      "outputLevel": 99.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 36.0,
+        "level3": 0.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 92.0,
+        "rate3": 0.0,
+        "rate4": 70.0
+      },
+      "feedback": 0.0,
+      "frequency": 4.0,
+      "outputLevel": 72.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 50.0,
+        "level3": 0.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 85.0,
+        "rate3": 0.0,
+        "rate4": 60.0
+      },
+      "feedback": 0.0,
+      "frequency": 1.0,
+      "outputLevel": 99.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 36.0,
+        "level3": 0.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 92.0,
+        "rate3": 0.0,
+        "rate4": 70.0
+      },
+      "feedback": 0.0,
+      "frequency": 4.0,
+      "outputLevel": 72.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 50.0,
+        "level3": 0.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 80.0,
+        "rate3": 0.0,
+        "rate4": 60.0
+      },
+      "feedback": 0.0,
+      "frequency": 1.0,
+      "outputLevel": 99.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 30.0,
+        "level3": 0.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 90.0,
+        "rate3": 0.0,
+        "rate4": 70.0
+      },
+      "feedback": 4.0,
+      "frequency": 10.0,
+      "outputLevel": 60.0
+    }
+  ]
+}

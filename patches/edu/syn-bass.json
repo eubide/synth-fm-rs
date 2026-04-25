@@ -1,0 +1,103 @@
+{
+  "algorithm": 6,
+  "feedback": 2.0,
+  "name": "SYN BASS",
+  "operators": [
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 75.0,
+        "level3": 60.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 80.0,
+        "rate3": 45.0,
+        "rate4": 70.0
+      },
+      "feedback": 0.0,
+      "frequency": 1.0,
+      "outputLevel": 75.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 75.0,
+        "level3": 60.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 80.0,
+        "rate3": 45.0,
+        "rate4": 70.0
+      },
+      "feedback": 0.0,
+      "frequency": 2.0,
+      "outputLevel": 26.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 55.0,
+        "level3": 40.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 90.0,
+        "rate3": 35.0,
+        "rate4": 80.0
+      },
+      "feedback": 0.0,
+      "frequency": 1.0,
+      "outputLevel": 64.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 75.0,
+        "level3": 60.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 80.0,
+        "rate3": 45.0,
+        "rate4": 70.0
+      },
+      "feedback": 0.0,
+      "frequency": 1.0,
+      "outputLevel": 56.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 45.0,
+        "level3": 30.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 95.0,
+        "rate3": 30.0,
+        "rate4": 85.0
+      },
+      "feedback": 0.0,
+      "frequency": 2.0,
+      "outputLevel": 19.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 75.0,
+        "level3": 60.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 80.0,
+        "rate3": 45.0,
+        "rate4": 70.0
+      },
+      "feedback": 2.0,
+      "frequency": 1.0,
+      "outputLevel": 30.0
+    }
+  ]
+}
