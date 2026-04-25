@@ -1,0 +1,103 @@
+{
+  "algorithm": 5,
+  "feedback": 3.0,
+  "name": "HARPSI",
+  "operators": [
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 70.0,
+        "level3": 0.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 40.0,
+        "rate3": 30.0,
+        "rate4": 60.0
+      },
+      "feedback": 0.0,
+      "frequency": 1.0,
+      "outputLevel": 99.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 56.0,
+        "level3": 0.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 75.0,
+        "rate3": 60.0,
+        "rate4": 60.0
+      },
+      "feedback": 0.0,
+      "frequency": 5.0,
+      "outputLevel": 80.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 70.0,
+        "level3": 0.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 40.0,
+        "rate3": 30.0,
+        "rate4": 60.0
+      },
+      "feedback": 0.0,
+      "frequency": 1.0,
+      "outputLevel": 99.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 56.0,
+        "level3": 0.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 75.0,
+        "rate3": 60.0,
+        "rate4": 60.0
+      },
+      "feedback": 0.0,
+      "frequency": 5.0,
+      "outputLevel": 80.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 60.0,
+        "level3": 0.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 70.0,
+        "rate3": 35.0,
+        "rate4": 90.0
+      },
+      "feedback": 0.0,
+      "frequency": 1.0,
+      "outputLevel": 99.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 50.0,
+        "level3": 0.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 85.0,
+        "rate3": 50.0,
+        "rate4": 85.0
+      },
+      "feedback": 3.0,
+      "frequency": 3.0,
+      "outputLevel": 70.0
+    }
+  ]
+}

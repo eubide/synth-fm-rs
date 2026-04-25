@@ -1,0 +1,103 @@
+{
+  "algorithm": 5,
+  "feedback": 6.0,
+  "name": "VIBES",
+  "operators": [
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 88.0,
+        "level3": 96.0,
+        "level4": 0.0,
+        "rate1": 72.0,
+        "rate2": 76.0,
+        "rate3": 99.0,
+        "rate4": 71.0
+      },
+      "feedback": 0.0,
+      "frequency": 1.0,
+      "outputLevel": 99.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 40.0,
+        "level3": 0.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 88.0,
+        "rate3": 70.0,
+        "rate4": 50.0
+      },
+      "feedback": 0.0,
+      "frequency": 4.0,
+      "outputLevel": 72.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 88.0,
+        "level3": 96.0,
+        "level4": 0.0,
+        "rate1": 72.0,
+        "rate2": 76.0,
+        "rate3": 99.0,
+        "rate4": 71.0
+      },
+      "feedback": 0.0,
+      "frequency": 1.0,
+      "outputLevel": 99.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 40.0,
+        "level3": 0.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 88.0,
+        "rate3": 70.0,
+        "rate4": 50.0
+      },
+      "feedback": 0.0,
+      "frequency": 4.0,
+      "outputLevel": 72.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 88.0,
+        "level3": 96.0,
+        "level4": 0.0,
+        "rate1": 72.0,
+        "rate2": 76.0,
+        "rate3": 99.0,
+        "rate4": 71.0
+      },
+      "feedback": 0.0,
+      "frequency": 1.0,
+      "outputLevel": 99.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 40.0,
+        "level3": 0.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 88.0,
+        "rate3": 70.0,
+        "rate4": 50.0
+      },
+      "feedback": 6.0,
+      "frequency": 10.0,
+      "outputLevel": 55.0
+    }
+  ]
+}

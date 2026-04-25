@@ -1,0 +1,103 @@
+{
+  "algorithm": 1,
+  "feedback": 2.0,
+  "name": "TUBA",
+  "operators": [
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 90.0,
+        "level3": 85.0,
+        "level4": 0.0,
+        "rate1": 60.0,
+        "rate2": 55.0,
+        "rate3": 60.0,
+        "rate4": 50.0
+      },
+      "feedback": 0.0,
+      "frequency": 1.0,
+      "outputLevel": 75.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 90.0,
+        "level3": 85.0,
+        "level4": 0.0,
+        "rate1": 60.0,
+        "rate2": 55.0,
+        "rate3": 60.0,
+        "rate4": 50.0
+      },
+      "feedback": 0.0,
+      "frequency": 0.5,
+      "outputLevel": 64.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 80.0,
+        "level3": 70.0,
+        "level4": 0.0,
+        "rate1": 65.0,
+        "rate2": 60.0,
+        "rate3": 55.0,
+        "rate4": 55.0
+      },
+      "feedback": 0.0,
+      "frequency": 2.0,
+      "outputLevel": 45.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 70.0,
+        "level3": 60.0,
+        "level4": 0.0,
+        "rate1": 70.0,
+        "rate2": 65.0,
+        "rate3": 50.0,
+        "rate4": 60.0
+      },
+      "feedback": 0.0,
+      "frequency": 3.0,
+      "outputLevel": 34.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 60.0,
+        "level3": 50.0,
+        "level4": 0.0,
+        "rate1": 75.0,
+        "rate2": 70.0,
+        "rate3": 45.0,
+        "rate4": 65.0
+      },
+      "feedback": 0.0,
+      "frequency": 4.0,
+      "outputLevel": 23.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 70.0,
+        "level2": 30.0,
+        "level3": 20.0,
+        "level4": 0.0,
+        "rate1": 80.0,
+        "rate2": 85.0,
+        "rate3": 40.0,
+        "rate4": 70.0
+      },
+      "feedback": 2.0,
+      "frequency": 1.0,
+      "outputLevel": 53.0
+    }
+  ]
+}

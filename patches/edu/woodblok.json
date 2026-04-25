@@ -1,0 +1,103 @@
+{
+  "algorithm": 12,
+  "feedback": 7.0,
+  "name": "WOODBLOK",
+  "operators": [
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 20.0,
+        "level3": 0.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 99.0,
+        "rate3": 99.0,
+        "rate4": 99.0
+      },
+      "feedback": 0.0,
+      "frequency": 1.0,
+      "outputLevel": 99.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 15.0,
+        "level3": 0.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 99.0,
+        "rate3": 99.0,
+        "rate4": 99.0
+      },
+      "feedback": 0.0,
+      "frequency": 3.5,
+      "outputLevel": 75.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 10.0,
+        "level3": 0.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 99.0,
+        "rate3": 99.0,
+        "rate4": 99.0
+      },
+      "feedback": 0.0,
+      "frequency": 7.199999809265137,
+      "outputLevel": 65.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 8.0,
+        "level3": 0.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 99.0,
+        "rate3": 99.0,
+        "rate4": 99.0
+      },
+      "feedback": 0.0,
+      "frequency": 11.300000190734863,
+      "outputLevel": 55.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 99.0,
+        "level2": 20.0,
+        "level3": 0.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 99.0,
+        "rate3": 99.0,
+        "rate4": 99.0
+      },
+      "feedback": 0.0,
+      "frequency": 1.0,
+      "outputLevel": 85.0
+    },
+    {
+      "detune": 0.0,
+      "eg": {
+        "level1": 60.0,
+        "level2": 5.0,
+        "level3": 0.0,
+        "level4": 0.0,
+        "rate1": 99.0,
+        "rate2": 99.0,
+        "rate3": 99.0,
+        "rate4": 99.0
+      },
+      "feedback": 7.0,
+      "frequency": 2.0999999046325684,
+      "outputLevel": 45.0
+    }
+  ]
+}
