@@ -3,23 +3,44 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
+/// System default-output audio probe. Captures `device + config` so the
+/// sample rate can be read up front and the same handles reused at stream
+/// construction — avoids querying the OS twice at startup.
+pub struct AudioProbe {
+    device: cpal::Device,
+    config: cpal::SupportedStreamConfig,
+}
+
+impl AudioProbe {
+    pub fn default_output() -> Self {
+        let host = cpal::default_host();
+        let device = host
+            .default_output_device()
+            .expect("No output device available");
+        let config = device
+            .default_output_config()
+            .expect("Failed to get default output config");
+        Self { device, config }
+    }
+
+    pub fn sample_rate(&self) -> f32 {
+        self.config.sample_rate() as f32
+    }
+}
+
 pub struct AudioEngine {
     _stream: cpal::Stream,
     _underrun_counter: Arc<AtomicUsize>,
 }
 
 impl AudioEngine {
-    pub fn new(engine: Arc<Mutex<SynthEngine>>, underrun_counter: Arc<AtomicUsize>) -> Self {
-        let host = cpal::default_host();
-        let device = host
-            .default_output_device()
-            .expect("No output device available");
-
-        let config = device
-            .default_output_config()
-            .expect("Failed to get default output config");
-
-        let sample_rate = config.sample_rate().0;
+    pub fn new(
+        probe: AudioProbe,
+        engine: Arc<Mutex<SynthEngine>>,
+        underrun_counter: Arc<AtomicUsize>,
+    ) -> Self {
+        let AudioProbe { device, config } = probe;
+        let sample_rate = config.sample_rate();
 
         let stream = match config.sample_format() {
             cpal::SampleFormat::F32 => {
@@ -45,20 +66,6 @@ impl AudioEngine {
             _stream: stream,
             _underrun_counter: underrun_counter,
         }
-    }
-
-    /// Get the default sample rate from the audio device
-    pub fn get_default_sample_rate() -> f32 {
-        let host = cpal::default_host();
-        let device = host
-            .default_output_device()
-            .expect("No output device available");
-
-        let config = device
-            .default_output_config()
-            .expect("Failed to get default output config");
-
-        config.sample_rate().0 as f32
     }
 
     fn build_stream<T>(
