@@ -1515,7 +1515,7 @@ impl Dx7App {
                     let is_carrier = alg_info.carriers.contains(&op_num);
                     let is_selected = self.selected_operator == i;
                     let is_enabled = enabled_states[i];
-                    let activity = self.snapshot.operators[i].current_level.clamp(0.0, 1.0);
+                    let activity = self.snapshot.operators[i].live_level.clamp(0.0, 1.0);
 
                     let (base_fill, stroke_color, text_color) = if !is_enabled {
                         (
@@ -1546,7 +1546,8 @@ impl Dx7App {
                     };
 
                     let fill_color = if is_enabled {
-                        brighten(base_fill, activity * 0.6)
+                        base_fill
+                            .lerp_to_gamma(egui::Color32::WHITE, activity * ACTIVITY_BRIGHTEN_MAX)
                     } else {
                         base_fill
                     };
@@ -2354,16 +2355,6 @@ impl Dx7App {
     }
 }
 
-/// Linear blend of `color` toward white by `amount` in 0..=1.
-/// `amount = 0` keeps the color unchanged; `amount = 1` returns white.
-fn brighten(color: egui::Color32, amount: f32) -> egui::Color32 {
-    let amount = amount.clamp(0.0, 1.0);
-    let r = color.r() as f32;
-    let g = color.g() as f32;
-    let b = color.b() as f32;
-    egui::Color32::from_rgb(
-        (r + (255.0 - r) * amount) as u8,
-        (g + (255.0 - g) * amount) as u8,
-        (b + (255.0 - b) * amount) as u8,
-    )
-}
+/// Max fraction of white blended into an active operator's fill (0..=1).
+/// Tunable: lower = subtler highlight, higher = whiter at full envelope.
+const ACTIVITY_BRIGHTEN_MAX: f32 = 0.6;

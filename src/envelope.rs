@@ -166,9 +166,7 @@ impl Envelope {
         self.stage != EnvelopeStage::Idle
     }
 
-    /// Current envelope output (level * velocity), in 0..=1.
-    /// Read-only — does not advance the envelope. Used by the GUI to
-    /// show live operator activity without touching the audio path.
+    /// Live envelope output: `level * velocity`, in 0..=1.
     pub fn current_output(&self) -> f32 {
         self.current_level * self.velocity
     }

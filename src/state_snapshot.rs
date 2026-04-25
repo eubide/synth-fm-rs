@@ -32,9 +32,8 @@ pub struct OperatorSnapshot {
     pub level2: f32,
     pub level3: f32,
     pub level4: f32,
-    /// Live envelope output (0..=1), aggregated as max across active voices.
-    /// Used by the GUI to highlight currently-sounding operators.
-    pub current_level: f32,
+    /// Live envelope output (0..=1), max across active voices.
+    pub live_level: f32,
 }
 
 impl Default for OperatorSnapshot {
@@ -64,7 +63,7 @@ impl Default for OperatorSnapshot {
             level2: 75.0,
             level3: 50.0,
             level4: 0.0,
-            current_level: 0.0,
+            live_level: 0.0,
         }
     }
 }
