@@ -138,36 +138,51 @@ implementan** mientras la política sea ceñirse al DX7/DX7S.
 
 ---
 
-## 4. MIDI
+## 4. MIDI ✅ *(todo DX7/DX7S + utilidades genéricas)*
 
-Toda esta sección es **DX7 / DX7S nativa** — los controladores y el formato SysEx
-son exactamente los del DX7 original. La infraestructura de routing por sensibilidad
-(0–7) ya está parcialmente lista en sección 1+2 (PMS, EG Bias, Pitch Bias del Mod
-Wheel) y se reusa para Foot/Breath/Aftertouch.
+Sección completada. Toda la familia de controladores externos del DX7S está
+cableada con la misma matriz de routing (PITCH / AMP / EG BIAS / PITCH BIAS),
+extendiendo la infraestructura iniciada en sección 1+2 con el Mod Wheel.
+SysEx recepción y envío usan el formato VCED (single voice) y VMEM (32-voice bulk).
 
-- [ ] *(DX7S)* **Aftertouch (0xD0)** — Canal de presión monofónico. Routing
-      configurable a: PITCH sensitivity (0–7), AMPLITUDE (0–7), EG BIAS (0–7),
-      PITCH BIAS (0–7). El `midi_handler.rs` no maneja el status byte 0xD0.
+- [x] *(DX7S)* **Aftertouch (0xD0)** — `SynthEngine::aftertouch` + 4 sensibilidades
+      0–7 (PITCH, AMP, EG BIAS, PITCH BIAS). `midi_handler.rs` enruta status 0xD0
+      → `SynthController::aftertouch(value)`. Las contribuciones se suman al
+      LFO pitch/amp y a `eg_bias_amount` / `pitch_bias_semitones` en `process()`.
 
-- [ ] *(DX7)* **Breath Controller (CC2)** — Function mode: BREATH CTRL PITCH,
-      AMPLITUDE, EG BIAS, PITCH BIAS (0–7 cada uno).
+- [x] *(DX7)* **Breath Controller (CC2)** — Mismo modelo, 4 sensibilidades. Cableado
+      por `midi_handler.rs` desde CC2.
 
-- [ ] *(DX7)* **Foot Controller** — DX7S: FOOT CTRL VOLUME (0–15), PITCH (0–7),
-      AMPLITUDE (0–7), EG BIAS (0–7).
+- [x] *(DX7S)* **Foot Controller (CC4)** — VOLUME (0–15) escala el output final
+      vía `foot_volume_factor`; PITCH/AMP/EG BIAS comparten la matriz común.
+      Cableado desde CC4.
 
-- [ ] *(genérico)* **Expression (CC11)** — Controlador estándar MIDI. No es del
-      DX7 original (es CC11) pero todos los teclados modernos lo envían.
+- [x] *(genérico)* **Expression (CC11)** — Atenuador 0..1 multiplicado al
+      `master_volume` final. Cableado desde CC11.
 
-- [ ] *(genérico)* **Bank Select (CC0 / CC32)** — MIDI estándar para acceder a
-      más de 128 presets. El DX7 original solo tenía Program Change.
+- [x] *(genérico)* **Bank Select (CC0 / CC32)** — `SynthEngine::bank_msb/lsb`
+      acumula MSB/LSB; el próximo `ProgramChange` calcula el índice absoluto
+      `(msb << 14 | lsb << 7 | program)` y carga el preset.
 
-- [ ] *(DX7)* **SysEx recepción** — Formato DX7 estándar: 32 voces = 4104 bytes
-      (F0 43 00 09 20 00 ... F7), voz única = 163 bytes.
+- [x] *(DX7)* **SysEx recepción** — Módulo `src/sysex.rs`. `parse_message()`
+      detecta VCED (155 bytes) o VMEM (4096 bytes packed), valida checksum y
+      construye `Dx7Preset`(s). Los `SynthCommand::LoadSysExSingleVoice` /
+      `LoadSysExBulk` aplican o sustituyen el banco.
 
-- [ ] *(DX7)* **SysEx envío** — Exportar voz activa en formato SysEx DX7.
+- [x] *(DX7)* **SysEx envío** — `Dx7Preset::from_snapshot()` reconstruye un
+      preset desde el `SynthSnapshot` activo y `sysex::encode_single_voice()`
+      lo emite en formato VCED de 163 bytes (con checksum válido). La GUI
+      expone el botón "Save current voice" en el panel MIDI.
 
-- [ ] *(DX7)* **MIDI channel configurable** — DX7S permite canal 1–16 u OMNI;
-      hoy aceptamos todo (OMNI implícito).
+- [x] *(DX7)* **MIDI channel configurable** — `MidiHandler::set_channel()`
+      con `Arc<AtomicU8>`. Sentinel 0xFF = OMNI; valores 0..15 filtran por
+      canal. El status byte 0xF0..0xFF (SysEx / system common) bypasea el
+      filtro. Selector OMNI / 1..16 en el panel MIDI.
+
+- [x] *(DX7+genérico)* **GUI MIDI panel** — `DisplayMode::Midi` añade un quinto
+      panel con: matriz de routings AT/Breath/Foot, indicador en vivo del valor
+      del controlador, selector de canal MIDI, botones de Load / Save SysEx
+      (single-voice o bulk según el archivo).
 
 ---
 

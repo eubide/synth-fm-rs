@@ -274,6 +274,30 @@ pub struct SynthEngine {
     pitch_mod_sensitivity: u8,
     eg_bias_sensitivity: u8,
     pitch_bias_sensitivity: u8,
+    // Aftertouch (channel pressure) state and routing
+    aftertouch: f32,
+    aftertouch_pitch_sens: u8,
+    aftertouch_amp_sens: u8,
+    aftertouch_eg_bias_sens: u8,
+    aftertouch_pitch_bias_sens: u8,
+    // Breath Controller (CC2) state and routing
+    breath: f32,
+    breath_pitch_sens: u8,
+    breath_amp_sens: u8,
+    breath_eg_bias_sens: u8,
+    breath_pitch_bias_sens: u8,
+    // Foot Controller (CC4) state and routing — VOLUME (0-15) + 3 destinations (0-7)
+    foot: f32,
+    foot_volume_sens: u8,
+    foot_pitch_sens: u8,
+    foot_amp_sens: u8,
+    foot_eg_bias_sens: u8,
+    /// MIDI Expression (CC11): generic 0..1 attenuator multiplied into the master output.
+    expression: f32,
+    /// MIDI Bank Select MSB (CC0) — top 7 bits of the bank index.
+    bank_msb: u8,
+    /// MIDI Bank Select LSB (CC32) — low 7 bits of the bank index.
+    bank_lsb: u8,
     sustain_pedal: bool,
     #[allow(dead_code)]
     sample_rate: f32,
@@ -314,6 +338,24 @@ impl SynthEngine {
             pitch_mod_sensitivity: 0,
             eg_bias_sensitivity: 0,
             pitch_bias_sensitivity: 0,
+            aftertouch: 0.0,
+            aftertouch_pitch_sens: 0,
+            aftertouch_amp_sens: 0,
+            aftertouch_eg_bias_sens: 0,
+            aftertouch_pitch_bias_sens: 0,
+            breath: 0.0,
+            breath_pitch_sens: 0,
+            breath_amp_sens: 0,
+            breath_eg_bias_sens: 0,
+            breath_pitch_bias_sens: 0,
+            foot: 0.0,
+            foot_volume_sens: 0,
+            foot_pitch_sens: 0,
+            foot_amp_sens: 0,
+            foot_eg_bias_sens: 0,
+            expression: 1.0,
+            bank_msb: 0,
+            bank_lsb: 0,
             sustain_pedal: false,
             sample_rate,
             presets: Vec::new(),
@@ -390,6 +432,66 @@ impl SynthEngine {
             SynthCommand::SetPitchBiasSensitivity(s) => {
                 self.pitch_bias_sensitivity = s.min(7);
             }
+            SynthCommand::SetAftertouchPitchSens(s) => {
+                self.aftertouch_pitch_sens = s.min(7);
+            }
+            SynthCommand::SetAftertouchAmpSens(s) => {
+                self.aftertouch_amp_sens = s.min(7);
+            }
+            SynthCommand::SetAftertouchEgBiasSens(s) => {
+                self.aftertouch_eg_bias_sens = s.min(7);
+            }
+            SynthCommand::SetAftertouchPitchBiasSens(s) => {
+                self.aftertouch_pitch_bias_sens = s.min(7);
+            }
+            SynthCommand::Aftertouch(value) => {
+                self.aftertouch = value.clamp(0.0, 1.0);
+            }
+            SynthCommand::SetBreathPitchSens(s) => {
+                self.breath_pitch_sens = s.min(7);
+            }
+            SynthCommand::SetBreathAmpSens(s) => {
+                self.breath_amp_sens = s.min(7);
+            }
+            SynthCommand::SetBreathEgBiasSens(s) => {
+                self.breath_eg_bias_sens = s.min(7);
+            }
+            SynthCommand::SetBreathPitchBiasSens(s) => {
+                self.breath_pitch_bias_sens = s.min(7);
+            }
+            SynthCommand::BreathController(value) => {
+                self.breath = value.clamp(0.0, 1.0);
+            }
+            SynthCommand::SetFootVolumeSens(s) => {
+                self.foot_volume_sens = s.min(15);
+            }
+            SynthCommand::SetFootPitchSens(s) => {
+                self.foot_pitch_sens = s.min(7);
+            }
+            SynthCommand::SetFootAmpSens(s) => {
+                self.foot_amp_sens = s.min(7);
+            }
+            SynthCommand::SetFootEgBiasSens(s) => {
+                self.foot_eg_bias_sens = s.min(7);
+            }
+            SynthCommand::FootController(value) => {
+                self.foot = value.clamp(0.0, 1.0);
+            }
+            SynthCommand::Expression(value) => {
+                self.expression = value.clamp(0.0, 1.0);
+            }
+            SynthCommand::SetBankSelectMsb(v) => {
+                self.bank_msb = v & 0x7F;
+            }
+            SynthCommand::SetBankSelectLsb(v) => {
+                self.bank_lsb = v & 0x7F;
+            }
+            SynthCommand::ProgramChange(program) => {
+                let absolute = ((self.bank_msb as usize) << 14)
+                    | ((self.bank_lsb as usize) << 7)
+                    | (program as usize & 0x7F);
+                self.load_preset(absolute);
+            }
             SynthCommand::PitchBend(value) => {
                 self.pitch_bend = value as f32 / 8192.0;
             }
@@ -428,6 +530,15 @@ impl SynthEngine {
             }
             SynthCommand::LoadPreset(preset_idx) => {
                 self.load_preset(preset_idx);
+            }
+            SynthCommand::LoadSysExSingleVoice(preset) => {
+                preset.apply_to_synth(self);
+            }
+            SynthCommand::LoadSysExBulk(presets) => {
+                if let Some(first) = presets.first().cloned() {
+                    first.apply_to_synth(self);
+                }
+                self.set_presets(presets);
             }
             SynthCommand::VoiceInitialize => {
                 self.voice_initialize();
@@ -769,23 +880,54 @@ impl SynthEngine {
         let mut output = 0.0;
         let mut active_voice_count = 0;
 
-        let (lfo_pitch_mod_raw, lfo_amp_mod) = self.lfo.process(self.mod_wheel);
+        let (lfo_pitch_mod_raw, lfo_amp_mod_raw) = self.lfo.process(self.mod_wheel);
 
         // PMS table (DX7 ROM): 0..7 → fractional pitch depth multiplier.
         // PMS=0: no LFO pitch effect; PMS=7: maximum (~1 semitone of swing).
         const PMS_TABLE: [f32; 8] = [0.0, 0.082, 0.16, 0.32, 0.5, 0.79, 1.26, 2.0];
         let pms_scale = PMS_TABLE[self.pitch_mod_sensitivity.min(7) as usize];
-        let lfo_pitch_mod = lfo_pitch_mod_raw * pms_scale;
+
+        // Each external controller (Aftertouch / Breath / Foot) routes to four
+        // destinations. PITCH and AMP further scale the LFO pitch/amp depth on
+        // top of the patch's PMS/AMS settings; EG_BIAS and PITCH_BIAS are static
+        // mod-wheel-style offsets summed with the existing routings.
+        let at_pitch_route = self.aftertouch * (self.aftertouch_pitch_sens as f32 / 7.0);
+        let at_amp_route = self.aftertouch * (self.aftertouch_amp_sens as f32 / 7.0);
+        let at_eg_bias = self.aftertouch * (self.aftertouch_eg_bias_sens as f32 / 7.0);
+        let at_pitch_bias = self.aftertouch * (self.aftertouch_pitch_bias_sens as f32 / 7.0);
+
+        let br_pitch_route = self.breath * (self.breath_pitch_sens as f32 / 7.0);
+        let br_amp_route = self.breath * (self.breath_amp_sens as f32 / 7.0);
+        let br_eg_bias = self.breath * (self.breath_eg_bias_sens as f32 / 7.0);
+        let br_pitch_bias = self.breath * (self.breath_pitch_bias_sens as f32 / 7.0);
+
+        // Foot Controller: VOLUME scales the final output (0-15 sensitivity).
+        // PITCH/AMP/EG_BIAS share the same routing model as the other controllers.
+        let ft_pitch_route = self.foot * (self.foot_pitch_sens as f32 / 7.0);
+        let ft_amp_route = self.foot * (self.foot_amp_sens as f32 / 7.0);
+        let ft_eg_bias = self.foot * (self.foot_eg_bias_sens as f32 / 7.0);
+
+        // Final LFO modulation: PMS-base from patch + dynamic boost from controllers.
+        let pitch_route_total = at_pitch_route + br_pitch_route + ft_pitch_route;
+        let amp_route_total = at_amp_route + br_amp_route + ft_amp_route;
+        let lfo_pitch_mod = lfo_pitch_mod_raw * (pms_scale + pitch_route_total);
+        let lfo_amp_mod = lfo_amp_mod_raw + lfo_amp_mod_raw * amp_route_total;
 
         let pitch_eg_semitones = self.pitch_eg.process();
 
         // EG Bias: static controller-driven offset (mod wheel × sensitivity).
         // 0..1 amount; the per-operator AMS gates how strongly each op responds.
-        let eg_bias_amount =
-            self.mod_wheel * (self.eg_bias_sensitivity as f32 / 7.0);
+        let eg_bias_amount = self.mod_wheel * (self.eg_bias_sensitivity as f32 / 7.0)
+            + at_eg_bias
+            + br_eg_bias
+            + ft_eg_bias;
         // Pitch Bias: same idea but applied to the pitch — up to ±2 semitones at max.
-        let pitch_bias_semitones =
-            self.mod_wheel * (self.pitch_bias_sensitivity as f32 / 7.0) * 2.0;
+        // Foot has no pitch-bias destination on the DX7S.
+        let pitch_bias_semitones = (self.mod_wheel
+            * (self.pitch_bias_sensitivity as f32 / 7.0)
+            + at_pitch_bias
+            + br_pitch_bias)
+            * 2.0;
 
         for voice in &mut self.voices {
             if voice.active {
@@ -812,7 +954,19 @@ impl SynthEngine {
             1.0
         };
 
-        let scaled_output = output * voice_scaling * self.master_volume;
+        // Foot Controller VOLUME (DX7S): when sensitivity > 0, the foot pedal acts
+        // as a volume swell. Sens=0 leaves the master untouched; sens=15 makes
+        // foot=0 silence the synth entirely. Linear interpolation between 1.0 and
+        // the foot value, weighted by sensitivity / 15.
+        let foot_volume_factor = if self.foot_volume_sens > 0 {
+            let weight = self.foot_volume_sens as f32 / 15.0;
+            1.0 - weight + weight * self.foot
+        } else {
+            1.0
+        };
+
+        let scaled_output =
+            output * voice_scaling * self.master_volume * foot_volume_factor * self.expression;
         self.soft_limit(scaled_output)
     }
 
@@ -850,6 +1004,22 @@ impl SynthEngine {
             pitch_bend: self.pitch_bend,
             mod_wheel: self.mod_wheel,
             sustain_pedal: self.sustain_pedal,
+            aftertouch: self.aftertouch,
+            breath: self.breath,
+            foot: self.foot,
+            expression: self.expression,
+            aftertouch_pitch_sens: self.aftertouch_pitch_sens,
+            aftertouch_amp_sens: self.aftertouch_amp_sens,
+            aftertouch_eg_bias_sens: self.aftertouch_eg_bias_sens,
+            aftertouch_pitch_bias_sens: self.aftertouch_pitch_bias_sens,
+            breath_pitch_sens: self.breath_pitch_sens,
+            breath_amp_sens: self.breath_amp_sens,
+            breath_eg_bias_sens: self.breath_eg_bias_sens,
+            breath_pitch_bias_sens: self.breath_pitch_bias_sens,
+            foot_volume_sens: self.foot_volume_sens,
+            foot_pitch_sens: self.foot_pitch_sens,
+            foot_amp_sens: self.foot_amp_sens,
+            foot_eg_bias_sens: self.foot_eg_bias_sens,
             lfo_rate: self.lfo.rate,
             lfo_delay: self.lfo.delay,
             lfo_pitch_depth: self.lfo.pitch_depth,
@@ -1169,6 +1339,82 @@ impl SynthController {
         self.send(SynthCommand::SetPitchBiasSensitivity(sens));
     }
 
+    pub fn aftertouch(&mut self, value: f32) {
+        self.send(SynthCommand::Aftertouch(value));
+    }
+
+    pub fn set_aftertouch_pitch_sens(&mut self, sens: u8) {
+        self.send(SynthCommand::SetAftertouchPitchSens(sens));
+    }
+
+    pub fn set_aftertouch_amp_sens(&mut self, sens: u8) {
+        self.send(SynthCommand::SetAftertouchAmpSens(sens));
+    }
+
+    pub fn set_aftertouch_eg_bias_sens(&mut self, sens: u8) {
+        self.send(SynthCommand::SetAftertouchEgBiasSens(sens));
+    }
+
+    pub fn set_aftertouch_pitch_bias_sens(&mut self, sens: u8) {
+        self.send(SynthCommand::SetAftertouchPitchBiasSens(sens));
+    }
+
+    pub fn breath_controller(&mut self, value: f32) {
+        self.send(SynthCommand::BreathController(value));
+    }
+
+    pub fn set_breath_pitch_sens(&mut self, sens: u8) {
+        self.send(SynthCommand::SetBreathPitchSens(sens));
+    }
+
+    pub fn set_breath_amp_sens(&mut self, sens: u8) {
+        self.send(SynthCommand::SetBreathAmpSens(sens));
+    }
+
+    pub fn set_breath_eg_bias_sens(&mut self, sens: u8) {
+        self.send(SynthCommand::SetBreathEgBiasSens(sens));
+    }
+
+    pub fn set_breath_pitch_bias_sens(&mut self, sens: u8) {
+        self.send(SynthCommand::SetBreathPitchBiasSens(sens));
+    }
+
+    pub fn foot_controller(&mut self, value: f32) {
+        self.send(SynthCommand::FootController(value));
+    }
+
+    pub fn set_foot_volume_sens(&mut self, sens: u8) {
+        self.send(SynthCommand::SetFootVolumeSens(sens));
+    }
+
+    pub fn set_foot_pitch_sens(&mut self, sens: u8) {
+        self.send(SynthCommand::SetFootPitchSens(sens));
+    }
+
+    pub fn set_foot_amp_sens(&mut self, sens: u8) {
+        self.send(SynthCommand::SetFootAmpSens(sens));
+    }
+
+    pub fn set_foot_eg_bias_sens(&mut self, sens: u8) {
+        self.send(SynthCommand::SetFootEgBiasSens(sens));
+    }
+
+    pub fn expression(&mut self, value: f32) {
+        self.send(SynthCommand::Expression(value));
+    }
+
+    pub fn set_bank_msb(&mut self, value: u8) {
+        self.send(SynthCommand::SetBankSelectMsb(value));
+    }
+
+    pub fn set_bank_lsb(&mut self, value: u8) {
+        self.send(SynthCommand::SetBankSelectLsb(value));
+    }
+
+    pub fn program_change(&mut self, program: u8) {
+        self.send(SynthCommand::ProgramChange(program));
+    }
+
     #[allow(dead_code)]
     pub fn set_pitch_eg_param(&mut self, param: PitchEgParam, value: f32) {
         self.send(SynthCommand::SetPitchEgParam { param, value });
@@ -1234,9 +1480,21 @@ impl SynthController {
         self.send(SynthCommand::Panic);
     }
 
-    /// Load a preset by index (for MIDI program change 0xC0)
+    /// Load a preset by index (for MIDI program change 0xC0).
+    /// MIDI now goes through `program_change`; this remains for the GUI / direct callers.
+    #[allow(dead_code)]
     pub fn load_preset(&mut self, index: usize) {
         self.send(SynthCommand::LoadPreset(index));
+    }
+
+    /// Apply a SysEx-parsed single voice as the live edit buffer.
+    pub fn load_sysex_single_voice(&mut self, preset: Dx7Preset) {
+        self.send(SynthCommand::LoadSysExSingleVoice(Box::new(preset)));
+    }
+
+    /// Replace the entire bank with the given list of presets.
+    pub fn load_sysex_bulk(&mut self, presets: Vec<Dx7Preset>) {
+        self.send(SynthCommand::LoadSysExBulk(presets));
     }
 }
 

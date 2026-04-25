@@ -21,6 +21,7 @@ mod pitch_eg;
 mod preset_loader;
 mod presets;
 mod state_snapshot;
+mod sysex;
 
 use audio_engine::AudioEngine;
 use fm_synth::{create_synth, SynthController};

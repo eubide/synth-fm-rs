@@ -1,6 +1,7 @@
 use crate::fm_synth::SynthEngine;
 use crate::lfo::LFOWaveform;
 use crate::operator::KeyScaleCurve;
+use crate::state_snapshot::SynthSnapshot;
 
 /// Per-operator parameters captured from a DX7 voice.
 #[derive(Clone, Debug)]
@@ -131,6 +132,71 @@ pub struct Dx7Preset {
 }
 
 impl Dx7Preset {
+    /// Build a preset from a live state snapshot. Used to export the current
+    /// edit buffer (e.g. as a DX7 SysEx single-voice dump).
+    pub fn from_snapshot(snapshot: &SynthSnapshot) -> Self {
+        let operators: [PresetOperator; 6] = std::array::from_fn(|i| {
+            let op = &snapshot.operators[i];
+            PresetOperator {
+                frequency_ratio: op.frequency_ratio,
+                output_level: op.output_level,
+                detune: op.detune,
+                feedback: op.feedback,
+                velocity_sensitivity: op.velocity_sensitivity,
+                key_scale_rate: op.key_scale_rate,
+                key_scale_breakpoint: op.key_scale_breakpoint,
+                key_scale_left_curve: op.key_scale_left_curve,
+                key_scale_right_curve: op.key_scale_right_curve,
+                key_scale_left_depth: op.key_scale_left_depth,
+                key_scale_right_depth: op.key_scale_right_depth,
+                am_sensitivity: op.am_sensitivity,
+                oscillator_key_sync: op.oscillator_key_sync,
+                fixed_frequency: op.fixed_frequency,
+                fixed_freq_hz: op.fixed_freq_hz,
+                envelope: (
+                    op.rate1, op.rate2, op.rate3, op.rate4, op.level1, op.level2, op.level3,
+                    op.level4,
+                ),
+            }
+        });
+
+        let pitch_eg = PresetPitchEg {
+            rate1: snapshot.pitch_eg.rate1,
+            rate2: snapshot.pitch_eg.rate2,
+            rate3: snapshot.pitch_eg.rate3,
+            rate4: snapshot.pitch_eg.rate4,
+            level1: snapshot.pitch_eg.level1,
+            level2: snapshot.pitch_eg.level2,
+            level3: snapshot.pitch_eg.level3,
+            level4: snapshot.pitch_eg.level4,
+        };
+
+        let lfo = PresetLfo {
+            waveform: snapshot.lfo_waveform,
+            rate: snapshot.lfo_rate,
+            delay: snapshot.lfo_delay,
+            pitch_mod_depth: snapshot.lfo_pitch_depth,
+            amp_mod_depth: snapshot.lfo_amp_depth,
+            key_sync: snapshot.lfo_key_sync,
+        };
+
+        Self {
+            name: snapshot.preset_name.clone(),
+            collection: "current".to_string(),
+            algorithm: snapshot.algorithm,
+            operators,
+            master_tune: Some(snapshot.master_tune),
+            pitch_bend_range: Some(snapshot.pitch_bend_range),
+            portamento_enable: Some(snapshot.portamento_enable),
+            portamento_time: Some(snapshot.portamento_time),
+            mono_mode: None,
+            transpose_semitones: snapshot.transpose_semitones,
+            pitch_mod_sensitivity: snapshot.pitch_mod_sensitivity,
+            pitch_eg: Some(pitch_eg),
+            lfo: Some(lfo),
+        }
+    }
+
     /// Apply this preset to the synth: algorithm, name, per-operator parameters,
     /// optional global parameters, pitch EG, and LFO. Voice mode and portamento
     /// stay as the synth had them unless explicitly set.
