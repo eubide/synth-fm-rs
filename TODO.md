@@ -147,22 +147,44 @@ calidad. Estado actual del soporte:
 
 | Campo JSON | Estado | Nota |
 |---|---|---|
-| algorithm, feedback | OK | |
-| lfo (wave/speed/delay/depths/sync) | OK | |
-| operators[].eg, outputLevel, detune | OK | |
-| operators[].keyVelocitySensitivity, keyboardRateScaling | OK | |
-| operators[].frequency (coarse) | **ROTO** | 0 carga como 0.0 → silencio; debe ser 0.5 |
+| name, algorithm, feedback | OK | |
+| operators[].eg, outputLevel, detune, frequency | OK | frequency=0 → 0.5 corregido |
+| lfo (wave/speed/delay/depths/sync) | **ignorado** | `JsonPatch` no tiene campo `lfo`; todos los parches tienen datos LFO |
+| operators[].keyVelocitySensitivity | **ignorado** | `JsonOperator` no lo deserializa; todos los valores 0–7 presentes en mark/ |
+| operators[].keyboardRateScaling | **ignorado** | `JsonOperator` no lo deserializa; valores 0–7 en uso en mark/ |
+| operators[].keyboardLevelScaling (curvas/profundidades) | **ignorado** | varios parches tienen leftDepth/rightDepth > 0 y curvas -EXP/+LIN |
 | transpose | ignorado | celo, strg-ens-2 suenan una octava alta |
 | pitchEG | ignorado | brasshorns, brtrumpet sin glide inicial |
-| operators[].amSensitivity | ignorado | sax-2, my-bells sin tremolo correcto |
-| keyboardLevelScaling curves/depths | ignorado | piano-3, brtrumpet desbalanceados por octava |
 | lfo.pitchModSensitivity (PMS) | ignorado | vibrato de mod wheel incorrecto |
-| operators[].oscillatorMode "fixed" | ignorado | se carga en ratio mode |
+| operators[].amSensitivity | ignorado | sax-2, my-bells sin tremolo correcto |
+| operators[].oscillatorMode "fixed" | ignorado | ningún parche de mark/ lo usa → no urgente |
 
-- [ ] **Deserialización JSON** — Struct `JsonVoice` con serde. `amDepth` es string o
-      int según el patch → requiere `#[serde(deserialize_with)]` custom. Convertir
-      `transpose: "C3"` a semitono offset. Corregir `frequency=0 → 0.5`.
-      Loggear con `warn!()` los campos ignorados sin romper la carga.
+- [ ] **JSON loader: keyVelocitySensitivity por operador** — `JsonOperator` no
+      deserializa `keyVelocitySensitivity`. Añadir el campo (0–7) y propagarlo al
+      `Operator` al construir el preset. El motor de síntesis ya lo soporta
+      (`operator.rs`). Valores no triviales en presets como epiano-1, sax-2,
+      brtrumpet (impacto alto en expresividad).
+
+- [ ] **JSON loader: keyboardRateScaling por operador** — `JsonOperator` no
+      deserializa `keyboardRateScaling` (0–7). El motor ya tiene soporte parcial
+      de key scale rate (`envelope.rs`). Mapear el valor al preset al cargarlo.
+
+- [ ] **JSON loader: cargar LFO desde patch** — `JsonPatch` no tiene struct `lfo`.
+      Añadir `JsonLfo { wave, speed, delay, pitch_mod_depth, am_depth, sync,
+      pitch_mod_sensitivity }` y mapear a los campos del sintetizador. `amDepth`
+      es string o int según el patch → requiere `#[serde(deserialize_with)]` custom.
+      Afecta a todos los 25 parches de mark/ (todos tienen sección `lfo`).
+
+- [ ] **JSON loader: amSensitivity por operador** — `JsonOperator` no deserializa
+      `amSensitivity` (0–3). Depende de que el LFO esté cargado (item anterior).
+      Valores no triviales en sax-2 y my-bells de mark/.
+
+- [ ] **JSON loader: keyboardLevelScaling con curvas** — El campo actual solo
+      usa un float lineal. El formato DX7 define breakpoint (nota) + leftCurve /
+      rightCurve (−LIN, −EXP, +EXP, +LIN) + leftDepth / rightDepth (0–99).
+      Varios parches de mark/ tienen profundidades no triviales (hasta 99) y curvas
+      −EXP/+LIN que dan el balance correcto por registro de teclado (piano-3,
+      brtrumpet, epiano-1).
 
 - [ ] **Cargar archivo JSON individual** — Botón "Load JSON" en GUI o argumento CLI.
 
