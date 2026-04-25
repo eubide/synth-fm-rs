@@ -1,8 +1,10 @@
 use crate::lfo::LFOWaveform;
 use crate::lock_free::TripleBuffer;
+use crate::operator::KeyScaleCurve;
 use std::sync::Arc;
 
 /// Snapshot of a single operator's state for GUI display.
+#[allow(dead_code)] // some fields are populated for future panels not yet wired up
 #[derive(Debug, Clone, Copy)]
 pub struct OperatorSnapshot {
     pub enabled: bool,
@@ -11,8 +13,16 @@ pub struct OperatorSnapshot {
     pub detune: f32,
     pub feedback: f32,
     pub velocity_sensitivity: f32,
-    pub key_scale_level: f32,
     pub key_scale_rate: f32,
+    pub key_scale_breakpoint: u8,
+    pub key_scale_left_curve: KeyScaleCurve,
+    pub key_scale_right_curve: KeyScaleCurve,
+    pub key_scale_left_depth: f32,
+    pub key_scale_right_depth: f32,
+    pub am_sensitivity: u8,
+    pub oscillator_key_sync: bool,
+    pub fixed_frequency: bool,
+    pub fixed_freq_hz: f32,
     // Envelope parameters
     pub rate1: f32,
     pub rate2: f32,
@@ -33,8 +43,16 @@ impl Default for OperatorSnapshot {
             detune: 0.0,
             feedback: 0.0,
             velocity_sensitivity: 0.0,
-            key_scale_level: 0.0,
             key_scale_rate: 0.0,
+            key_scale_breakpoint: 60,
+            key_scale_left_curve: KeyScaleCurve::default(),
+            key_scale_right_curve: KeyScaleCurve::default(),
+            key_scale_left_depth: 0.0,
+            key_scale_right_depth: 0.0,
+            am_sensitivity: 0,
+            oscillator_key_sync: true,
+            fixed_frequency: false,
+            fixed_freq_hz: 440.0,
             rate1: 99.0,
             rate2: 50.0,
             rate3: 35.0,
@@ -113,6 +131,48 @@ impl Default for ReverbSnapshot {
     }
 }
 
+/// DX7 voice mode: poly, mono with full portamento, or mono with legato
+/// portamento (only when previous note still held).
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum VoiceMode {
+    #[default]
+    Poly,
+    Mono,
+    MonoLegato,
+}
+
+/// Pitch envelope state mirrored to GUI for display.
+#[allow(dead_code)] // exposed via JSON loader / future PEG panel
+#[derive(Debug, Clone, Copy)]
+pub struct PitchEgSnapshot {
+    pub enabled: bool,
+    pub rate1: f32,
+    pub rate2: f32,
+    pub rate3: f32,
+    pub rate4: f32,
+    pub level1: f32,
+    pub level2: f32,
+    pub level3: f32,
+    pub level4: f32,
+}
+
+impl Default for PitchEgSnapshot {
+    fn default() -> Self {
+        // DX7 pitch EG defaults: all rates 99 (instant), all levels 50 (= no offset).
+        Self {
+            enabled: false,
+            rate1: 99.0,
+            rate2: 99.0,
+            rate3: 99.0,
+            rate4: 99.0,
+            level1: 50.0,
+            level2: 50.0,
+            level3: 50.0,
+            level4: 50.0,
+        }
+    }
+}
+
 /// Read-only snapshot of synthesizer state for GUI display.
 /// Updated by audio thread, read by GUI thread without blocking.
 #[allow(dead_code)]
@@ -126,10 +186,13 @@ pub struct SynthSnapshot {
     // Global parameters
     pub master_volume: f32,
     pub master_tune: f32,
-    pub mono_mode: bool,
+    pub voice_mode: VoiceMode,
     pub portamento_enable: bool,
     pub portamento_time: f32,
+    pub portamento_glissando: bool, // portamento step ON/OFF
     pub pitch_bend_range: f32,
+    pub transpose_semitones: i8,    // -24..+24 semitones, 0 means C3 (DX7 reference)
+    pub pitch_mod_sensitivity: u8,  // 0-7 PMS (LFO pitch depth scaler)
 
     // Real-time controllers
     pub pitch_bend: f32,
@@ -145,6 +208,9 @@ pub struct SynthSnapshot {
     pub lfo_key_sync: bool,
     pub lfo_frequency_hz: f32,
     pub lfo_delay_seconds: f32,
+
+    // Pitch EG state
+    pub pitch_eg: PitchEgSnapshot,
 
     // Effects state (detailed for effects panel)
     pub chorus: ChorusSnapshot,
@@ -164,10 +230,13 @@ impl Default for SynthSnapshot {
 
             master_volume: 0.7,
             master_tune: 0.0,
-            mono_mode: false,
+            voice_mode: VoiceMode::Poly,
             portamento_enable: false,
             portamento_time: 50.0,
+            portamento_glissando: false,
             pitch_bend_range: 2.0,
+            transpose_semitones: 0,
+            pitch_mod_sensitivity: 0,
 
             pitch_bend: 0.0,
             mod_wheel: 0.0,
@@ -181,6 +250,8 @@ impl Default for SynthSnapshot {
             lfo_key_sync: false,
             lfo_frequency_hz: 0.0,
             lfo_delay_seconds: 0.0,
+
+            pitch_eg: PitchEgSnapshot::default(),
 
             chorus: ChorusSnapshot::default(),
             delay: DelaySnapshot::default(),
@@ -244,7 +315,7 @@ mod tests {
         let snapshot = SynthSnapshot::default();
         assert_eq!(snapshot.algorithm, 1);
         assert_eq!(snapshot.preset_name, "Init Voice");
-        assert!(!snapshot.mono_mode);
+        assert_eq!(snapshot.voice_mode, VoiceMode::Poly);
     }
 
     #[test]
@@ -256,10 +327,12 @@ mod tests {
         assert_eq!(snapshot.algorithm, 1);
 
         // Update state
-        let mut new_snapshot = SynthSnapshot::default();
-        new_snapshot.algorithm = 5;
-        new_snapshot.preset_name = "E.PIANO 1".to_string();
-        new_snapshot.active_voices = 3;
+        let new_snapshot = SynthSnapshot {
+            algorithm: 5,
+            preset_name: "E.PIANO 1".to_string(),
+            active_voices: 3,
+            ..SynthSnapshot::default()
+        };
         sender.send(new_snapshot);
 
         // Read updated state
@@ -281,8 +354,10 @@ mod tests {
         let s = sender.clone();
         let writer = thread::spawn(move || {
             for i in 0..1000 {
-                let mut snapshot = SynthSnapshot::default();
-                snapshot.active_voices = (i % 16) as u8;
+                let snapshot = SynthSnapshot {
+                    active_voices: (i % 16) as u8,
+                    ..SynthSnapshot::default()
+                };
                 s.send(snapshot);
             }
         });

@@ -5,6 +5,7 @@ use rtrb::{Consumer, Producer, RingBuffer};
 const COMMAND_BUFFER_SIZE: usize = 1024;
 
 /// Parameters that can be set on an operator
+#[allow(dead_code)] // some variants are surfaced via JSON loader / future GUI panels
 #[derive(Debug, Clone, Copy)]
 pub enum OperatorParam {
     Ratio,
@@ -12,14 +13,37 @@ pub enum OperatorParam {
     Detune,
     Feedback,
     VelocitySensitivity,
-    KeyScaleLevel,
     KeyScaleRate,
+    KeyScaleBreakpoint,
+    KeyScaleLeftDepth,
+    KeyScaleRightDepth,
+    KeyScaleLeftCurve, // payload: encoded KeyScaleCurve (0..3)
+    KeyScaleRightCurve,
+    AmSensitivity,    // 0-3
+    OscillatorKeySync,
+    FixedFrequency,    // bool: 0 = ratio, 1 = fixed
+    FixedFreqHz,
     Enabled,
 }
 
 /// Parameters that can be set on an envelope
 #[derive(Debug, Clone, Copy)]
 pub enum EnvelopeParam {
+    Rate1,
+    Rate2,
+    Rate3,
+    Rate4,
+    Level1,
+    Level2,
+    Level3,
+    Level4,
+}
+
+/// Parameters that can be set on the pitch envelope.
+#[allow(dead_code)] // exposed via JSON loader; full GUI panel pending
+#[derive(Debug, Clone, Copy)]
+pub enum PitchEgParam {
+    Enabled,
     Rate1,
     Rate2,
     Rate3,
@@ -73,6 +97,7 @@ pub enum EffectParam {
 }
 
 /// Commands sent from GUI/MIDI thread to audio thread
+#[allow(dead_code)] // some variants are issued only by JSON preset loading / MIDI / future panels
 #[derive(Debug, Clone)]
 pub enum SynthCommand {
     // Note events
@@ -88,10 +113,14 @@ pub enum SynthCommand {
     SetAlgorithm(u8),
     SetMasterVolume(f32),
     SetMasterTune(f32),
-    SetMonoMode(bool),
+    /// 0 = Poly, 1 = Mono (full portamento), 2 = Mono Legato (portamento only when previous note still held).
+    SetVoiceMode(u8),
     SetPitchBendRange(f32),
     SetPortamentoEnable(bool),
     SetPortamentoTime(f32),
+    SetPortamentoGlissando(bool), // step (semitone) glide instead of continuous
+    SetTranspose(i8),              // -24..+24 semitones around C3
+    SetPitchModSensitivity(u8),    // 0-7 PMS for the LFO pitch depth
 
     // Real-time controllers
     PitchBend(i16),
@@ -109,6 +138,12 @@ pub enum SynthCommand {
     SetEnvelopeParam {
         operator: u8,
         param: EnvelopeParam,
+        value: f32,
+    },
+
+    // Pitch EG parameters
+    SetPitchEgParam {
+        param: PitchEgParam,
         value: f32,
     },
 

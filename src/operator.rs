@@ -2,6 +2,40 @@ use crate::envelope::Envelope;
 use crate::optimization::OPTIMIZATION_TABLES;
 use std::f32::consts::PI;
 
+/// DX7 keyboard level scaling curve type. Applied independently to the
+/// left and right of the breakpoint note.
+///
+/// - `NegLin` / `PosLin`: linear ramp downward / upward from the breakpoint.
+/// - `NegExp` / `PosExp`: exponential ramp (faster taper near the edges).
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum KeyScaleCurve {
+    #[default]
+    NegLin,
+    NegExp,
+    PosExp,
+    PosLin,
+}
+
+impl KeyScaleCurve {
+    pub fn from_dx7_code(code: u8) -> Self {
+        match code {
+            0 => KeyScaleCurve::NegLin,
+            1 => KeyScaleCurve::NegExp,
+            2 => KeyScaleCurve::PosExp,
+            _ => KeyScaleCurve::PosLin,
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "-lin" | "neglin" | "lindown" => KeyScaleCurve::NegLin,
+            "-exp" | "negexp" | "expdown" => KeyScaleCurve::NegExp,
+            "+exp" | "posexp" | "expup" => KeyScaleCurve::PosExp,
+            _ => KeyScaleCurve::PosLin,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct CachedValues {
     level_amplitude: f32,
@@ -30,11 +64,18 @@ pub struct Operator {
     pub detune: f32,
     pub output_level: f32,
     pub velocity_sensitivity: f32, // 0-7, how much velocity affects output
-    pub key_scale_level: f32,      // 0-99, level scaling across keyboard
     pub key_scale_rate: f32,       // 0-7, envelope rate scaling
-    pub key_scale_breakpoint: u8,  // Note number for scaling center (C3 = 60)
+    pub key_scale_breakpoint: u8,  // MIDI note that splits left/right scaling (DX7 default A-1 = 21, our default C3 = 60)
+    pub key_scale_left_curve: KeyScaleCurve,
+    pub key_scale_right_curve: KeyScaleCurve,
+    pub key_scale_left_depth: f32, // 0-99
+    pub key_scale_right_depth: f32, // 0-99
     pub envelope: Envelope,
     pub feedback: f32,
+    pub am_sensitivity: u8,    // 0-3 LFO amp modulation depth scaling per operator
+    pub oscillator_key_sync: bool, // OSC KEY SYNC: ON resets phase on note-on; OFF lets phase free-run
+    pub fixed_frequency: bool, // OSC MODE: false = RATIO (default), true = FIXED Hz
+    pub fixed_freq_hz: f32,    // Absolute frequency in Hz when fixed_frequency = true
 
     // Internal state
     phase: f32,
@@ -45,6 +86,7 @@ pub struct Operator {
     base_frequency: f32,         // Store base frequency for real-time updates
     current_velocity: f32,       // Store velocity for real-time updates
     current_note: u8,            // Store MIDI note for key scaling
+    current_lfo_amp_mod: f32,    // Latest LFO amp modulation value (-1..+1) staged by Voice
     cached_values: CachedValues, // Cached calculations for performance
 }
 
@@ -56,11 +98,18 @@ impl Operator {
             detune: 0.0,
             output_level: 99.0,
             velocity_sensitivity: 0.0,
-            key_scale_level: 0.0,
             key_scale_rate: 0.0,
             key_scale_breakpoint: 60, // C3
+            key_scale_left_curve: KeyScaleCurve::default(),
+            key_scale_right_curve: KeyScaleCurve::default(),
+            key_scale_left_depth: 0.0,
+            key_scale_right_depth: 0.0,
             envelope: Envelope::new(sample_rate),
             feedback: 0.0,
+            am_sensitivity: 0,
+            oscillator_key_sync: true,
+            fixed_frequency: false,
+            fixed_freq_hz: 440.0,
 
             phase: 0.0,
             phase_increment: 0.0,
@@ -70,8 +119,16 @@ impl Operator {
             base_frequency: 440.0,
             current_velocity: 1.0,
             current_note: 60,
+            current_lfo_amp_mod: 0.0,
             cached_values: CachedValues::new(),
         }
+    }
+
+    /// Stage the latest LFO amplitude modulation sample (already scaled by mod-wheel
+    /// and depth). The Voice calls this before `process()` each sample so the operator
+    /// can apply its own `am_sensitivity` (0-3) to scale the impact.
+    pub fn set_lfo_amp_mod(&mut self, value: f32) {
+        self.current_lfo_amp_mod = value;
     }
 
     pub fn trigger(&mut self, frequency: f32, velocity: f32, note: u8) {
@@ -85,7 +142,11 @@ impl Operator {
         self.envelope
             .trigger_with_key_scale(velocity, key_scale_factor);
 
-        self.phase = 0.0;
+        // OSC KEY SYNC: when ON the phase resets so every note starts identically;
+        // when OFF the oscillator free-runs to mimic the analog/DX1 behaviour.
+        if self.oscillator_key_sync {
+            self.phase = 0.0;
+        }
         self.last_output = 0.0;
         self.prev_output = 0.0;
         self.cached_values.params_dirty = true;
@@ -111,22 +172,17 @@ impl Operator {
         self.cached_values.velocity_factor =
             (1.0 - vel_sens_factor) + (vel_sens_factor * velocity_curve);
 
-        // Cache key scaling factors
+        // Cache key level scaling: independent left/right curves with DX7-style depth.
+        self.cached_values.key_scale_level_factor = self.calculate_key_level_factor();
+
+        // Rate key scaling factor (1.0 means no change). Used by the envelope side via
+        // `calculate_key_scale_factor()` which calls into similar logic; this cached
+        // value is currently unused at the operator level but kept for future hooks.
         let key_distance = self.current_note as f32 - self.key_scale_breakpoint as f32;
-        let key_scale_normalized = key_distance / 24.0; // ±24 semitones range
-
-        // Level key scaling
-        self.cached_values.key_scale_level_factor = if self.key_scale_level > 0.0 {
-            let level_scale_amount = self.key_scale_level / 99.0;
-            1.0 + (key_scale_normalized * level_scale_amount).clamp(-0.5, 0.5)
-        } else {
-            1.0
-        };
-
-        // Rate key scaling
         self.cached_values.key_scale_rate_factor = if self.key_scale_rate > 0.0 {
+            let normalized = key_distance / 24.0;
             let rate_scale_amount = self.key_scale_rate / 7.0;
-            1.0 + (key_scale_normalized * rate_scale_amount).clamp(-0.75, 0.75)
+            1.0 + (normalized * rate_scale_amount).clamp(-0.75, 0.75)
         } else {
             1.0
         };
@@ -134,12 +190,56 @@ impl Operator {
         self.cached_values.params_dirty = false;
     }
 
+    /// DX7 keyboard level scaling: amplitude is multiplied by a factor derived from
+    /// the distance between the played note and the breakpoint, the curve type
+    /// (linear vs exponential, positive vs negative), and a 0-99 depth.
+    ///
+    /// We model the DX7 behaviour where the breakpoint defines a hinge: notes below
+    /// use `left_curve`/`left_depth`, notes above use `right_curve`/`right_depth`.
+    /// A factor of 1.0 means no scaling; values below 1.0 attenuate; values above 1.0
+    /// would boost (clamped to a moderate range to avoid runaway gain).
+    fn calculate_key_level_factor(&self) -> f32 {
+        let distance = self.current_note as f32 - self.key_scale_breakpoint as f32;
+        let (curve, depth) = if distance < 0.0 {
+            (self.key_scale_left_curve, self.key_scale_left_depth)
+        } else {
+            (self.key_scale_right_curve, self.key_scale_right_depth)
+        };
+
+        if depth <= 0.0 {
+            return 1.0;
+        }
+
+        // Normalize distance over a 4-octave reference (DX7 reaches max effect at ~48 semitones).
+        let normalized = (distance.abs() / 48.0).clamp(0.0, 1.0);
+
+        // Curve shape: linear is just `normalized`; exponential emphasises further-away notes.
+        let shape = match curve {
+            KeyScaleCurve::NegLin | KeyScaleCurve::PosLin => normalized,
+            KeyScaleCurve::NegExp | KeyScaleCurve::PosExp => normalized * normalized,
+        };
+
+        let amount = (depth / 99.0) * shape; // 0..1 effective amount
+        let factor = match curve {
+            KeyScaleCurve::NegLin | KeyScaleCurve::NegExp => 1.0 - amount, // attenuate
+            KeyScaleCurve::PosLin | KeyScaleCurve::PosExp => 1.0 + amount, // boost
+        };
+
+        factor.clamp(0.0, 2.0)
+    }
+
     pub fn release(&mut self) {
         self.envelope.release();
     }
 
     pub fn update_frequency(&mut self) {
-        let actual_freq = self.base_frequency * self.frequency_ratio;
+        // FIXED mode bypasses the note-tracked base frequency and uses an absolute Hz value.
+        // Detune still applies as a small percentage offset, matching DX7 behaviour.
+        let actual_freq = if self.fixed_frequency {
+            self.fixed_freq_hz
+        } else {
+            self.base_frequency * self.frequency_ratio
+        };
         let detuned_freq = actual_freq * (1.0 + self.detune / 100.0);
 
         // Validate frequency range
@@ -233,11 +333,24 @@ impl Operator {
         // Feedback has its own independent scaling (not multiplied by MOD_INDEX_SCALE)
         let total_modulation = (modulation * MOD_INDEX_SCALE) + feedback_mod;
         let sin_result = OPTIMIZATION_TABLES.fast_sin(self.phase + total_modulation);
+
+        // DX7 AMS table (0..3): how much the LFO amplitude modulation affects this op.
+        // 0 = none, 3 = maximum. Mapped to a per-sample gain factor centred on 1.0.
+        // Multiplier table mirrors the DX7 ROM (~0%, ~9%, ~37%, ~100%).
+        let ams_scale = match self.am_sensitivity.min(3) {
+            0 => 0.0,
+            1 => 0.09,
+            2 => 0.37,
+            _ => 1.0,
+        };
+        let amp_mod_factor = 1.0 + (self.current_lfo_amp_mod * ams_scale);
+
         let output = sin_result
             * env_value
             * self.cached_values.level_amplitude
             * self.cached_values.velocity_factor
-            * self.cached_values.key_scale_level_factor;
+            * self.cached_values.key_scale_level_factor
+            * amp_mod_factor;
 
         // Update phase with bounds checking
         if self.phase_increment.is_finite() && self.phase_increment.abs() < 100.0 {

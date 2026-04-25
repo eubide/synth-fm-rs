@@ -1,16 +1,17 @@
 use crate::algorithms;
 use crate::command_queue::{
     create_command_queue, CommandReceiver, CommandSender, EffectParam, EffectType, EnvelopeParam,
-    LfoParam, OperatorParam, SynthCommand,
+    LfoParam, OperatorParam, PitchEgParam, SynthCommand,
 };
 use crate::effects::EffectsChain;
 use crate::lfo::{LFOWaveform, LFO};
-use crate::operator::Operator;
+use crate::operator::{KeyScaleCurve, Operator};
 use crate::optimization::OPTIMIZATION_TABLES;
+use crate::pitch_eg::PitchEg;
 use crate::presets::Dx7Preset;
 use crate::state_snapshot::{
-    create_snapshot_channel, ChorusSnapshot, DelaySnapshot, OperatorSnapshot, ReverbSnapshot,
-    SnapshotReceiver, SnapshotSender, SynthSnapshot,
+    create_snapshot_channel, ChorusSnapshot, DelaySnapshot, OperatorSnapshot, PitchEgSnapshot,
+    ReverbSnapshot, SnapshotReceiver, SnapshotSender, SynthSnapshot, VoiceMode,
 };
 use std::collections::HashMap;
 
@@ -122,6 +123,22 @@ impl Voice {
         }
     }
 
+    /// Retarget the active voice to a new MIDI note without re-triggering envelopes.
+    /// Used by mono-legato to glide back to a held note when the topmost note is released.
+    /// Honours portamento when `portamento` is true.
+    pub fn retarget(&mut self, note: u8, master_tune: f32, portamento: bool) {
+        self.note = note;
+        let base_frequency = OPTIMIZATION_TABLES.get_midi_frequency(note);
+        let new_frequency = base_frequency * 2.0_f32.powf((master_tune / 100.0) / 12.0);
+        self.frequency = new_frequency;
+        if portamento && self.current_frequency > 0.0 {
+            self.target_frequency = new_frequency;
+        } else {
+            self.current_frequency = new_frequency;
+            self.target_frequency = new_frequency;
+        }
+    }
+
     pub fn stop(&mut self) {
         self.active = false;
         for op in &mut self.operators {
@@ -129,14 +146,17 @@ impl Voice {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn process(
         &mut self,
         algorithm_number: u8,
         pitch_bend: f32,
         pitch_bend_range: f32,
         portamento_time: f32,
+        glissando: bool,
         lfo_pitch_mod: f32,
         lfo_amp_mod: f32,
+        pitch_eg_semitones: f32,
     ) -> f32 {
         if !self.active {
             return 0.0;
@@ -162,19 +182,26 @@ impl Voice {
             }
         }
 
+        // Glissando quantises the live pitch to the nearest semitone, producing
+        // a stepped glide instead of a continuous one.
+        let played_frequency = if glissando {
+            quantize_to_semitone(self.current_frequency)
+        } else {
+            self.current_frequency
+        };
+
         let bend_semitones = pitch_bend * pitch_bend_range;
-        let bent_frequency = self.current_frequency * 2.0_f32.powf(bend_semitones / 12.0);
+        let bent_frequency = played_frequency * 2.0_f32.powf(bend_semitones / 12.0);
         let lfo_pitch_semitones = lfo_pitch_mod * 0.5;
-        let lfo_pitch_factor = 2.0_f32.powf(lfo_pitch_semitones / 12.0);
-        let final_frequency = bent_frequency * lfo_pitch_factor;
+        let total_pitch_offset = lfo_pitch_semitones + pitch_eg_semitones;
+        let final_frequency = bent_frequency * 2.0_f32.powf(total_pitch_offset / 12.0);
 
         for op in &mut self.operators {
             op.update_frequency_only(final_frequency);
+            op.set_lfo_amp_mod(lfo_amp_mod);
         }
 
         let output = algorithms::process_algorithm(algorithm_number, &mut self.operators);
-        let lfo_amp_factor = 1.0 + (lfo_amp_mod * 0.5);
-        let modulated_output = output * lfo_amp_factor;
 
         let all_inactive = self.operators.iter().all(|op| !op.is_active());
         if all_inactive && self.fade_state != VoiceFadeState::FadeOut {
@@ -188,7 +215,7 @@ impl Voice {
                     self.fade_gain = 1.0;
                     self.fade_state = VoiceFadeState::Normal;
                 }
-                modulated_output * self.fade_gain
+                output * self.fade_gain
             }
             VoiceFadeState::FadeOut => {
                 self.fade_gain -= self.fade_rate;
@@ -196,19 +223,33 @@ impl Voice {
                     self.fade_gain = 0.0;
                     self.active = false;
                 }
-                modulated_output * self.fade_gain
+                output * self.fade_gain
             }
-            VoiceFadeState::Normal => modulated_output,
+            VoiceFadeState::Normal => output,
         }
     }
+}
+
+/// Round a frequency to the nearest equal-tempered semitone (relative to A4 = 440 Hz).
+fn quantize_to_semitone(freq: f32) -> f32 {
+    if freq <= 0.0 {
+        return freq;
+    }
+    let semitones_from_a4 = (freq / 440.0).log2() * 12.0;
+    let rounded = semitones_from_a4.round();
+    440.0 * 2.0_f32.powf(rounded / 12.0)
 }
 
 /// SynthEngine - runs on the audio thread, processes commands and generates audio
 pub struct SynthEngine {
     voices: Vec<Voice>,
     held_notes: HashMap<u8, usize>,
+    /// Order in which currently-held notes were pressed (front = oldest, back = newest).
+    /// Used by mono modes to fall back to the previous held note when the active one is released.
+    mono_held_order: Vec<u8>,
     pub preset_name: String,
     lfo: LFO,
+    pub pitch_eg: PitchEg,
     pub effects: EffectsChain,
     command_rx: CommandReceiver,
     snapshot_tx: SnapshotSender,
@@ -222,7 +263,10 @@ pub struct SynthEngine {
     pitch_bend_range: f32,
     portamento_enable: bool,
     portamento_time: f32,
-    mono_mode: bool,
+    portamento_glissando: bool,
+    voice_mode: VoiceMode,
+    transpose_semitones: i8,
+    pitch_mod_sensitivity: u8,
     sustain_pedal: bool,
     #[allow(dead_code)]
     sample_rate: f32,
@@ -241,8 +285,10 @@ impl SynthEngine {
         Self {
             voices,
             held_notes: HashMap::new(),
+            mono_held_order: Vec::with_capacity(8),
             preset_name: "Init Voice".to_string(),
             lfo: LFO::new(sample_rate),
+            pitch_eg: PitchEg::new(sample_rate),
             effects: EffectsChain::new(sample_rate),
             command_rx,
             snapshot_tx,
@@ -255,7 +301,10 @@ impl SynthEngine {
             pitch_bend_range: 2.0,
             portamento_enable: false,
             portamento_time: 50.0,
-            mono_mode: false,
+            portamento_glissando: false,
+            voice_mode: VoiceMode::Poly,
+            transpose_semitones: 0,
+            pitch_mod_sensitivity: 0,
             sustain_pedal: false,
             sample_rate,
             presets: Vec::new(),
@@ -285,9 +334,15 @@ impl SynthEngine {
             SynthCommand::SetMasterTune(cents) => {
                 self.master_tune = cents.clamp(-150.0, 150.0);
             }
-            SynthCommand::SetMonoMode(mono) => {
-                self.mono_mode = mono;
-                if mono {
+            SynthCommand::SetVoiceMode(mode) => {
+                let new_mode = match mode {
+                    1 => VoiceMode::Mono,
+                    2 => VoiceMode::MonoLegato,
+                    _ => VoiceMode::Poly,
+                };
+                self.voice_mode = new_mode;
+                if new_mode != VoiceMode::Poly {
+                    // Switching to mono: silence all but voice 0, clear hold map.
                     let mut first_active_found = false;
                     for voice in &mut self.voices {
                         if voice.active {
@@ -298,6 +353,8 @@ impl SynthEngine {
                             }
                         }
                     }
+                    self.held_notes.clear();
+                    self.mono_held_order.clear();
                 }
             }
             SynthCommand::SetPitchBendRange(range) => {
@@ -308,6 +365,15 @@ impl SynthEngine {
             }
             SynthCommand::SetPortamentoTime(time) => {
                 self.portamento_time = time.clamp(0.0, 99.0);
+            }
+            SynthCommand::SetPortamentoGlissando(on) => {
+                self.portamento_glissando = on;
+            }
+            SynthCommand::SetTranspose(st) => {
+                self.transpose_semitones = st.clamp(-24, 24);
+            }
+            SynthCommand::SetPitchModSensitivity(pms) => {
+                self.pitch_mod_sensitivity = pms.min(7);
             }
             SynthCommand::PitchBend(value) => {
                 self.pitch_bend = value as f32 / 8192.0;
@@ -331,6 +397,9 @@ impl SynthEngine {
                 value,
             } => {
                 self.set_envelope_param(operator as usize, param, value);
+            }
+            SynthCommand::SetPitchEgParam { param, value } => {
+                self.set_pitch_eg_param(param, value);
             }
             SynthCommand::SetLfoParam { param, value } => {
                 self.set_lfo_param(param, value);
@@ -357,53 +426,130 @@ impl SynthEngine {
     fn note_on(&mut self, note: u8, velocity: u8) {
         let velocity_f = velocity as f32 / 127.0;
         self.note_counter = self.note_counter.wrapping_add(1);
-        self.lfo.trigger();
 
-        if self.mono_mode {
-            self.held_notes.clear();
-            self.voices[0].trigger(note, velocity_f, self.master_tune, self.portamento_enable);
-            self.voices[0].note_on_id = self.note_counter;
-            self.held_notes.insert(note, 0);
-        } else {
-            if let Some(&voice_idx) = self.held_notes.get(&note) {
-                self.voices[voice_idx].trigger(note, velocity_f, self.master_tune, false);
-                self.voices[voice_idx].note_on_id = self.note_counter;
-                return;
+        // Mono-Legato suppresses LFO/PEG retrigger while another note is held —
+        // matching DX7 behaviour where a tied note keeps the previous envelope alive.
+        let suppress_retrigger =
+            self.voice_mode == VoiceMode::MonoLegato && !self.mono_held_order.is_empty();
+        if !suppress_retrigger {
+            self.lfo.trigger();
+            self.pitch_eg.trigger();
+        }
+
+        let effective_note = self.apply_transpose(note);
+
+        match self.voice_mode {
+            VoiceMode::Mono => {
+                // Full portamento: glide from previous note whenever portamento is enabled.
+                self.mono_trigger(note, effective_note, velocity_f, self.portamento_enable);
             }
-
-            for (i, voice) in self.voices.iter_mut().enumerate() {
-                if !voice.active {
-                    voice.trigger(note, velocity_f, self.master_tune, false);
-                    voice.note_on_id = self.note_counter;
-                    self.held_notes.insert(note, i);
+            VoiceMode::MonoLegato => {
+                // Legato portamento: only glide if there is a previous note still held.
+                let legato = self.portamento_enable && !self.mono_held_order.is_empty();
+                if suppress_retrigger {
+                    // Re-target without re-triggering envelopes so the held note glides smoothly.
+                    self.mono_held_order.retain(|&n| n != note);
+                    self.mono_held_order.push(note);
+                    self.held_notes.clear();
+                    self.held_notes.insert(note, 0);
+                    self.voices[0].retarget(effective_note, self.master_tune, legato);
+                    self.voices[0].note_on_id = self.note_counter;
                     return;
                 }
+                self.mono_trigger(note, effective_note, velocity_f, legato);
             }
+            VoiceMode::Poly => {
+                if let Some(&voice_idx) = self.held_notes.get(&note) {
+                    self.voices[voice_idx].trigger(
+                        effective_note,
+                        velocity_f,
+                        self.master_tune,
+                        false,
+                    );
+                    self.voices[voice_idx].note_on_id = self.note_counter;
+                    return;
+                }
 
-            let oldest_voice = self
-                .voices
-                .iter()
-                .enumerate()
-                .min_by_key(|(_, v)| v.note_on_id)
-                .map(|(i, _)| i)
-                .unwrap_or(0);
+                for (i, voice) in self.voices.iter_mut().enumerate() {
+                    if !voice.active {
+                        voice.trigger(effective_note, velocity_f, self.master_tune, false);
+                        voice.note_on_id = self.note_counter;
+                        self.held_notes.insert(note, i);
+                        return;
+                    }
+                }
 
-            self.voices[oldest_voice].steal_voice();
-            self.voices[oldest_voice].trigger(note, velocity_f, self.master_tune, false);
-            self.voices[oldest_voice].note_on_id = self.note_counter;
+                let oldest_voice = self
+                    .voices
+                    .iter()
+                    .enumerate()
+                    .min_by_key(|(_, v)| v.note_on_id)
+                    .map(|(i, _)| i)
+                    .unwrap_or(0);
 
-            self.held_notes.retain(|_, &mut v| v != oldest_voice);
-            self.held_notes.insert(note, oldest_voice);
+                self.voices[oldest_voice].steal_voice();
+                self.voices[oldest_voice].trigger(
+                    effective_note,
+                    velocity_f,
+                    self.master_tune,
+                    false,
+                );
+                self.voices[oldest_voice].note_on_id = self.note_counter;
+
+                self.held_notes.retain(|_, &mut v| v != oldest_voice);
+                self.held_notes.insert(note, oldest_voice);
+            }
         }
     }
 
+    fn mono_trigger(&mut self, note: u8, effective_note: u8, velocity_f: f32, portamento: bool) {
+        // Track ordered list of held notes so note_off can fall back to the previous one.
+        self.mono_held_order.retain(|&n| n != note);
+        self.mono_held_order.push(note);
+        self.held_notes.clear();
+        self.held_notes.insert(note, 0);
+
+        self.voices[0].trigger(effective_note, velocity_f, self.master_tune, portamento);
+        self.voices[0].note_on_id = self.note_counter;
+    }
+
     fn note_off(&mut self, note: u8) {
-        if let Some(&voice_idx) = self.held_notes.get(&note) {
-            if !self.sustain_pedal {
-                self.voices[voice_idx].release();
-                self.held_notes.remove(&note);
+        if self.sustain_pedal {
+            return;
+        }
+        match self.voice_mode {
+            VoiceMode::Mono | VoiceMode::MonoLegato => {
+                self.mono_held_order.retain(|&n| n != note);
+                if let Some(&prev) = self.mono_held_order.last() {
+                    // Re-target voice 0 to the most recently held note still pressed.
+                    // Both Mono and MonoLegato glide here when portamento is on:
+                    // there's always at least one prior held note (`prev`).
+                    let prev_eff = self.apply_transpose(prev);
+                    let portamento = self.portamento_enable;
+                    self.voices[0].retarget(prev_eff, self.master_tune, portamento);
+                    self.held_notes.clear();
+                    self.held_notes.insert(prev, 0);
+                } else if let Some(&voice_idx) = self.held_notes.get(&note) {
+                    self.voices[voice_idx].release();
+                    self.pitch_eg.release();
+                    self.held_notes.remove(&note);
+                }
+            }
+            VoiceMode::Poly => {
+                if let Some(&voice_idx) = self.held_notes.get(&note) {
+                    self.voices[voice_idx].release();
+                    self.held_notes.remove(&note);
+                    if self.held_notes.is_empty() {
+                        self.pitch_eg.release();
+                    }
+                }
             }
         }
+    }
+
+    fn apply_transpose(&self, note: u8) -> u8 {
+        let shifted = note as i32 + self.transpose_semitones as i32;
+        shifted.clamp(0, 127) as u8
     }
 
     fn set_operator_param(&mut self, op_index: usize, param: OperatorParam, value: f32) {
@@ -411,18 +557,57 @@ impl SynthEngine {
             return;
         }
         for voice in &mut self.voices {
+            let op = &mut voice.operators[op_index];
             match param {
-                OperatorParam::Ratio => voice.operators[op_index].set_frequency_ratio(value),
-                OperatorParam::Level => voice.operators[op_index].output_level = value,
-                OperatorParam::Detune => voice.operators[op_index].set_detune(value),
-                OperatorParam::Feedback => voice.operators[op_index].feedback = value,
-                OperatorParam::VelocitySensitivity => {
-                    voice.operators[op_index].velocity_sensitivity = value
+                OperatorParam::Ratio => op.set_frequency_ratio(value),
+                OperatorParam::Level => op.output_level = value,
+                OperatorParam::Detune => op.set_detune(value),
+                OperatorParam::Feedback => op.feedback = value,
+                OperatorParam::VelocitySensitivity => op.velocity_sensitivity = value,
+                OperatorParam::KeyScaleRate => op.key_scale_rate = value,
+                OperatorParam::KeyScaleBreakpoint => {
+                    op.key_scale_breakpoint = value.clamp(0.0, 127.0) as u8
                 }
-                OperatorParam::KeyScaleLevel => voice.operators[op_index].key_scale_level = value,
-                OperatorParam::KeyScaleRate => voice.operators[op_index].key_scale_rate = value,
-                OperatorParam::Enabled => voice.operators[op_index].enabled = value > 0.5,
+                OperatorParam::KeyScaleLeftDepth => {
+                    op.key_scale_left_depth = value.clamp(0.0, 99.0)
+                }
+                OperatorParam::KeyScaleRightDepth => {
+                    op.key_scale_right_depth = value.clamp(0.0, 99.0)
+                }
+                OperatorParam::KeyScaleLeftCurve => {
+                    op.key_scale_left_curve = KeyScaleCurve::from_dx7_code(value as u8)
+                }
+                OperatorParam::KeyScaleRightCurve => {
+                    op.key_scale_right_curve = KeyScaleCurve::from_dx7_code(value as u8)
+                }
+                OperatorParam::AmSensitivity => {
+                    op.am_sensitivity = value.clamp(0.0, 3.0) as u8
+                }
+                OperatorParam::OscillatorKeySync => op.oscillator_key_sync = value > 0.5,
+                OperatorParam::FixedFrequency => {
+                    op.fixed_frequency = value > 0.5;
+                    op.update_frequency();
+                }
+                OperatorParam::FixedFreqHz => {
+                    op.fixed_freq_hz = value.clamp(0.1, 20000.0);
+                    op.update_frequency();
+                }
+                OperatorParam::Enabled => op.enabled = value > 0.5,
             }
+        }
+    }
+
+    fn set_pitch_eg_param(&mut self, param: PitchEgParam, value: f32) {
+        match param {
+            PitchEgParam::Enabled => self.pitch_eg.enabled = value > 0.5,
+            PitchEgParam::Rate1 => self.pitch_eg.rate1 = value.clamp(0.0, 99.0),
+            PitchEgParam::Rate2 => self.pitch_eg.rate2 = value.clamp(0.0, 99.0),
+            PitchEgParam::Rate3 => self.pitch_eg.rate3 = value.clamp(0.0, 99.0),
+            PitchEgParam::Rate4 => self.pitch_eg.rate4 = value.clamp(0.0, 99.0),
+            PitchEgParam::Level1 => self.pitch_eg.level1 = value.clamp(0.0, 99.0),
+            PitchEgParam::Level2 => self.pitch_eg.level2 = value.clamp(0.0, 99.0),
+            PitchEgParam::Level3 => self.pitch_eg.level3 = value.clamp(0.0, 99.0),
+            PitchEgParam::Level4 => self.pitch_eg.level4 = value.clamp(0.0, 99.0),
         }
     }
 
@@ -502,6 +687,11 @@ impl SynthEngine {
             voice.stop();
         }
         self.held_notes.clear();
+        self.mono_held_order.clear();
+        self.transpose_semitones = 0;
+        self.pitch_mod_sensitivity = 0;
+        self.pitch_eg.enabled = false;
+        self.pitch_eg.reset();
 
         for voice in &mut self.voices {
             for op in voice.operators.iter_mut() {
@@ -510,8 +700,16 @@ impl SynthEngine {
                 op.detune = 0.0;
                 op.feedback = 0.0;
                 op.velocity_sensitivity = 0.0;
-                op.key_scale_level = 0.0;
                 op.key_scale_rate = 0.0;
+                op.key_scale_breakpoint = 60;
+                op.key_scale_left_curve = KeyScaleCurve::default();
+                op.key_scale_right_curve = KeyScaleCurve::default();
+                op.key_scale_left_depth = 0.0;
+                op.key_scale_right_depth = 0.0;
+                op.am_sensitivity = 0;
+                op.oscillator_key_sync = true;
+                op.fixed_frequency = false;
+                op.fixed_freq_hz = 440.0;
                 op.envelope.rate1 = 99.0;
                 op.envelope.rate2 = 50.0;
                 op.envelope.rate3 = 50.0;
@@ -530,33 +728,10 @@ impl SynthEngine {
             return;
         }
 
-        let preset = &self.presets[index];
-        self.algorithm = preset.algorithm;
-        self.preset_name = preset.name.to_string();
+        // Avoid double-borrow by cloning the preset (cheap: ~6 ops + 6 envs + Option fields).
+        let preset = self.presets[index].clone();
+        preset.apply_to_synth(self);
         self.current_preset_index = index;
-
-        // Apply operator settings to all voices
-        for voice in &mut self.voices {
-            for (i, op) in voice.operators.iter_mut().enumerate() {
-                let (ratio, level, detune, feedback) = preset.operators[i];
-                op.frequency_ratio = ratio;
-                op.output_level = level;
-                op.detune = detune;
-                op.feedback = feedback;
-
-                // Apply envelope
-                let (r1, r2, r3, r4, l1, l2, l3, l4) = preset.envelopes[i];
-                op.envelope.rate1 = r1;
-                op.envelope.rate2 = r2;
-                op.envelope.rate3 = r3;
-                op.envelope.rate4 = r4;
-                op.envelope.level1 = l1;
-                op.envelope.level2 = l2;
-                op.envelope.level3 = l3;
-                op.envelope.level4 = l4;
-            }
-        }
-
         log::debug!("Loaded preset {}: {}", index, preset.name);
     }
 
@@ -568,6 +743,8 @@ impl SynthEngine {
             }
         }
         self.held_notes.clear();
+        self.mono_held_order.clear();
+        self.pitch_eg.reset();
     }
 
     /// Process one sample of audio (mono)
@@ -575,7 +752,15 @@ impl SynthEngine {
         let mut output = 0.0;
         let mut active_voice_count = 0;
 
-        let (lfo_pitch_mod, lfo_amp_mod) = self.lfo.process(self.mod_wheel);
+        let (lfo_pitch_mod_raw, lfo_amp_mod) = self.lfo.process(self.mod_wheel);
+
+        // PMS table (DX7 ROM): 0..7 → fractional pitch depth multiplier.
+        // PMS=0: no LFO pitch effect; PMS=7: maximum (~1 semitone of swing).
+        const PMS_TABLE: [f32; 8] = [0.0, 0.082, 0.16, 0.32, 0.5, 0.79, 1.26, 2.0];
+        let pms_scale = PMS_TABLE[self.pitch_mod_sensitivity.min(7) as usize];
+        let lfo_pitch_mod = lfo_pitch_mod_raw * pms_scale;
+
+        let pitch_eg_semitones = self.pitch_eg.process();
 
         for voice in &mut self.voices {
             if voice.active {
@@ -584,8 +769,10 @@ impl SynthEngine {
                     self.pitch_bend,
                     self.pitch_bend_range,
                     self.portamento_time,
+                    self.portamento_glissando,
                     lfo_pitch_mod,
                     lfo_amp_mod,
+                    pitch_eg_semitones,
                 );
                 output += voice_output;
                 active_voice_count += 1;
@@ -624,10 +811,13 @@ impl SynthEngine {
             active_voices,
             master_volume: self.master_volume,
             master_tune: self.master_tune,
-            mono_mode: self.mono_mode,
+            voice_mode: self.voice_mode,
             portamento_enable: self.portamento_enable,
             portamento_time: self.portamento_time,
+            portamento_glissando: self.portamento_glissando,
             pitch_bend_range: self.pitch_bend_range,
+            transpose_semitones: self.transpose_semitones,
+            pitch_mod_sensitivity: self.pitch_mod_sensitivity,
             pitch_bend: self.pitch_bend,
             mod_wheel: self.mod_wheel,
             sustain_pedal: self.sustain_pedal,
@@ -639,6 +829,17 @@ impl SynthEngine {
             lfo_key_sync: self.lfo.key_sync,
             lfo_frequency_hz: self.lfo.get_frequency_hz(),
             lfo_delay_seconds: self.lfo.get_delay_seconds(),
+            pitch_eg: PitchEgSnapshot {
+                enabled: self.pitch_eg.enabled,
+                rate1: self.pitch_eg.rate1,
+                rate2: self.pitch_eg.rate2,
+                rate3: self.pitch_eg.rate3,
+                rate4: self.pitch_eg.rate4,
+                level1: self.pitch_eg.level1,
+                level2: self.pitch_eg.level2,
+                level3: self.pitch_eg.level3,
+                level4: self.pitch_eg.level4,
+            },
             chorus: ChorusSnapshot {
                 enabled: self.effects.chorus.enabled,
                 rate: self.effects.chorus.rate,
@@ -677,8 +878,16 @@ impl SynthEngine {
                     detune: op.detune,
                     feedback: op.feedback,
                     velocity_sensitivity: op.velocity_sensitivity,
-                    key_scale_level: op.key_scale_level,
                     key_scale_rate: op.key_scale_rate,
+                    key_scale_breakpoint: op.key_scale_breakpoint,
+                    key_scale_left_curve: op.key_scale_left_curve,
+                    key_scale_right_curve: op.key_scale_right_curve,
+                    key_scale_left_depth: op.key_scale_left_depth,
+                    key_scale_right_depth: op.key_scale_right_depth,
+                    am_sensitivity: op.am_sensitivity,
+                    oscillator_key_sync: op.oscillator_key_sync,
+                    fixed_frequency: op.fixed_frequency,
+                    fixed_freq_hz: op.fixed_freq_hz,
                     rate1: op.envelope.rate1,
                     rate2: op.envelope.rate2,
                     rate3: op.envelope.rate3,
@@ -726,6 +935,22 @@ impl SynthEngine {
         }
     }
 
+    pub fn set_transpose_semitones(&mut self, st: i8) {
+        self.transpose_semitones = st.clamp(-24, 24);
+    }
+
+    pub fn set_pitch_mod_sensitivity(&mut self, pms: u8) {
+        self.pitch_mod_sensitivity = pms.min(7);
+    }
+
+    pub fn set_pitch_bend_range(&mut self, range: f32) {
+        self.pitch_bend_range = range.clamp(0.0, 12.0);
+    }
+
+    pub fn pitch_eg_mut(&mut self) -> &mut PitchEg {
+        &mut self.pitch_eg
+    }
+
     pub fn set_presets(&mut self, presets: Vec<Dx7Preset>) {
         self.current_preset_index = 0;
         self.presets = presets;
@@ -753,8 +978,8 @@ impl SynthEngine {
     }
 
     #[allow(dead_code)]
-    pub fn get_mono_mode(&self) -> bool {
-        self.mono_mode
+    pub fn get_voice_mode(&self) -> VoiceMode {
+        self.voice_mode
     }
 
     #[allow(dead_code)]
@@ -884,8 +1109,32 @@ impl SynthController {
         self.send(SynthCommand::SetMasterTune(cents));
     }
 
-    pub fn set_mono_mode(&mut self, mono: bool) {
-        self.send(SynthCommand::SetMonoMode(mono));
+    pub fn set_voice_mode(&mut self, mode: VoiceMode) {
+        let code = match mode {
+            VoiceMode::Poly => 0,
+            VoiceMode::Mono => 1,
+            VoiceMode::MonoLegato => 2,
+        };
+        self.send(SynthCommand::SetVoiceMode(code));
+    }
+
+    pub fn set_portamento_glissando(&mut self, on: bool) {
+        self.send(SynthCommand::SetPortamentoGlissando(on));
+    }
+
+    #[allow(dead_code)]
+    pub fn set_transpose(&mut self, semitones: i8) {
+        self.send(SynthCommand::SetTranspose(semitones));
+    }
+
+    #[allow(dead_code)]
+    pub fn set_pitch_mod_sensitivity(&mut self, pms: u8) {
+        self.send(SynthCommand::SetPitchModSensitivity(pms));
+    }
+
+    #[allow(dead_code)]
+    pub fn set_pitch_eg_param(&mut self, param: PitchEgParam, value: f32) {
+        self.send(SynthCommand::SetPitchEgParam { param, value });
     }
 
     pub fn set_pitch_bend_range(&mut self, range: f32) {

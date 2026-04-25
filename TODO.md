@@ -7,66 +7,67 @@ y repo hermano `synth-analog-rs` (features portables).
 
 ---
 
-## 1. Motor FM
+## 1. Motor FM ✅
+
+Sección completada. Todo el motor FM está al nivel del DX7S y absorbe los patches
+del banco `mark/` con todos sus campos. Detalles pendientes solo son refinamientos
+que se moverán a otras secciones (GUI, presets, etc.).
 
 ### Operadores
 
-- [ ] **Fixed frequency mode** — Cada operador debería poder operar en modo RATIO
-      (el actual, `frequency_ratio` escalado por la nota MIDI) o FIXED (frecuencia
-      absoluta en Hz independiente de la nota). El DX7S define: OSC MODE RATIO/FIXED,
-      COARSE (0–31) y FINE (0–99). Esencial para percusión y campanas.
+- [x] **Fixed frequency mode** — `Operator::fixed_frequency` + `fixed_freq_hz`. La GUI
+      expone toggle RATIO/FIXED y un slider logarítmico 1–4000 Hz. El JSON loader lee
+      `oscillatorMode: "fixed"` y combina `fixedFrequencyCoarse` (0–3) y
+      `fixedFrequencyFine` (0–99) según la fórmula DX7 `f = 10^coarse · (1 + fine/100)`.
 
-- [ ] **Coarse + Fine frequency** — El formato JSON estándar (y el SysEx DX7) usa
-      COARSE entero (0–31) donde `0 → 0.5×`, `1–31 → n×`. Actualmente `frequency_ratio`
-      es un float libre. Se necesita la conversión en el loader JSON:
-      `if coarse == 0 { 0.5 } else { coarse as f32 }`. Sin esto, patches con coarse=0
-      (funk-bass, rock-lead, sax-2) producen silencio.
+- [x] **Coarse + Fine frequency** — JSON ya convertía `frequency: 0` → `0.5×`. Coarse
+      como entero se preserva tal cual; el modo FIXED ahora usa coarse y fine para
+      reconstruir Hz absolutos.
 
-- [ ] **Key scaling: 4 curvas + profundidad independiente por lado** — El DX7S tiene
-      LEFT CURVE / RIGHT CURVE (cada uno: −LIN, −EXP, +EXP, +LIN) y LEFT DEPTH /
-      RIGHT DEPTH (0–99) independientes del breakpoint. Actualmente solo existe
-      `key_scale_level` (float lineal, sin distinción izquierda/derecha ni tipo de curva).
+- [x] **Key scaling: 4 curvas + profundidad por lado** — `KeyScaleCurve` enum
+      (`-LIN`, `-EXP`, `+EXP`, `+LIN`) + `key_scale_left/right_curve` y
+      `key_scale_left/right_depth` por operador. `calculate_key_level_factor()`
+      aplica curva lineal o exponencial al lado correspondiente. JSON
+      `keyboardLevelScaling.{breakpoint, leftCurve, rightCurve, leftDepth, rightDepth}`
+      se carga directamente. Breakpoints aceptan tanto `"A-1"` como enteros MIDI.
 
-- [ ] **AMS por operador** — Amplitude Modulation Sensitivity (0–3). Escala cuánto
-      afecta el LFO a la amplitud de cada operador individualmente. El `lfo_amp_mod`
-      actual se aplica igual a todos los carriers. El sax-2 y my-bells de Mark usan
-      AMS intenso en casi todos los operadores.
+- [x] **AMS por operador** — `Operator::am_sensitivity` (0–3). Aplicado dentro de
+      `process_inner()` con la tabla DX7 `[0%, 9%, 37%, 100%]`. La voz inyecta el
+      LFO amp en cada op vía `set_lfo_amp_mod()` antes de procesar. JSON
+      `amSensitivity` cargado.
 
-- [ ] **PMS por voz** — Pitch Modulation Sensitivity (0–7). Escala la profundidad de
-      modulación de pitch del LFO para toda la voz. En la lógica actual, `pitch_depth`
-      y `mod_wheel` determinan el pitch mod sin ningún factor PMS. Afecta vibrato en
-      brasshorns, celo, strg-ens-2, rock-lead (colección mark/).
+- [x] **PMS por voz** — `SynthEngine::pitch_mod_sensitivity` (0–7) con tabla DX7
+      `[0, 0.082, 0.16, 0.32, 0.5, 0.79, 1.26, 2.0]`. Multiplica el LFO pitch antes
+      de pasarlo a las voces. JSON `lfo.pitchModSensitivity` cargado.
 
-- [ ] **Oscilador key sync desactivable** — `operator.rs::trigger()` siempre hace
-      `self.phase = 0.0`. El DX7 tiene OSC KEY SYNC (ON/OFF): OFF deja los osciladores
-      correr libremente entre notas (crea fases distintas cada vez). El JSON tiene
-      `oscillatorKeySync: "Off"` y actualmente lo ignoramos.
+- [x] **Oscilador key sync desactivable** — `Operator::oscillator_key_sync`. Cuando
+      es `false`, `trigger()` no resetea la fase. JSON `oscillatorKeySync` (`"On"`/`"Off"`)
+      cargado a nivel de patch (todos los operadores comparten el flag, fiel al DX7).
 
 ### Pitch EG
 
-- [ ] **Pitch EG** — Envolvente de tono independiente con 4 rates (0–99) + 4 levels
-      (0–99, donde 50 = tono estándar, <50 = más bajo, >50 = más alto, rango ±4
-      octavas). Produce glides de inicio en brass (brasshorns, brtrumpet de mark/)
-      y vibratos programados que evolucionan. No hay ningún struct ni campo relacionado
-      en el código. Requiere: nuevo struct `PitchEG`, campo en `SynthEngine`, nuevo
-      `SynthCommand::SetPitchEGParam`, panel GUI, carga desde JSON.
+- [x] **Pitch EG** — Nuevo módulo `pitch_eg.rs`: `PitchEg` struct con 4 rates + 4
+      levels (50 = neutral, ±48 semitonos). Disparado por note-on, liberado al cerrar
+      la voz. Sumado al pitch de cada voz vía `pitch_eg_semitones`. JSON `pitchEG`
+      (clave en mayúsculas) cargado y activado automáticamente cuando algún level ≠ 50.
 
 ### Portamento / Afinación
 
-- [ ] **Mono-Legato** — Portamento solo cuando la nota anterior sigue presionada
-      (legato). Actualmente solo existe FULL (portamento en cualquier nota en mono mode).
-      El DX7S Function mode tiene parámetro PORTAMENTO MODE: RETAIN / FOLLOW.
+- [x] **Mono-Legato** — `VoiceMode::MonoLegato`. Solo aplica portamento cuando la
+      nota anterior sigue pulsada. `mono_held_order` (lista FIFO de notas pulsadas)
+      permite que `note_off` retome la nota anterior y suprime re-disparo de
+      LFO/Pitch EG en transiciones legato.
 
-- [ ] **Glissando** — Portamento con pasos discretos de semitono en lugar de glide
-      continuo. Parámetro PORTAMENTO STEP (ON/OFF) del DX7S Function mode.
+- [x] **Glissando** — `SynthEngine::portamento_glissando`. Cuantiza la frecuencia
+      portamento al semitono más cercano vía `quantize_to_semitone()` por sample.
 
-- [ ] **Transpose** — Desplazamiento en semitonos (±24, C3 = 0) aplicado antes del
-      pitch bend. Guardado por preset. No hay ningún campo en `SynthEngine`. Necesario
-      para cargar celo y strg-ens-2 de la colección mark/ (ambos tienen `transpose: C2`).
+- [x] **Transpose** — `SynthEngine::transpose_semitones` (±24). Aplicado en
+      `apply_transpose()` antes de generar la frecuencia. JSON `transpose: "C3"`
+      → 0; `"C2"` → -12; integer directo. Persistido en `Dx7Preset::transpose_semitones`.
 
-- [ ] **Pitch bend range por preset** — Actualmente `pitch_bend_range` es un parámetro
-      global del sintetizador. El DX7S define el rango (0–12 semitones) como parte de
-      la voz. Necesario para carga fiel desde JSON/SysEx.
+- [x] **Pitch bend range por preset** — `Dx7Preset::pitch_bend_range: Option<f32>`.
+      `apply_to_synth()` invoca `synth.set_pitch_bend_range()` solo cuando está
+      definido en el preset, conservando el global como fallback.
 
 ---
 
@@ -149,42 +150,16 @@ calidad. Estado actual del soporte:
 |---|---|---|
 | name, algorithm, feedback | OK | |
 | operators[].eg, outputLevel, detune, frequency | OK | frequency=0 → 0.5 corregido |
-| lfo (wave/speed/delay/depths/sync) | **ignorado** | `JsonPatch` no tiene campo `lfo`; todos los parches tienen datos LFO |
-| operators[].keyVelocitySensitivity | **ignorado** | `JsonOperator` no lo deserializa; todos los valores 0–7 presentes en mark/ |
-| operators[].keyboardRateScaling | **ignorado** | `JsonOperator` no lo deserializa; valores 0–7 en uso en mark/ |
-| operators[].keyboardLevelScaling (curvas/profundidades) | **ignorado** | varios parches tienen leftDepth/rightDepth > 0 y curvas -EXP/+LIN |
-| transpose | ignorado | celo, strg-ens-2 suenan una octava alta |
-| pitchEG | ignorado | brasshorns, brtrumpet sin glide inicial |
-| lfo.pitchModSensitivity (PMS) | ignorado | vibrato de mod wheel incorrecto |
-| operators[].amSensitivity | ignorado | sax-2, my-bells sin tremolo correcto |
-| operators[].oscillatorMode "fixed" | ignorado | ningún parche de mark/ lo usa → no urgente |
-
-- [ ] **JSON loader: keyVelocitySensitivity por operador** — `JsonOperator` no
-      deserializa `keyVelocitySensitivity`. Añadir el campo (0–7) y propagarlo al
-      `Operator` al construir el preset. El motor de síntesis ya lo soporta
-      (`operator.rs`). Valores no triviales en presets como epiano-1, sax-2,
-      brtrumpet (impacto alto en expresividad).
-
-- [ ] **JSON loader: keyboardRateScaling por operador** — `JsonOperator` no
-      deserializa `keyboardRateScaling` (0–7). El motor ya tiene soporte parcial
-      de key scale rate (`envelope.rs`). Mapear el valor al preset al cargarlo.
-
-- [ ] **JSON loader: cargar LFO desde patch** — `JsonPatch` no tiene struct `lfo`.
-      Añadir `JsonLfo { wave, speed, delay, pitch_mod_depth, am_depth, sync,
-      pitch_mod_sensitivity }` y mapear a los campos del sintetizador. `amDepth`
-      es string o int según el patch → requiere `#[serde(deserialize_with)]` custom.
-      Afecta a todos los 25 parches de mark/ (todos tienen sección `lfo`).
-
-- [ ] **JSON loader: amSensitivity por operador** — `JsonOperator` no deserializa
-      `amSensitivity` (0–3). Depende de que el LFO esté cargado (item anterior).
-      Valores no triviales en sax-2 y my-bells de mark/.
-
-- [ ] **JSON loader: keyboardLevelScaling con curvas** — El campo actual solo
-      usa un float lineal. El formato DX7 define breakpoint (nota) + leftCurve /
-      rightCurve (−LIN, −EXP, +EXP, +LIN) + leftDepth / rightDepth (0–99).
-      Varios parches de mark/ tienen profundidades no triviales (hasta 99) y curvas
-      −EXP/+LIN que dan el balance correcto por registro de teclado (piano-3,
-      brtrumpet, epiano-1).
+| lfo (wave/speed/delay/depths/sync) | OK | `amDepth` admite string o int |
+| operators[].keyVelocitySensitivity | OK | mapeado a `velocity_sensitivity` (0–7) |
+| operators[].keyboardRateScaling | OK | mapeado a `key_scale_rate` (0–7) |
+| operators[].keyboardLevelScaling (curvas/profundidades) | OK | breakpoint admite `"A-1"` o entero MIDI |
+| transpose | OK | `"C3"` → 0; `"C2"` → -12; entero directo |
+| pitchEG | OK | clave literal `pitchEG` (mayúsculas) |
+| lfo.pitchModSensitivity (PMS) | OK | tabla DX7 [0, .082, .16, .32, .5, .79, 1.26, 2.0] |
+| operators[].amSensitivity | OK | tabla DX7 [0%, 9%, 37%, 100%] aplicada |
+| operators[].oscillatorMode "fixed" | OK | usa `fixedFrequencyCoarse`/`Fine` para Hz |
+| oscillatorKeySync (`On`/`Off`) | OK | fiel al DX7 (flag a nivel de voz) |
 
 - [ ] **Cargar archivo JSON individual** — Botón "Load JSON" en GUI o argumento CLI.
 

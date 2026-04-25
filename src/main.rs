@@ -17,6 +17,7 @@ mod lock_free;
 mod midi_handler;
 mod operator;
 mod optimization;
+mod pitch_eg;
 mod preset_loader;
 mod presets;
 mod state_snapshot;

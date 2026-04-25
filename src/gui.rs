@@ -166,10 +166,10 @@ impl Dx7App {
                 ui.separator();
 
                 // Always display current status information (from snapshot)
-                let mode_text = if self.snapshot.mono_mode {
-                    "MONO"
-                } else {
-                    "POLY"
+                let mode_text = match self.snapshot.voice_mode {
+                    crate::state_snapshot::VoiceMode::Poly => "POLY",
+                    crate::state_snapshot::VoiceMode::Mono => "MONO",
+                    crate::state_snapshot::VoiceMode::MonoLegato => "M-LEG",
                 };
                 let midi_text = if self._midi_handler.is_some() {
                     "MIDI OK"
@@ -177,8 +177,9 @@ impl Dx7App {
                     "NO MIDI"
                 };
 
-                let status_line = if self.snapshot.mono_mode {
-                    // Show portamento only in MONO mode
+                let is_mono = self.snapshot.voice_mode != crate::state_snapshot::VoiceMode::Poly;
+                let status_line = if is_mono {
+                    // Show portamento only in MONO modes
                     let porta_text = if self.snapshot.portamento_enable {
                         "ON"
                     } else {
@@ -335,32 +336,43 @@ impl Dx7App {
 
                         // Center-right section: Mode controls
                         ui.vertical(|ui| {
-                            ui.set_min_width(150.0);
-                            let mono_mode = self.snapshot.mono_mode;
+                            ui.set_min_width(180.0);
+                            let voice_mode = self.snapshot.voice_mode;
+                            let is_mono = voice_mode != crate::state_snapshot::VoiceMode::Poly;
                             let porta_enable = self.snapshot.portamento_enable;
                             let porta_time = self.snapshot.portamento_time;
 
                             ui.horizontal(|ui| {
                                 ui.label("MODE:");
-                                let mut mode = mono_mode;
-                                if ui.selectable_value(&mut mode, false, "POLY").clicked()
-                                    && mono_mode
+                                let mut mode = voice_mode;
+                                use crate::state_snapshot::VoiceMode;
+                                if ui.selectable_value(&mut mode, VoiceMode::Poly, "POLY").clicked()
+                                    && voice_mode != VoiceMode::Poly
                                 {
                                     if let Ok(mut ctrl) = self.lock_controller() {
-                                        ctrl.set_mono_mode(false);
+                                        ctrl.set_voice_mode(VoiceMode::Poly);
                                     }
                                 }
-                                if ui.selectable_value(&mut mode, true, "MONO").clicked()
-                                    && !mono_mode
+                                if ui.selectable_value(&mut mode, VoiceMode::Mono, "MONO").clicked()
+                                    && voice_mode != VoiceMode::Mono
                                 {
                                     if let Ok(mut ctrl) = self.lock_controller() {
-                                        ctrl.set_mono_mode(true);
+                                        ctrl.set_voice_mode(VoiceMode::Mono);
+                                    }
+                                }
+                                if ui
+                                    .selectable_value(&mut mode, VoiceMode::MonoLegato, "M-LEG")
+                                    .clicked()
+                                    && voice_mode != VoiceMode::MonoLegato
+                                {
+                                    if let Ok(mut ctrl) = self.lock_controller() {
+                                        ctrl.set_voice_mode(VoiceMode::MonoLegato);
                                     }
                                 }
                             });
 
-                            // Portamento (only visible in MONO mode)
-                            if mono_mode {
+                            // Portamento (only visible in MONO modes)
+                            if is_mono {
                                 ui.horizontal(|ui| {
                                     ui.label("PORTAMENTO:");
                                     let mut porta_on = porta_enable;
@@ -385,6 +397,16 @@ impl Dx7App {
                                             }
                                         }
                                         ui.label(format!("{:.0}", porta_time));
+                                    }
+                                });
+
+                                ui.horizontal(|ui| {
+                                    ui.label("GLIS:");
+                                    let mut gliss = self.snapshot.portamento_glissando;
+                                    if ui.checkbox(&mut gliss, "").changed() {
+                                        if let Ok(mut ctrl) = self.lock_controller() {
+                                            ctrl.set_portamento_glissando(gliss);
+                                        }
                                     }
                                 });
                             }
@@ -416,24 +438,39 @@ impl Dx7App {
     }
 
     fn draw_mode_controls_compact(&mut self, ui: &mut egui::Ui) {
-        let mono_mode = self.snapshot.mono_mode;
+        use crate::state_snapshot::VoiceMode;
+        let voice_mode = self.snapshot.voice_mode;
+        let is_mono = voice_mode != VoiceMode::Poly;
         ui.horizontal(|ui| {
             ui.label("MODE:");
-            let mut mode = mono_mode;
-            if ui.selectable_value(&mut mode, false, "POLY").clicked() && mono_mode {
+            let mut mode = voice_mode;
+            if ui.selectable_value(&mut mode, VoiceMode::Poly, "POLY").clicked()
+                && voice_mode != VoiceMode::Poly
+            {
                 if let Ok(mut ctrl) = self.lock_controller() {
-                    ctrl.set_mono_mode(false);
+                    ctrl.set_voice_mode(VoiceMode::Poly);
                 }
             }
-            if ui.selectable_value(&mut mode, true, "MONO").clicked() && !mono_mode {
+            if ui.selectable_value(&mut mode, VoiceMode::Mono, "MONO").clicked()
+                && voice_mode != VoiceMode::Mono
+            {
                 if let Ok(mut ctrl) = self.lock_controller() {
-                    ctrl.set_mono_mode(true);
+                    ctrl.set_voice_mode(VoiceMode::Mono);
+                }
+            }
+            if ui
+                .selectable_value(&mut mode, VoiceMode::MonoLegato, "M-LEG")
+                .clicked()
+                && voice_mode != VoiceMode::MonoLegato
+            {
+                if let Ok(mut ctrl) = self.lock_controller() {
+                    ctrl.set_voice_mode(VoiceMode::MonoLegato);
                 }
             }
         });
 
-        // Portamento (only visible in MONO mode)
-        if mono_mode {
+        // Portamento (only visible in MONO modes)
+        if is_mono {
             let porta_enable = self.snapshot.portamento_enable;
             let porta_time = self.snapshot.portamento_time;
             ui.horizontal(|ui| {
@@ -1544,8 +1581,15 @@ impl Dx7App {
         let mut detune = op_snap.detune;
         let mut feedback = op_snap.feedback;
         let mut vel_sens = op_snap.velocity_sensitivity;
-        let mut key_scale_lvl = op_snap.key_scale_level;
+        // Display the larger of the two side depths so a single slider can
+        // drive both the left and the right scaling jointly. Power users
+        // can still tweak each side via JSON / future detail panel.
+        let mut key_scale_lvl = op_snap.key_scale_left_depth.max(op_snap.key_scale_right_depth);
         let mut key_scale_rt = op_snap.key_scale_rate;
+        let mut am_sens = op_snap.am_sensitivity as f32;
+        let mut osc_sync = op_snap.oscillator_key_sync;
+        let mut fixed_freq = op_snap.fixed_frequency;
+        let mut fixed_hz = op_snap.fixed_freq_hz;
         let mut rate1 = op_snap.rate1;
         let mut rate2 = op_snap.rate2;
         let mut rate3 = op_snap.rate3;
@@ -1673,17 +1717,34 @@ impl Dx7App {
                             .changed()
                         {
                             if let Ok(mut ctrl) = self.lock_controller() {
+                                // Drive both left and right depth identically from this single slider.
                                 ctrl.set_operator_param(
                                     op_idx as u8,
-                                    OperatorParam::KeyScaleLevel,
+                                    OperatorParam::KeyScaleLeftDepth,
+                                    key_scale_lvl,
+                                );
+                                ctrl.set_operator_param(
+                                    op_idx as u8,
+                                    OperatorParam::KeyScaleRightDepth,
                                     key_scale_lvl,
                                 );
                             }
                         }
                         ui.end_row();
 
-                        ui.label("");
-                        ui.label("");
+                        ui.label("AM Sens:");
+                        if ui
+                            .add(egui::Slider::new(&mut am_sens, 0.0..=3.0).integer())
+                            .changed()
+                        {
+                            if let Ok(mut ctrl) = self.lock_controller() {
+                                ctrl.set_operator_param(
+                                    op_idx as u8,
+                                    OperatorParam::AmSensitivity,
+                                    am_sens,
+                                );
+                            }
+                        }
                         ui.label("Key Rate:");
                         if ui
                             .add(egui::Slider::new(&mut key_scale_rt, 0.0..=7.0).integer())
@@ -1698,6 +1759,51 @@ impl Dx7App {
                             }
                         }
                         ui.end_row();
+
+                        ui.label("Key Sync:");
+                        if ui.checkbox(&mut osc_sync, "ON").changed() {
+                            if let Ok(mut ctrl) = self.lock_controller() {
+                                ctrl.set_operator_param(
+                                    op_idx as u8,
+                                    OperatorParam::OscillatorKeySync,
+                                    if osc_sync { 1.0 } else { 0.0 },
+                                );
+                            }
+                        }
+                        ui.label("Fixed:");
+                        if ui.checkbox(&mut fixed_freq, "Hz").changed() {
+                            if let Ok(mut ctrl) = self.lock_controller() {
+                                ctrl.set_operator_param(
+                                    op_idx as u8,
+                                    OperatorParam::FixedFrequency,
+                                    if fixed_freq { 1.0 } else { 0.0 },
+                                );
+                            }
+                        }
+                        ui.end_row();
+
+                        if fixed_freq {
+                            ui.label("Fixed Hz:");
+                            if ui
+                                .add(
+                                    egui::Slider::new(&mut fixed_hz, 1.0..=4000.0)
+                                        .logarithmic(true)
+                                        .suffix(" Hz"),
+                                )
+                                .changed()
+                            {
+                                if let Ok(mut ctrl) = self.lock_controller() {
+                                    ctrl.set_operator_param(
+                                        op_idx as u8,
+                                        OperatorParam::FixedFreqHz,
+                                        fixed_hz,
+                                    );
+                                }
+                            }
+                            ui.label("");
+                            ui.label("");
+                            ui.end_row();
+                        }
                     });
 
                 ui.add_space(8.0);
