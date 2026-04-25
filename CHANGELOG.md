@@ -101,6 +101,11 @@ Closes section 4 of TODO.md with full DX7S controller matrix and SysEx I/O.
 - **JSON Loader Quirks** documented: `pitchEG` rename, `amDepth` int|string, breakpoint parsing, AMS/PMS ROM tables
 - Removed obsolete `algorithms.json` diagram artifacts; updated docs to reflect hardcoded algorithm matrix
 
+### Audio Quality
+
+- **`tanh` Soft Clipper**: Replaced soft-knee limiter (threshold 0.85 + knee 0.15 + cap 0.95) with `tanh(x)` saturation — analogue of the DX7's μ-law-companded 12-bit DAC. Smooth, symmetric compression asymptotic to ±1.0; warmer character at high levels.
+- **DC Blocker** (`src/dc_blocker.rs`): First-order HPF (fc = 5 Hz) applied per channel after the soft clip in `process_stereo()`. Removes DC residual from the signal chain. Inaudible phase shift at musical frequencies.
+
 ---
 
 ## [0.4.0] - 2025-12-09

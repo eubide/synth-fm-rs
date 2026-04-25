@@ -3,6 +3,7 @@ use crate::command_queue::{
     create_command_queue, CommandReceiver, CommandSender, EffectParam, EffectType, EnvelopeParam,
     LfoParam, OperatorParam, PitchEgParam, SynthCommand,
 };
+use crate::dc_blocker::DcBlocker;
 use crate::effects::EffectsChain;
 use crate::lfo::{LFOWaveform, LFO};
 use crate::operator::{KeyScaleCurve, Operator};
@@ -309,6 +310,8 @@ pub struct SynthEngine {
     sustain_pedal: bool,
     #[allow(dead_code)]
     sample_rate: f32,
+    dc_blocker_l: DcBlocker,
+    dc_blocker_r: DcBlocker,
     // Preset storage for MIDI program change
     presets: Vec<Dx7Preset>,
     current_preset_index: usize,
@@ -366,6 +369,8 @@ impl SynthEngine {
             bank_lsb: 0,
             sustain_pedal: false,
             sample_rate,
+            dc_blocker_l: DcBlocker::new(sample_rate, 5.0),
+            dc_blocker_r: DcBlocker::new(sample_rate, 5.0),
             presets: Vec::new(),
             current_preset_index: 0,
         }
@@ -978,14 +983,16 @@ impl SynthEngine {
 
         let scaled_output =
             output * voice_scaling * self.master_volume * foot_volume_factor * self.expression;
-        self.soft_limit(scaled_output)
+        Self::soft_clip(scaled_output)
     }
 
     /// Process audio with effects, returns stereo pair (left, right)
     pub fn process_stereo(&mut self) -> (f32, f32) {
         let mono = self.process();
         let (left, right) = self.effects.process(mono);
-        (self.soft_limit(left), self.soft_limit(right))
+        let l = self.dc_blocker_l.process(Self::soft_clip(left));
+        let r = self.dc_blocker_r.process(Self::soft_clip(right));
+        (l, r)
     }
 
     /// Update and send snapshot to GUI
@@ -1114,20 +1121,10 @@ impl SynthEngine {
         }
     }
 
-    fn soft_limit(&self, sample: f32) -> f32 {
-        const THRESHOLD: f32 = 0.85;
-        const KNEE: f32 = 0.15;
-
-        if sample.abs() <= THRESHOLD {
-            sample
-        } else {
-            let sign = sample.signum();
-            let abs_sample = sample.abs();
-            let excess = abs_sample - THRESHOLD;
-            let compressed_excess = excess / (1.0 + excess / KNEE);
-            let limited = THRESHOLD + compressed_excess;
-            sign * limited.min(0.95)
-        }
+    /// Soft saturation analogous to the DX7's μ-law-companded 12-bit DAC.
+    /// `tanh` gives smooth, symmetric, asymptotic compression toward ±1.0.
+    fn soft_clip(sample: f32) -> f32 {
+        sample.tanh()
     }
 
     // Public getters for direct access (used by presets)
@@ -1517,4 +1514,28 @@ pub fn create_synth(sample_rate: f32) -> (SynthEngine, SynthController) {
     let controller = SynthController::new(command_tx, snapshot_rx);
 
     (engine, controller)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn soft_clip_zero_is_zero() {
+        assert_eq!(SynthEngine::soft_clip(0.0), 0.0);
+    }
+
+    #[test]
+    fn soft_clip_saturates_to_unity() {
+        assert!((SynthEngine::soft_clip(10.0) - 1.0).abs() < 1e-4);
+        assert!((SynthEngine::soft_clip(-10.0) + 1.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn soft_clip_is_monotonic() {
+        let a = SynthEngine::soft_clip(0.5);
+        let b = SynthEngine::soft_clip(0.8);
+        let c = SynthEngine::soft_clip(2.0);
+        assert!(a < b && b < c);
+    }
 }

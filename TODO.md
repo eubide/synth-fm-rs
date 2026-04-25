@@ -57,9 +57,7 @@ Loader JSON cubre todo el banco `mark/` (formato itsjoesullivan/dx7-patches).
 
 ## Calidad de audio
 
-- [ ] (genérico) Soft clipper de salida (`tanh(x)`) — equivalente moderno al
-      companding μ-law del D/A 12-bit del DX7
-- [ ] (genérico) DC offset removal — high-pass primer orden (fc ~5–10 Hz)
+Cadena de salida: `tanh` soft clip → HPF 5 Hz por canal. Ver `CHANGELOG.md`.
 
 ---
 

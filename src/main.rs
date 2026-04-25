@@ -7,6 +7,7 @@ use std::time::Duration;
 mod algorithms;
 mod audio_engine;
 mod command_queue;
+mod dc_blocker;
 mod dx7_frequency;
 mod effects;
 mod envelope;
