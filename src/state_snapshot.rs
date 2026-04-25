@@ -142,7 +142,6 @@ pub enum VoiceMode {
 }
 
 /// Pitch envelope state mirrored to GUI for display.
-#[allow(dead_code)] // exposed via JSON loader / future PEG panel
 #[derive(Debug, Clone, Copy)]
 pub struct PitchEgSnapshot {
     pub enabled: bool,

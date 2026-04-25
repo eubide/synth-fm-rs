@@ -1415,7 +1415,6 @@ impl SynthController {
         self.send(SynthCommand::ProgramChange(program));
     }
 
-    #[allow(dead_code)]
     pub fn set_pitch_eg_param(&mut self, param: PitchEgParam, value: f32) {
         self.send(SynthCommand::SetPitchEgParam { param, value });
     }

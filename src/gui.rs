@@ -1,6 +1,8 @@
 use crate::algorithms;
 use crate::audio_engine::AudioEngine;
-use crate::command_queue::{EffectParam, EffectType, EnvelopeParam, LfoParam, OperatorParam};
+use crate::command_queue::{
+    EffectParam, EffectType, EnvelopeParam, LfoParam, OperatorParam, PitchEgParam,
+};
 use crate::fm_synth::{SynthController, SynthEngine};
 use crate::midi_handler::MidiHandler;
 use crate::presets::Dx7Preset;
@@ -1082,6 +1084,9 @@ impl Dx7App {
                 });
 
                 ui.separator();
+                self.draw_pitch_eg_section(ui);
+
+                ui.separator();
                 let mod_pct = (self.snapshot.mod_wheel * 100.0) as i32;
                 ui.label(format!(
                     "Mod Wheel: {}%{}",
@@ -1094,6 +1099,62 @@ impl Dx7App {
                 ));
             });
         });
+    }
+
+    /// Pitch EG panel — 4 rates + 4 levels matching the amplitude EG layout.
+    /// On the DX7, level 50 means "no pitch offset"; 0 ≈ −4 octaves and 99 ≈ +4 octaves.
+    fn draw_pitch_eg_section(&self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("PITCH EG").strong());
+            let mut peg_enabled = self.snapshot.pitch_eg.enabled;
+            if ui.checkbox(&mut peg_enabled, "enabled").changed() {
+                if let Ok(mut ctrl) = self.lock_controller() {
+                    ctrl.set_pitch_eg_param(
+                        PitchEgParam::Enabled,
+                        if peg_enabled { 1.0 } else { 0.0 },
+                    );
+                }
+            }
+            ui.label(
+                egui::RichText::new("(L=50 → no offset; 0 ≈ −4 oct, 99 ≈ +4 oct)")
+                    .size(10.0)
+                    .color(egui::Color32::from_rgb(120, 120, 120)),
+            );
+        });
+
+        let peg = self.snapshot.pitch_eg;
+        egui::Grid::new("pitch_eg_grid")
+            .num_columns(4)
+            .spacing([8.0, 4.0])
+            .show(ui, |ui| {
+                self.pitch_eg_slider(ui, "R1:", peg.rate1, PitchEgParam::Rate1);
+                self.pitch_eg_slider(ui, "R2:", peg.rate2, PitchEgParam::Rate2);
+                ui.end_row();
+                self.pitch_eg_slider(ui, "L1:", peg.level1, PitchEgParam::Level1);
+                self.pitch_eg_slider(ui, "L2:", peg.level2, PitchEgParam::Level2);
+                ui.end_row();
+                self.pitch_eg_slider(ui, "R3:", peg.rate3, PitchEgParam::Rate3);
+                self.pitch_eg_slider(ui, "R4:", peg.rate4, PitchEgParam::Rate4);
+                ui.end_row();
+                self.pitch_eg_slider(ui, "L3:", peg.level3, PitchEgParam::Level3);
+                self.pitch_eg_slider(ui, "L4:", peg.level4, PitchEgParam::Level4);
+                ui.end_row();
+            });
+    }
+
+    /// One labelled 0..99 slider for a Pitch EG parameter. Mirrors the look of
+    /// the operator amplitude EG and the existing `routing_slider` helper.
+    fn pitch_eg_slider(&self, ui: &mut egui::Ui, label: &str, value: f32, param: PitchEgParam) {
+        ui.label(label);
+        let mut v = value;
+        if ui
+            .add(egui::Slider::new(&mut v, 0.0..=99.0).integer())
+            .changed()
+        {
+            if let Ok(mut ctrl) = self.lock_controller() {
+                ctrl.set_pitch_eg_param(param, v);
+            }
+        }
     }
 
     fn draw_effects_panel(&mut self, ui: &mut egui::Ui) {

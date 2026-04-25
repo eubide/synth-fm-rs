@@ -232,9 +232,12 @@ calidad. Estado actual del soporte:
 
 ### Controles faltantes
 
-- [ ] *(DX7)* **Panel Pitch EG completo** — Hoy el motor sí calcula la PEG y se
-      carga desde JSON, pero la GUI no expone los 8 sliders (4 rates + 4 levels).
-      Necesita el mismo estilo visual que el EG de amplitud.
+- [x] *(DX7)* ~~Panel Pitch EG completo~~ — Sección "PITCH EG" en el panel LFO
+      con checkbox `enabled` + grid 4×2 de sliders 0–99 (R1/R2/L1/L2/R3/R4/L3/L4)
+      replicando el estilo del EG de amplitud. Recordatorio en la cabecera:
+      "L=50 → no offset; 0 ≈ −4 oct, 99 ≈ +4 oct". Helper privado
+      `pitch_eg_slider` análogo al `routing_slider` de los controladores MIDI
+      (`gui.rs:draw_pitch_eg_section`).
 
 - [x] *(DX7)* ~~AMS por operador~~ — Slider 0–3 ya disponible en el panel de operador.
 

@@ -41,7 +41,6 @@ pub enum EnvelopeParam {
 }
 
 /// Parameters that can be set on the pitch envelope.
-#[allow(dead_code)] // exposed via JSON loader; full GUI panel pending
 #[derive(Debug, Clone, Copy)]
 pub enum PitchEgParam {
     Enabled,
