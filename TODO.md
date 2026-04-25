@@ -333,6 +333,263 @@ Lista de referencia. Bajo la política actual no se implementa.
 
 ---
 
+## 10. Deuda técnica conocida — *(pendiente tras revisión de simplificación)*
+
+Esta sección recoge issues estructurales que **no son features que faltan**
+(esos viven en las secciones 1–9), sino calidad interna del código existente.
+Se documentan con suficiente contexto — dónde está, cuánto duele, cuándo atacarlo —
+para retomarlos sin tener que reconstruir el análisis.
+
+Origen: pasada de `/simplify` posterior al cierre de la sección 4 (MIDI). Los
+fixes baratos (reset del `voice_initialize`, helper `route_amount`, factorización
+del amp routing) ya están aplicados; lo que sigue son las decisiones que
+requieren más juicio o más cirugía.
+
+### 10.1 *(implementación)* Consolidar el routing por controlador en un `ControllerRoute`
+
+**Estado actual.** Cada controlador externo (Mod Wheel, Aftertouch, Breath,
+Foot) mantiene campos planos repetidos en cuatro lugares:
+
+| Lugar | Campos / variantes / métodos |
+|---|---|
+| `SynthEngine` (`fm_synth.rs:274-296`) | 14 sensibilidades + 4 valores en vivo |
+| `SynthSnapshot` (`state_snapshot.rs:195-224`) | 13 campos paralelos |
+| `SynthCommand` (`command_queue.rs:124-152`) | 14 variantes `Set…Sens(u8)` + 5 variantes de valor |
+| `SynthController` (`fm_synth.rs:1334-1404`) | 18 métodos casi idénticos |
+
+La GUI ya consolidó la parte visual con el helper `routing_slider`
+(`gui.rs:2163`), pero el cableado data-side sigue línea-a-línea.
+
+**Por qué duele.** Añadir el siguiente destino o el siguiente controlador
+(p. ej. `foot_pitch_bias`, un Pedal 2 del DX7II, o un X/Y pad) toca **cinco
+archivos** y replica cuatro brazos `match` por cada nuevo eje. Complejidad
+O(controladores × destinos) cuando debería ser O(1).
+
+**Refactor sugerido.**
+
+```rust
+// command_queue.rs — pasa de 14+5 variantes a 2:
+#[derive(Copy, Clone, Debug)] pub enum ControllerKind { ModWheel, Aftertouch, Breath, Foot }
+#[derive(Copy, Clone, Debug)] pub enum RoutingDest  { Pitch, Amp, EgBias, PitchBias, Volume }
+
+pub enum SynthCommand {
+    // ...
+    SetControllerSens  { ctrl: ControllerKind, dest: RoutingDest, sens: u8 },
+    SetControllerValue { ctrl: ControllerKind, value: f32 },
+}
+
+// fm_synth.rs — pasa de 18 campos planos a 4 structs:
+struct ControllerRoute {
+    value: f32,
+    pitch_sens: u8,
+    amp_sens: u8,
+    eg_bias_sens: u8,
+    pitch_bias_sens: u8, // ignorado para ModWheel y Foot al sumar
+    volume_sens: u8,     // solo Foot lo usa
+}
+
+pub struct SynthEngine {
+    mod_wheel: ControllerRoute,
+    aftertouch: ControllerRoute,
+    breath: ControllerRoute,
+    foot: ControllerRoute,
+    // ...
+}
+```
+
+**Impacto cuantitativo estimado:**
+
+- `command_queue.rs`: 14 → 1 variante de routing (−13 LOC)
+- `fm_synth.rs`: 14 brazos `match` con `s.min(7)` → 1 brazo parametrizado (−25 LOC)
+- `SynthController`: 18 métodos → 2 (`set_routing`, `set_controller_value`)
+- Audio loop (`fm_synth.rs:903-933`): 5 expresiones de 3-4 sumandos → un único
+  bucle sobre `[ModWheel, Aftertouch, Breath, Foot]`
+- `route_amount()` (`fm_synth.rs:241`) **ya existe** desde el último simplify y
+  se reaprovecha sin cambios
+
+**Coste.** Refactor invasivo: 5 archivos
+(`command_queue.rs`, `fm_synth.rs`, `state_snapshot.rs`, `midi_handler.rs`,
+`gui.rs`). Tests de `command_queue::tests` necesitan actualización por el
+cambio de variantes (4 tests). Riesgo principal: que la API de `SynthController`
+cambie y rompa la GUI; mitigable manteniendo wrappers de compatibilidad
+durante la migración.
+
+**Cuándo atacarlo.** La señal correcta es **el siguiente controlador o el
+siguiente destino que se añada**. Si solo se hace mantenimiento de los 4
+existentes, el coste del refactor supera al beneficio. Si aparece "Foot
+Pitch Bias", "Pedal 2", o cualquier extensión, el refactor se paga en la
+primera línea de la nueva feature.
+
+**Criterio de aceptación.**
+
+- 1 sola variante `SynthCommand::SetControllerSens` y 1 sola `SetControllerValue`
+- `ControllerRoute` reutilizado para los 4 controladores
+- Audio loop expresa el sumatorio como bucle sobre array
+- Los 18 tests actuales siguen verdes
+
+---
+
+### 10.2 *(DX7S — autenticidad)* PMS_TABLE para el PITCH routing de Aftertouch / Breath / Foot
+
+**Pregunta abierta.** El PMS del patch usa la tabla DX7 ROM **exponencial**
+(`fm_synth.rs:914`):
+
+```
+PMS_TABLE = [0.0, 0.082, 0.16, 0.32, 0.5, 0.79, 1.26, 2.0]
+```
+
+A PMS=7 el LFO oscila hasta ±2 semitonos (~1 tono entero arriba/abajo). En
+cambio, el routing de PITCH de los controladores externos es **lineal**
+(via `route_amount`):
+
+```rust
+fn route_amount(value: f32, sens: u8) -> f32 { value * (sens.min(7) as f32 / 7.0) }
+```
+
+**Asimetría observable.** Con `aftertouch_pitch_sens = 7` y AT al máximo, la
+contribución sumada al `pms_scale` es `1.0`. El patch a PMS=7 solo ya da `2.0`.
+La etiqueta "7" en la GUI representa entonces **dos depths distintos** según
+si el slider sea PMS del patch o sensitivity del controlador externo. En el
+DX7S original ambos comparten la misma curva ROM.
+
+Misma pregunta aplica al PITCH de Breath y Foot. NO aplica a AMP / EG BIAS /
+PITCH BIAS — esos sí son lineales en el DX7 real.
+
+**Opciones.**
+
+- **A — Autenticidad estricta.** Indexar `PMS_TABLE` también para los routings
+  de PITCH externos. `route_amount()` deja de servir para PITCH (sigue valiendo
+  para AMP/EG_BIAS/PITCH_BIAS, que sí son lineales) y se reemplaza por
+  `pms_amount(value, sens) -> value * PMS_TABLE[sens.min(7) as usize]`.
+  - **Pro:** paridad bit-exact con DX7S.
+  - **Con:** rompe la simetría visual del slider — la respuesta es exponencial
+    para PITCH y lineal para los otros tres. El usuario percibe un salto
+    cualitativo entre `sens=4` y `sens=5` en PITCH que no existe en AMP.
+
+- **B — Pragmatismo.** Dejarlo lineal y documentarlo. Opcionalmente, escalar
+  el rango lineal a 2.0 (multiplicar el resultado por `2.0`) para igualar el
+  rango máximo del PMS=7 del patch.
+  - **Pro:** GUI predecible y consistente entre destinos.
+  - **Con:** no es bit-exact DX7S; un patch importado vía SysEx puede sonar
+    levemente distinto al original cuando un AT o Breath está activo.
+
+**Coste.** Opción A: ~10 LOC en `fm_synth.rs:903-918` + actualizar el
+comentario que define `PMS_TABLE`. Opción B: 1 línea (multiplicar `pitch_route_total`
+por 2.0).
+
+**Cuándo decidir.** Antes de prometer "fidelidad DX7S" en el README o la
+documentación pública. Mientras el proyecto se posicione como "DX7-inspired",
+la Opción B es defendible. La decisión idealmente se documenta en
+`docs/authenticity_policy.md` (memoria del proyecto).
+
+---
+
+### 10.3 *(implementación)* Política única de clamp para controladores en vivo
+
+**Inconsistencia detectada.** Los handlers de `SynthCommand` en
+`fm_synth.rs:439-490` clampean los valores entrantes:
+
+```rust
+SynthCommand::Aftertouch(value)       => self.aftertouch  = value.clamp(0.0, 1.0),
+SynthCommand::BreathController(value) => self.breath      = value.clamp(0.0, 1.0),
+SynthCommand::FootController(value)   => self.foot        = value.clamp(0.0, 1.0),
+SynthCommand::Expression(value)       => self.expression  = value.clamp(0.0, 1.0),
+```
+
+Pero los handlers más antiguos **no clampean**:
+
+```rust
+SynthCommand::ModWheel(value) => self.mod_wheel = value,            // sin clamp
+SynthCommand::PitchBend(value) => self.pitch_bend = value as f32 / 8192.0,  // sin clamp
+```
+
+`midi_handler.rs:180-183` ya divide los CC por 127.0 antes de enviar, así que
+matemáticamente todos los valores llegan en [0, 1]. El clamp del motor es
+defensa-en-profundidad **redundante** para los 4 nuevos, e **inconsistente**
+con los 2 antiguos.
+
+**Opciones.**
+
+- **A — Confiar en el productor** (estilo del resto del código). Eliminar los
+  `.clamp()` de los 4 handlers nuevos. El productor (`midi_handler` y
+  `SynthController`) garantiza el rango. Es la opción consistente.
+- **B — Clampear siempre.** Añadir `.clamp(0.0, 1.0)` también a `ModWheel` y
+  un clamp `(-1.0, 1.0)` a `pitch_bend` tras la división. Más defensivo pero
+  contradice el estilo establecido.
+
+**Coste.** Trivial — 4 líneas en cualquier dirección.
+
+**Cuándo atacarlo.** Como parte del refactor 10.1, donde `SetControllerValue`
+sería el **único punto** donde aplicar (o no) la política. Hacerlo antes y
+luego rehacerlo en el refactor sería tirar trabajo.
+
+---
+
+### 10.4 *(implementación)* Drift de `cargo fmt` en archivos pre-existentes
+
+**Estado.** `cargo fmt --check` reporta divergencias en al menos:
+`command_queue.rs:20,120`, `fm_synth.rs:714`, `gui.rs` (8 zonas:
+`369, 376, 467, 474, 768, 1151, 1166, …`), `sysex.rs:680`. **Ninguna proviene
+de cambios recientes** — son artefactos heredados.
+
+**Coste.** `cargo fmt` (1 comando, ~3 s) + un commit dedicado.
+
+**Por qué no se aplicó en el simplify.** Para mantener el commit de
+simplificación enfocado y revisable. Un `cargo fmt` global toca ~30 zonas
+en archivos que no estaban en el scope del análisis y enturbiaría el diff.
+
+**Cuándo atacarlo.** Como commit independiente:
+
+```
+style: cargo fmt repository wide
+```
+
+Idealmente seguido de un hook pre-commit (`.git/hooks/pre-commit` o
+`cargo-husky`) que prevenga la próxima acumulación. Mientras no exista el
+hook, este pendiente reaparecerá.
+
+---
+
+### 10.5 *(implementación)* Sustituir `lazy_static` por `std::sync::LazyLock`
+
+**Estado.** Una sola ocurrencia, en `src/optimization.rs:198`:
+
+```rust
+lazy_static::lazy_static! {
+    pub static ref OPTIMIZATION_TABLES: OptimizationTables = OptimizationTables::new();
+}
+```
+
+El crate `lazy_static` está al día (1.5.0) pero en modo **mantenimiento**.
+Desde Rust 1.80 (julio 2024) `std::sync::LazyLock` cumple el mismo papel
+sin dependencia externa.
+
+**Refactor sugerido.**
+
+```rust
+use std::sync::LazyLock;
+
+pub static OPTIMIZATION_TABLES: LazyLock<OptimizationTables> =
+    LazyLock::new(OptimizationTables::new);
+```
+
+Tras el cambio, eliminar `lazy_static = "1.4"` de `Cargo.toml`.
+
+**Por qué duele poco.** Una sola ocurrencia, sintaxis de uso idéntica
+(`OPTIMIZATION_TABLES.algo()` sigue funcionando porque `LazyLock`
+implementa `Deref`). Cambio de ~5 líneas + `cargo build` para validar.
+
+**Por qué no es urgente.** El crate sigue compilando y no tiene
+vulnerabilidades. Es deuda cosmética: una dependencia menos en el
+árbol y código más idiomático con la stdlib moderna.
+
+**Cuándo atacarlo.** Cuando se toque `optimization.rs` por otra razón,
+o como parte de una pasada general de modernización tras subir
+`eframe`/`egui` a 0.34. MSRV mínimo requerido tras el cambio: **Rust
+1.80**.
+
+---
+
 ## Referencia rápida — lo que SÍ está implementado
 
 Para no duplicar esfuerzo. Verificado en el código fuente.
