@@ -181,8 +181,7 @@ fn parse_vced(data: &[u8], collection: &str) -> Result<Dx7Preset, SysexError> {
         return Err(SysexError::TruncatedData);
     }
 
-    let mut operators: [PresetOperator; 6] =
-        std::array::from_fn(|_| PresetOperator::default());
+    let mut operators: [PresetOperator; 6] = std::array::from_fn(|_| PresetOperator::default());
 
     // SysEx orders operators OP6..OP1; our preset array is OP1..OP6.
     for sysex_idx in 0..6 {
@@ -326,8 +325,7 @@ fn parse_vmem(data: &[u8]) -> Result<Vec<Dx7Preset>, SysexError> {
 }
 
 fn parse_vmem_voice(block: &[u8], collection: &str) -> Dx7Preset {
-    let mut operators: [PresetOperator; 6] =
-        std::array::from_fn(|_| PresetOperator::default());
+    let mut operators: [PresetOperator; 6] = std::array::from_fn(|_| PresetOperator::default());
 
     // Each operator occupies 17 packed bytes; SysEx orders OP6..OP1.
     for sysex_idx in 0..6 {
@@ -608,8 +606,7 @@ mod tests {
     use super::*;
 
     fn make_test_preset() -> Dx7Preset {
-        let mut operators: [PresetOperator; 6] =
-            std::array::from_fn(|_| PresetOperator::default());
+        let mut operators: [PresetOperator; 6] = std::array::from_fn(|_| PresetOperator::default());
         operators[0].frequency_ratio = 2.0;
         operators[0].output_level = 99.0;
         operators[5].feedback = 5.0;
@@ -683,7 +680,10 @@ mod tests {
         bytes[0] = 0xF0;
         bytes[1] = 0x42; // Korg
         bytes[11] = 0xF7;
-        assert!(matches!(parse_message(&bytes), Err(SysexError::NotYamaha(0x42))));
+        assert!(matches!(
+            parse_message(&bytes),
+            Err(SysexError::NotYamaha(0x42))
+        ));
     }
 
     #[test]

@@ -164,9 +164,7 @@ fn parse_note_name(s: &str) -> Option<u8> {
 /// Parse the DX7 transpose JSON value: `"C3"` ⇒ 0, `"C2"` ⇒ -12, integer ⇒ direct semitones.
 fn parse_transpose(value: &serde_json::Value) -> i8 {
     match value {
-        serde_json::Value::Number(n) => {
-            n.as_i64().unwrap_or(0).clamp(-24, 24) as i8
-        }
+        serde_json::Value::Number(n) => n.as_i64().unwrap_or(0).clamp(-24, 24) as i8,
         serde_json::Value::String(s) => match parse_note_name(s) {
             // C3 (MIDI 60) is the DX7 reference — no transpose.
             Some(midi) => ((midi as i32) - 60).clamp(-24, 24) as i8,
@@ -292,7 +290,12 @@ fn load_json_file(path: &Path, collection: &str) -> Option<Dx7Preset> {
         key_sync: l.sync.eq_ignore_ascii_case("on"),
     });
 
-    let pms = patch.lfo.as_ref().map(|l| l.pitch_mod_sensitivity).unwrap_or(0).min(7);
+    let pms = patch
+        .lfo
+        .as_ref()
+        .map(|l| l.pitch_mod_sensitivity)
+        .unwrap_or(0)
+        .min(7);
 
     let pitch_eg = patch.pitch_eg.as_ref().map(|p| PresetPitchEg {
         rate1: p.rate1,
@@ -410,7 +413,10 @@ mod tests {
         assert_eq!(preset.pitch_mod_sensitivity, 1);
 
         // Pitch EG
-        let peg = preset.pitch_eg.as_ref().expect("pitch eg should be present");
+        let peg = preset
+            .pitch_eg
+            .as_ref()
+            .expect("pitch eg should be present");
         assert_eq!(peg.rate1, 94.0);
         assert_eq!(peg.level1, 53.0);
         assert!(peg.is_active()); // level1=53 ≠ 50
@@ -430,4 +436,3 @@ mod tests {
         assert_eq!(op6.key_scale_rate, 7.0);
     }
 }
-
