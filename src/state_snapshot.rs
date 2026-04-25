@@ -193,6 +193,8 @@ pub struct SynthSnapshot {
     pub pitch_bend_range: f32,
     pub transpose_semitones: i8,    // -24..+24 semitones, 0 means C3 (DX7 reference)
     pub pitch_mod_sensitivity: u8,  // 0-7 PMS (LFO pitch depth scaler)
+    pub eg_bias_sensitivity: u8,    // 0-7 EG Bias routing from Mod Wheel
+    pub pitch_bias_sensitivity: u8, // 0-7 Pitch Bias routing from Mod Wheel
 
     // Real-time controllers
     pub pitch_bend: f32,
@@ -237,6 +239,8 @@ impl Default for SynthSnapshot {
             pitch_bend_range: 2.0,
             transpose_semitones: 0,
             pitch_mod_sensitivity: 0,
+            eg_bias_sensitivity: 0,
+            pitch_bias_sensitivity: 0,
 
             pitch_bend: 0.0,
             mod_wheel: 0.0,

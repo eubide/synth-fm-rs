@@ -157,6 +157,8 @@ impl Voice {
         lfo_pitch_mod: f32,
         lfo_amp_mod: f32,
         pitch_eg_semitones: f32,
+        eg_bias_amount: f32,
+        pitch_bias_semitones: f32,
     ) -> f32 {
         if !self.active {
             return 0.0;
@@ -193,12 +195,15 @@ impl Voice {
         let bend_semitones = pitch_bend * pitch_bend_range;
         let bent_frequency = played_frequency * 2.0_f32.powf(bend_semitones / 12.0);
         let lfo_pitch_semitones = lfo_pitch_mod * 0.5;
-        let total_pitch_offset = lfo_pitch_semitones + pitch_eg_semitones;
+        // Pitch Bias is the static, mod-wheel-driven counterpart of LFO pitch mod —
+        // a constant offset rather than an oscillation. Sums into the same destination.
+        let total_pitch_offset = lfo_pitch_semitones + pitch_eg_semitones + pitch_bias_semitones;
         let final_frequency = bent_frequency * 2.0_f32.powf(total_pitch_offset / 12.0);
 
         for op in &mut self.operators {
             op.update_frequency_only(final_frequency);
             op.set_lfo_amp_mod(lfo_amp_mod);
+            op.set_eg_bias(eg_bias_amount);
         }
 
         let output = algorithms::process_algorithm(algorithm_number, &mut self.operators);
@@ -267,6 +272,8 @@ pub struct SynthEngine {
     voice_mode: VoiceMode,
     transpose_semitones: i8,
     pitch_mod_sensitivity: u8,
+    eg_bias_sensitivity: u8,
+    pitch_bias_sensitivity: u8,
     sustain_pedal: bool,
     #[allow(dead_code)]
     sample_rate: f32,
@@ -305,6 +312,8 @@ impl SynthEngine {
             voice_mode: VoiceMode::Poly,
             transpose_semitones: 0,
             pitch_mod_sensitivity: 0,
+            eg_bias_sensitivity: 0,
+            pitch_bias_sensitivity: 0,
             sustain_pedal: false,
             sample_rate,
             presets: Vec::new(),
@@ -374,6 +383,12 @@ impl SynthEngine {
             }
             SynthCommand::SetPitchModSensitivity(pms) => {
                 self.pitch_mod_sensitivity = pms.min(7);
+            }
+            SynthCommand::SetEgBiasSensitivity(s) => {
+                self.eg_bias_sensitivity = s.min(7);
+            }
+            SynthCommand::SetPitchBiasSensitivity(s) => {
+                self.pitch_bias_sensitivity = s.min(7);
             }
             SynthCommand::PitchBend(value) => {
                 self.pitch_bend = value as f32 / 8192.0;
@@ -690,6 +705,8 @@ impl SynthEngine {
         self.mono_held_order.clear();
         self.transpose_semitones = 0;
         self.pitch_mod_sensitivity = 0;
+        self.eg_bias_sensitivity = 0;
+        self.pitch_bias_sensitivity = 0;
         self.pitch_eg.enabled = false;
         self.pitch_eg.reset();
 
@@ -762,6 +779,14 @@ impl SynthEngine {
 
         let pitch_eg_semitones = self.pitch_eg.process();
 
+        // EG Bias: static controller-driven offset (mod wheel × sensitivity).
+        // 0..1 amount; the per-operator AMS gates how strongly each op responds.
+        let eg_bias_amount =
+            self.mod_wheel * (self.eg_bias_sensitivity as f32 / 7.0);
+        // Pitch Bias: same idea but applied to the pitch — up to ±2 semitones at max.
+        let pitch_bias_semitones =
+            self.mod_wheel * (self.pitch_bias_sensitivity as f32 / 7.0) * 2.0;
+
         for voice in &mut self.voices {
             if voice.active {
                 let voice_output = voice.process(
@@ -773,6 +798,8 @@ impl SynthEngine {
                     lfo_pitch_mod,
                     lfo_amp_mod,
                     pitch_eg_semitones,
+                    eg_bias_amount,
+                    pitch_bias_semitones,
                 );
                 output += voice_output;
                 active_voice_count += 1;
@@ -818,6 +845,8 @@ impl SynthEngine {
             pitch_bend_range: self.pitch_bend_range,
             transpose_semitones: self.transpose_semitones,
             pitch_mod_sensitivity: self.pitch_mod_sensitivity,
+            eg_bias_sensitivity: self.eg_bias_sensitivity,
+            pitch_bias_sensitivity: self.pitch_bias_sensitivity,
             pitch_bend: self.pitch_bend,
             mod_wheel: self.mod_wheel,
             sustain_pedal: self.sustain_pedal,
@@ -1130,6 +1159,14 @@ impl SynthController {
     #[allow(dead_code)]
     pub fn set_pitch_mod_sensitivity(&mut self, pms: u8) {
         self.send(SynthCommand::SetPitchModSensitivity(pms));
+    }
+
+    pub fn set_eg_bias_sensitivity(&mut self, sens: u8) {
+        self.send(SynthCommand::SetEgBiasSensitivity(sens));
+    }
+
+    pub fn set_pitch_bias_sensitivity(&mut self, sens: u8) {
+        self.send(SynthCommand::SetPitchBiasSensitivity(sens));
     }
 
     #[allow(dead_code)]

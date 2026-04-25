@@ -87,6 +87,7 @@ pub struct Operator {
     current_velocity: f32,       // Store velocity for real-time updates
     current_note: u8,            // Store MIDI note for key scaling
     current_lfo_amp_mod: f32,    // Latest LFO amp modulation value (-1..+1) staged by Voice
+    current_eg_bias: f32,        // Static (non-oscillating) bias amount in 0..1 staged by Voice
     cached_values: CachedValues, // Cached calculations for performance
 }
 
@@ -120,6 +121,7 @@ impl Operator {
             current_velocity: 1.0,
             current_note: 60,
             current_lfo_amp_mod: 0.0,
+            current_eg_bias: 0.0,
             cached_values: CachedValues::new(),
         }
     }
@@ -129,6 +131,14 @@ impl Operator {
     /// can apply its own `am_sensitivity` (0-3) to scale the impact.
     pub fn set_lfo_amp_mod(&mut self, value: f32) {
         self.current_lfo_amp_mod = value;
+    }
+
+    /// Stage the EG Bias amount (0..1). The DX7 manual describes this as a static,
+    /// controller-driven offset that lowers operator levels — distinct from the LFO
+    /// because it does not oscillate. Per-operator depth is gated by `am_sensitivity`,
+    /// so modulators with AMS=0 are unaffected and AMS=3 ones get the full bite.
+    pub fn set_eg_bias(&mut self, value: f32) {
+        self.current_eg_bias = value.clamp(0.0, 1.0);
     }
 
     pub fn trigger(&mut self, frequency: f32, velocity: f32, note: u8) {
@@ -345,12 +355,17 @@ impl Operator {
         };
         let amp_mod_factor = 1.0 + (self.current_lfo_amp_mod * ams_scale);
 
+        // EG Bias attenuates the op output by a static, controller-driven amount.
+        // Gated by AMS (per DX7 manual): AMS=0 unaffected, AMS=3 fully attenuated up to ~70%.
+        let eg_bias_factor = 1.0 - (self.current_eg_bias * ams_scale * 0.7);
+
         let output = sin_result
             * env_value
             * self.cached_values.level_amplitude
             * self.cached_values.velocity_factor
             * self.cached_values.key_scale_level_factor
-            * amp_mod_factor;
+            * amp_mod_factor
+            * eg_bias_factor;
 
         // Update phase with bounds checking
         if self.phase_increment.is_finite() && self.phase_increment.abs() < 100.0 {

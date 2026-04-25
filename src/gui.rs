@@ -1002,6 +1002,47 @@ impl Dx7App {
                 });
 
                 ui.separator();
+                ui.label("MOD WHEEL ROUTING");
+                let mut pms = self.snapshot.pitch_mod_sensitivity as f32;
+                let mut eg_bias = self.snapshot.eg_bias_sensitivity as f32;
+                let mut pitch_bias = self.snapshot.pitch_bias_sensitivity as f32;
+                ui.columns(3, |columns| {
+                    columns[0].horizontal(|ui| {
+                        ui.label("PMS:");
+                        if ui
+                            .add(egui::Slider::new(&mut pms, 0.0..=7.0).integer())
+                            .changed()
+                        {
+                            if let Ok(mut ctrl) = self.lock_controller() {
+                                ctrl.set_pitch_mod_sensitivity(pms as u8);
+                            }
+                        }
+                    });
+                    columns[1].horizontal(|ui| {
+                        ui.label("EG Bias:");
+                        if ui
+                            .add(egui::Slider::new(&mut eg_bias, 0.0..=7.0).integer())
+                            .changed()
+                        {
+                            if let Ok(mut ctrl) = self.lock_controller() {
+                                ctrl.set_eg_bias_sensitivity(eg_bias as u8);
+                            }
+                        }
+                    });
+                    columns[2].horizontal(|ui| {
+                        ui.label("P-Bias:");
+                        if ui
+                            .add(egui::Slider::new(&mut pitch_bias, 0.0..=7.0).integer())
+                            .changed()
+                        {
+                            if let Ok(mut ctrl) = self.lock_controller() {
+                                ctrl.set_pitch_bias_sensitivity(pitch_bias as u8);
+                            }
+                        }
+                    });
+                });
+
+                ui.separator();
                 let mod_pct = (self.snapshot.mod_wheel * 100.0) as i32;
                 ui.label(format!(
                     "Mod Wheel: {}%{}",

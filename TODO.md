@@ -71,15 +71,23 @@ que se moverán a otras secciones (GUI, presets, etc.).
 
 ---
 
-## 2. LFO
+## 2. LFO ✅
 
-- [ ] **AMS / PMS** — Ver sección Operadores. Son el mismo feature.
+- [x] **AMS / PMS** — Implementados en sección 1 (motor FM). PMS también expuesto en
+      el panel LFO (slider 0–7 bajo "MOD WHEEL ROUTING").
 
-- [ ] **EG Bias** — Fuente de modulación separada documentada en el diagrama de bloques
-      del DX7S (pág. 26). Es un offset de pitch o amplitud controlable por Mod Wheel,
-      Foot Controller o Breath Control, distinto del LFO: el LFO oscila, el EG Bias es
-      un offset estático/controlable. Se aplica al mismo destino (pitch o amp) pero con
-      un valor fijo en lugar de un valor oscilante.
+- [x] **EG Bias** — Mod Wheel routing trio implementado:
+      - **EG Bias (amp)**: `eg_bias_sensitivity` (0–7) en `SynthEngine`. La voz aplica
+        `eg_bias_amount = mod_wheel · sens/7` a cada operador via `set_eg_bias`.
+        Dentro de `process_inner` el factor `1 - eg_bias · ams_scale · 0.7` atenúa el
+        operador, manteniendo la convención DX7 de que AMS=0 lo deja intacto y AMS=3
+        recibe la atenuación máxima (~70%).
+      - **Pitch Bias**: `pitch_bias_sensitivity` (0–7). Suma `mod_wheel · sens/7 · 2`
+        semitonos al pitch total junto al PMS y la Pitch EG.
+      - GUI: tres sliders (PMS / EG Bias / P-Bias) en el panel LFO, sección
+        "MOD WHEEL ROUTING".
+      - Routing por Foot/Breath/Aftertouch queda para sección 4 (MIDI), donde se
+        añadirán los handlers para CC2/CC11/0xD0 y se reusará la misma infraestructura.
 
 ---
 

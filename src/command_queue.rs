@@ -121,6 +121,8 @@ pub enum SynthCommand {
     SetPortamentoGlissando(bool), // step (semitone) glide instead of continuous
     SetTranspose(i8),              // -24..+24 semitones around C3
     SetPitchModSensitivity(u8),    // 0-7 PMS for the LFO pitch depth
+    SetEgBiasSensitivity(u8),      // 0-7 mod-wheel routing depth for EG Bias (amp-side)
+    SetPitchBiasSensitivity(u8),   // 0-7 mod-wheel routing depth for Pitch Bias (semitone offset)
 
     // Real-time controllers
     PitchBend(i16),
