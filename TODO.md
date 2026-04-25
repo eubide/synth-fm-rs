@@ -38,8 +38,10 @@ Loader JSON cubre todo el banco `mark/` (formato itsjoesullivan/dx7-patches).
 
 - [ ] (genérico) Osciloscopio + spectrum analyzer (`visualiser.rs` + `ScopeRing`)
 - [ ] (genérico) VU meter dB-scaled con peak-hold
-- [ ] (genérico) Curva ADSR en tiempo real
-- [ ] (genérico) Highlight de operadores activos en el diagrama
+- [ ] (DX7) Curva del envelope DX7 (R1/L1…R4/L4) en tiempo real — el DX7
+      usa 4 rates / 4 levels por operador, no ADSR clásico
+- [x] (genérico) Highlight de operadores activos en el diagrama (brillo
+      modulado por envelope live, max entre voces activas)
 
 **Widgets y browser (portar de `synth-analog-rs`):**
 

@@ -1113,8 +1113,24 @@ impl SynthEngine {
                     level2: op.envelope.level2,
                     level3: op.envelope.level3,
                     level4: op.envelope.level4,
+                    current_level: 0.0,
                 };
             }
+
+            // Aggregate live envelope output as the max across active voices,
+            // so the diagram lights up whenever any voice is sounding an operator.
+            for voice in &self.voices {
+                if !voice.active {
+                    continue;
+                }
+                for (i, op) in voice.operators.iter().enumerate() {
+                    let live = op.envelope.current_output();
+                    if live > snapshots[i].current_level {
+                        snapshots[i].current_level = live;
+                    }
+                }
+            }
+
             snapshots
         } else {
             [OperatorSnapshot::default(); 6]
