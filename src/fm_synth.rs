@@ -235,6 +235,14 @@ impl Voice {
     }
 }
 
+/// Routing depth helper: scale a 0..1 controller value by a 0..7 sensitivity.
+/// The DX7S "PITCH/AMP/EG BIAS/PITCH BIAS" knobs all share this 0..7 fractional
+/// shape — `sens` is clamped here so callers don't repeat the guard.
+#[inline]
+fn route_amount(value: f32, sens: u8) -> f32 {
+    value * (sens.min(7) as f32 / 7.0)
+}
+
 /// Round a frequency to the nearest equal-tempered semitone (relative to A4 = 440 Hz).
 fn quantize_to_semitone(freq: f32) -> f32 {
     if freq <= 0.0 {
@@ -818,6 +826,21 @@ impl SynthEngine {
         self.pitch_mod_sensitivity = 0;
         self.eg_bias_sensitivity = 0;
         self.pitch_bias_sensitivity = 0;
+        // Init Voice clears the patch-side routing for every external controller
+        // (live readings like `aftertouch`/`breath`/`foot` keep whatever the
+        // physical controller is sending — they reset themselves on the next CC).
+        self.aftertouch_pitch_sens = 0;
+        self.aftertouch_amp_sens = 0;
+        self.aftertouch_eg_bias_sens = 0;
+        self.aftertouch_pitch_bias_sens = 0;
+        self.breath_pitch_sens = 0;
+        self.breath_amp_sens = 0;
+        self.breath_eg_bias_sens = 0;
+        self.breath_pitch_bias_sens = 0;
+        self.foot_volume_sens = 0;
+        self.foot_pitch_sens = 0;
+        self.foot_amp_sens = 0;
+        self.foot_eg_bias_sens = 0;
         self.pitch_eg.enabled = false;
         self.pitch_eg.reset();
 
@@ -891,42 +914,32 @@ impl SynthEngine {
         // destinations. PITCH and AMP further scale the LFO pitch/amp depth on
         // top of the patch's PMS/AMS settings; EG_BIAS and PITCH_BIAS are static
         // mod-wheel-style offsets summed with the existing routings.
-        let at_pitch_route = self.aftertouch * (self.aftertouch_pitch_sens as f32 / 7.0);
-        let at_amp_route = self.aftertouch * (self.aftertouch_amp_sens as f32 / 7.0);
-        let at_eg_bias = self.aftertouch * (self.aftertouch_eg_bias_sens as f32 / 7.0);
-        let at_pitch_bias = self.aftertouch * (self.aftertouch_pitch_bias_sens as f32 / 7.0);
-
-        let br_pitch_route = self.breath * (self.breath_pitch_sens as f32 / 7.0);
-        let br_amp_route = self.breath * (self.breath_amp_sens as f32 / 7.0);
-        let br_eg_bias = self.breath * (self.breath_eg_bias_sens as f32 / 7.0);
-        let br_pitch_bias = self.breath * (self.breath_pitch_bias_sens as f32 / 7.0);
-
-        // Foot Controller: VOLUME scales the final output (0-15 sensitivity).
-        // PITCH/AMP/EG_BIAS share the same routing model as the other controllers.
-        let ft_pitch_route = self.foot * (self.foot_pitch_sens as f32 / 7.0);
-        let ft_amp_route = self.foot * (self.foot_amp_sens as f32 / 7.0);
-        let ft_eg_bias = self.foot * (self.foot_eg_bias_sens as f32 / 7.0);
+        // Foot has no PITCH_BIAS destination on the DX7S.
+        let pitch_route_total = route_amount(self.aftertouch, self.aftertouch_pitch_sens)
+            + route_amount(self.breath, self.breath_pitch_sens)
+            + route_amount(self.foot, self.foot_pitch_sens);
+        let amp_route_total = route_amount(self.aftertouch, self.aftertouch_amp_sens)
+            + route_amount(self.breath, self.breath_amp_sens)
+            + route_amount(self.foot, self.foot_amp_sens);
+        let eg_bias_route_total = route_amount(self.aftertouch, self.aftertouch_eg_bias_sens)
+            + route_amount(self.breath, self.breath_eg_bias_sens)
+            + route_amount(self.foot, self.foot_eg_bias_sens);
+        let pitch_bias_route_total = route_amount(self.aftertouch, self.aftertouch_pitch_bias_sens)
+            + route_amount(self.breath, self.breath_pitch_bias_sens);
 
         // Final LFO modulation: PMS-base from patch + dynamic boost from controllers.
-        let pitch_route_total = at_pitch_route + br_pitch_route + ft_pitch_route;
-        let amp_route_total = at_amp_route + br_amp_route + ft_amp_route;
         let lfo_pitch_mod = lfo_pitch_mod_raw * (pms_scale + pitch_route_total);
-        let lfo_amp_mod = lfo_amp_mod_raw + lfo_amp_mod_raw * amp_route_total;
+        let lfo_amp_mod = lfo_amp_mod_raw * (1.0 + amp_route_total);
 
         let pitch_eg_semitones = self.pitch_eg.process();
 
         // EG Bias: static controller-driven offset (mod wheel × sensitivity).
         // 0..1 amount; the per-operator AMS gates how strongly each op responds.
-        let eg_bias_amount = self.mod_wheel * (self.eg_bias_sensitivity as f32 / 7.0)
-            + at_eg_bias
-            + br_eg_bias
-            + ft_eg_bias;
+        let eg_bias_amount =
+            route_amount(self.mod_wheel, self.eg_bias_sensitivity) + eg_bias_route_total;
         // Pitch Bias: same idea but applied to the pitch — up to ±2 semitones at max.
-        // Foot has no pitch-bias destination on the DX7S.
-        let pitch_bias_semitones = (self.mod_wheel
-            * (self.pitch_bias_sensitivity as f32 / 7.0)
-            + at_pitch_bias
-            + br_pitch_bias)
+        let pitch_bias_semitones = (route_amount(self.mod_wheel, self.pitch_bias_sensitivity)
+            + pitch_bias_route_total)
             * 2.0;
 
         for voice in &mut self.voices {
