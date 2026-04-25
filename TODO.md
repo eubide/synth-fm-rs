@@ -5,9 +5,26 @@ Fuentes: DX7S manual (español), reface DX manual (ZT92120), colección de patch
 [itsjoesullivan/dx7-patches](https://github.com/itsjoesullivan/dx7-patches) (mark/),
 y repo hermano `synth-analog-rs` (features portables).
 
+## Política de autenticidad
+
+Cada item está etiquetado con el origen de la feature. Política actual del proyecto:
+**ceñirse al DX7 / DX7S y saltarse las features exclusivas del reface DX**.
+
+| Etiqueta | Significado |
+|---|---|
+| **DX7** | Feature del DX7 original (1983) — implementar |
+| **DX7S** | Añadida en DX7II / DX7S (1986–87, mismo motor + mejoras de control) — implementar |
+| **reface DX** | Solo del reface DX (2015) — saltar (a menos que haya razón explícita) |
+| **genérico** | Ni DX7 ni reface DX, sino utilidad práctica de cualquier sintetizador moderno (audio quality, GUI, persistencia) — evaluar caso a caso |
+| **implementación** | Detalle interno (rendimiento, modularización) — sin origen específico |
+
+> **Nota histórica:** Ni el DX7 ni el DX7S incluían **efectos** internos. Los
+> Chorus/Delay/Reverb actualmente en el código son una herencia de inspiración
+> reface DX que ya estaba antes de aplicar esta política.
+
 ---
 
-## 1. Motor FM ✅
+## 1. Motor FM ✅ *(todo DX7/DX7S)*
 
 Sección completada. Todo el motor FM está al nivel del DX7S y absorbe los patches
 del banco `mark/` con todos sus campos. Detalles pendientes solo son refinamientos
@@ -71,7 +88,7 @@ que se moverán a otras secciones (GUI, presets, etc.).
 
 ---
 
-## 2. LFO ✅
+## 2. LFO ✅ *(todo DX7/DX7S)*
 
 - [x] **AMS / PMS** — Implementados en sección 1 (motor FM). PMS también expuesto en
       el panel LFO (slider 0–7 bajo "MOD WHEEL ROUTING").
@@ -91,59 +108,66 @@ que se moverán a otras secciones (GUI, presets, etc.).
 
 ---
 
-## 3. Efectos
+## 3. Efectos — *sección omitida bajo la política DX7/DX7S*
 
-Los cuatro efectos faltantes son del reface DX (7 tipos por slot). La arquitectura
-actual es una cadena fija Chorus → Delay → Reverb.
+Ni el DX7 ni el DX7S llevan efectos internos. Todos los items de esta sección
+provienen del reface DX. Se documentan aquí como referencia pero **no se
+implementan** mientras la política sea ceñirse al DX7/DX7S.
 
-- [ ] **Distortion** — Saturación no lineal (`tanh` o curva de transferencia). Parámetros:
-      DRIVE, TONE (filtro post-distorsión). Útil también como soft-clipper de salida.
+> **Estado actual:** la cadena fija `Chorus → Delay → Reverb` ya estaba en el
+> código antes de aplicar esta política. Se mantiene como utilidad pero se
+> considera un legado **genérico** (no DX7-auténtico). Si se quisiera pureza
+> total habría que retirar `effects.rs` o exponerlo solo como FX externo
+> opcional vía MIDI Out.
 
-- [ ] **Flanger** — Como el chorus pero con retardos más cortos (1–5ms) y feedback
-      alto. Produce comb filtering modulado. Parámetros: DEPTH, RATE.
+- [ ] *(reface DX)* **Distortion** — `tanh` con DRIVE + TONE post-LP. Útil
+      también como soft-clipper, función que sí cabe en sección 8.
 
-- [ ] **Phaser** — All-pass stages en cascada moduladas por LFO. Parámetros: DEPTH, RATE.
+- [ ] *(reface DX)* **Flanger** — Retardos cortos (1–5 ms) con feedback alto.
 
-- [ ] **Touch Wah** — Filtro paso-banda con resonancia, controlado por envelope follower
-      de la amplitud de entrada. Parámetros: SENS (sensibilidad al nivel de entrada),
-      REZ (resonancia del filtro). Feature exclusivo del reface DX.
+- [ ] *(reface DX)* **Phaser** — Cascada de all-pass moduladas.
 
-- [ ] **2 slots de efectos configurables** — El reface DX tiene 2 slots en serie donde
-      cada uno puede ser cualquiera de los 7 tipos. La arquitectura actual es fija.
-      Refactorizar `EffectsChain` a `[Option<Box<dyn Effect>>; 2]` o similar.
+- [ ] *(reface DX)* **Touch Wah** — Band-pass + envelope follower. Único reface DX.
 
-- [ ] **Efectos por preset** — Los parámetros de efectos actuales son globales al
-      sintetizador. Deberían guardarse y cargarse como parte del preset.
+- [ ] *(reface DX)* **2 slots configurables** — La arquitectura del reface DX
+      con 2 slots × 7 tipos. Implica refactor invasivo de `EffectsChain`.
+
+- [ ] *(reface DX / genérico)* **Efectos por preset** — Persistencia de los
+      parámetros del FX en el JSON del preset. Aplica solo si decides mantener
+      la cadena de efectos heredada.
 
 ---
 
 ## 4. MIDI
 
-- [ ] **Aftertouch (0xD0)** — Canal de presión monofónico. El DX7S define routing
+Toda esta sección es **DX7 / DX7S nativa** — los controladores y el formato SysEx
+son exactamente los del DX7 original. La infraestructura de routing por sensibilidad
+(0–7) ya está parcialmente lista en sección 1+2 (PMS, EG Bias, Pitch Bias del Mod
+Wheel) y se reusa para Foot/Breath/Aftertouch.
+
+- [ ] *(DX7S)* **Aftertouch (0xD0)** — Canal de presión monofónico. Routing
       configurable a: PITCH sensitivity (0–7), AMPLITUDE (0–7), EG BIAS (0–7),
       PITCH BIAS (0–7). El `midi_handler.rs` no maneja el status byte 0xD0.
 
-- [ ] **Breath Controller (CC2)** — El DX7S Function mode define BREATH CTRL PITCH,
-      AMPLITUDE, EG BIAS, PITCH BIAS (0–7 cada uno). No manejado en `midi_handler.rs`.
+- [ ] *(DX7)* **Breath Controller (CC2)** — Function mode: BREATH CTRL PITCH,
+      AMPLITUDE, EG BIAS, PITCH BIAS (0–7 cada uno).
 
-- [ ] **Foot Controller** — Parámetros DX7S: FOOT CTRL VOLUME (0–15), PITCH (0–7),
-      AMPLITUDE (0–7), EG BIAS (0–7). No implementado.
+- [ ] *(DX7)* **Foot Controller** — DX7S: FOOT CTRL VOLUME (0–15), PITCH (0–7),
+      AMPLITUDE (0–7), EG BIAS (0–7).
 
-- [ ] **Expression (CC11)** — Controlador de expresión independiente del volumen
-      principal. No manejado en `midi_handler.rs`.
+- [ ] *(genérico)* **Expression (CC11)** — Controlador estándar MIDI. No es del
+      DX7 original (es CC11) pero todos los teclados modernos lo envían.
 
-- [ ] **Bank Select (CC0 / CC32)** — Selección de banco de presets combinada con
-      Program Change para acceder a más de 128 presets.
+- [ ] *(genérico)* **Bank Select (CC0 / CC32)** — MIDI estándar para acceder a
+      más de 128 presets. El DX7 original solo tenía Program Change.
 
-- [ ] **SysEx recepción** — Formato DX7 estándar: 32 voces = 4104 bytes (F0 43 00 09
-      20 00 ... F7), voz única = 163 bytes. Permite importar patches desde hardware
-      DX7 real o cualquier editor SysEx.
+- [ ] *(DX7)* **SysEx recepción** — Formato DX7 estándar: 32 voces = 4104 bytes
+      (F0 43 00 09 20 00 ... F7), voz única = 163 bytes.
 
-- [ ] **SysEx envío** — Exportar la voz activa en formato SysEx DX7 para compatibilidad
-      con editores externos y hardware real.
+- [ ] *(DX7)* **SysEx envío** — Exportar voz activa en formato SysEx DX7.
 
-- [ ] **MIDI channel configurable** — Actualmente el handler acepta todos los canales
-      (OMNI implícito). El DX7S permite configurar el canal de recepción (1–16 u OMNI).
+- [ ] *(DX7)* **MIDI channel configurable** — DX7S permite canal 1–16 u OMNI;
+      hoy aceptamos todo (OMNI implícito).
 
 ---
 
@@ -169,22 +193,23 @@ calidad. Estado actual del soporte:
 | operators[].oscillatorMode "fixed" | OK | usa `fixedFrequencyCoarse`/`Fine` para Hz |
 | oscillatorKeySync (`On`/`Off`) | OK | fiel al DX7 (flag a nivel de voz) |
 
-- [ ] **Cargar archivo JSON individual** — Botón "Load JSON" en GUI o argumento CLI.
+- [ ] *(genérico)* **Cargar archivo JSON individual** — Botón "Load JSON" en
+      GUI o argumento CLI.
 
-- [ ] **Cargar banco completo desde directorio** — Cargar todos los `.json` de una
-      carpeta como banco de presets navegable. La colección `mark/` tiene 26 voces.
+- [ ] *(genérico)* **Cargar banco completo desde directorio** — Cargar todos
+      los `.json` de una carpeta como banco navegable.
 
 ### Persistencia general
 
-- [ ] **Guardar preset a archivo** — Exportar la voz editada (JSON propio o SysEx).
+- [ ] *(genérico)* **Guardar preset a archivo** — Exportar voz editada (JSON
+      propio o SysEx — este último sí es DX7).
 
-- [ ] **Banco de usuario** — Slots editables además de los 32 ROM hardcoded.
+- [ ] *(genérico)* **Banco de usuario** — Slots editables además de los 32 ROM.
 
-- [ ] **Voice naming** — Editar el nombre del preset desde la GUI.
+- [ ] *(genérico)* **Voice naming** — Editar nombre del preset desde la GUI.
 
-- [ ] **A/B comparison** — Guardar el estado antes de editar para alternar entre
-      original y modificado. Implementado en `synth-analog-rs/src/gui/preset_browser.rs`,
-      portable directamente.
+- [ ] *(genérico)* **A/B comparison** — Implementado ya en
+      `synth-analog-rs/src/gui/preset_browser.rs`, portable.
 
 ---
 
@@ -192,108 +217,101 @@ calidad. Estado actual del soporte:
 
 ### Controles faltantes
 
-- [ ] **Panel Pitch EG** — Cuando se implemente el PEG, necesita 8 sliders (4 rates
-      + 4 levels) con el mismo estilo visual que el EG de amplitud.
+- [ ] *(DX7)* **Panel Pitch EG completo** — Hoy el motor sí calcula la PEG y se
+      carga desde JSON, pero la GUI no expone los 8 sliders (4 rates + 4 levels).
+      Necesita el mismo estilo visual que el EG de amplitud.
 
-- [ ] **AMS / PMS por operador** — Controles en el panel de cada operador.
+- [x] *(DX7)* ~~AMS por operador~~ — Slider 0–3 ya disponible en el panel de operador.
 
-- [ ] **Fixed frequency toggle** — Toggle RATIO/FIXED y campo de frecuencia absoluta.
+- [x] *(DX7)* ~~PMS por voz~~ — Slider 0–7 en el panel LFO bajo "MOD WHEEL ROUTING".
 
-- [ ] **Key scaling con 4 curvas** — Dropdown para −EXP/−LIN/+LIN/+EXP por lado
-      (izquierda y derecha), más sliders de profundidad independientes.
+- [x] *(DX7)* ~~Fixed frequency toggle~~ — Toggle RATIO/FIXED + slider 1–4000 Hz
+      en el panel de operador.
 
-- [ ] **Transpose + pitch bend range por voz** — Controles globales de voz en el
-      panel VOICE.
+- [ ] *(DX7)* **Key scaling con 4 curvas (UI)** — El motor las soporta pero la GUI
+      sigue exponiendo un único slider lineal "Key Lvl" que dirige ambos lados
+      con la misma profundidad. Necesita: dropdown −EXP/−LIN/+LIN/+EXP por lado
+      + slider de profundidad independiente + selector de breakpoint.
 
-- [ ] **Selector Mono/Mono-Legato/Poly** — Tres modos en lugar del toggle actual
-      Poly/Mono.
+- [ ] *(DX7)* **Transpose + pitch bend range por voz** — Controles globales en
+      el panel VOICE. Ambos campos ya existen en el motor y se cargan desde el
+      preset, pero no tienen control GUI directo (solo se cambian al cargar voz).
+
+- [x] *(DX7)* ~~Selector Mono/Mono-Legato/Poly~~ — Selector de tres modos disponible
+      en la barra superior y en `draw_mode_controls_compact`.
 
 ### Visualización (portar de `synth-analog-rs`)
 
-- [ ] **Osciloscope + spectrum analyzer** — Implementación completa disponible en
-      `synth-analog-rs/src/gui/visualiser.rs`. Incluye:
-      - Osciloscopio con trigger estable (histéresis), zoom slider, auto-gain
-      - FFT 2048-point con Hann window, suavizado exponencial por bin, marcadores de
-        frecuencia (50Hz–20kHz), grid de dB a −12/−24/−36/−48
-      - Requiere añadir `ScopeRing` a `lock_free.rs` (ya existe en el analog repo)
+Todas estas son **genérico** — utilidades de cualquier sintetizador moderno, no
+específicas del DX7.
 
-- [ ] **VU meter dB-scaled con peak-hold** — Implementación en
-      `synth-analog-rs/src/gui/mod.rs` (`peak_db`, `peak_hold_db`, `VU_FLOOR_DB = -48`).
-      Mucho más útil que un medidor lineal 0–1.
+- [ ] *(genérico)* **Osciloscope + spectrum analyzer** — Implementación
+      completa en `synth-analog-rs/src/gui/visualiser.rs`. Requiere `ScopeRing`
+      en `lock_free.rs`.
+
+- [ ] *(genérico)* **VU meter dB-scaled con peak-hold** — Más útil que un
+      medidor lineal 0–1.
 
 ### Widgets (portar de `synth-analog-rs`)
 
-- [ ] **Knob circular** — Implementación completa en
-      `synth-analog-rs/src/widgets/knob.rs`. Features:
-      - Drag vertical proporcional al rango, Shift+drag para ajuste fino (÷10)
-      - Doble click para reset al default
-      - Tooltip con valor numérico al hover
-      - Arc visual de 270° con color amber
-      Sustituiría sliders horizontales en el panel de operador.
+- [ ] *(genérico)* **Knob circular** — Drag vertical, Shift+drag fino, doble
+      click reset, tooltip, arc 270° amber. Sustituiría sliders horizontales.
 
-- [ ] **LED push buttons** — El analog repo reemplazó dropdowns y checkboxes por
-      botones LED estilo hardware (commit "Replace dropdowns and checkboxes with LED
-      push buttons"). Más auténtico para los botones de modo.
+- [ ] *(genérico)* **LED push buttons** — Estilo hardware más auténtico para
+      botones de modo.
 
 ### Preset browser (portar de `synth-analog-rs`)
 
-- [ ] **Preset browser con búsqueda y categorías** — Implementación en
-      `synth-analog-rs/src/gui/preset_browser.rs`. Incluye:
-      - Búsqueda por nombre (singleline TextEdit con filtro live)
-      - Filtro por categoría (Bass/Lead/Pad/Strings/Brass/FX/Sequence/Other)
-      - Lista scrollable con agrupación visual por categoría
-      - Panel Create/Edit con nombre + categoría
-      - A/B comparison integrado
-      - Random patch generator (valores acotados a rangos musicales)
+- [ ] *(genérico)* **Preset browser con búsqueda y categorías** — Búsqueda por
+      nombre, filtro por categoría, lista scrollable, A/B integrado, random
+      patch generator.
 
 ### Otros
 
-- [ ] **Visualización gráfica de EG** — Dibujar la curva ADSR de cada operador en
-      tiempo real (triángulo Attack→Decay→Sustain→Release) en lugar de solo sliders.
+- [ ] *(genérico)* **Visualización gráfica de EG** — Curva ADSR en tiempo real.
 
-- [ ] **Highlighting de operadores activos** — En el diagrama de algoritmo, iluminar
-      los operadores cuyo EG sigue activo al tocar una nota.
+- [ ] *(genérico)* **Highlighting de operadores activos** — Iluminar ops con
+      EG vivo en el diagrama de algoritmo.
 
-- [ ] **Modularizar gui.rs** — El archivo tiene 1751 líneas. El analog repo lo divide
-      en `gui/mod.rs`, `gui/panels.rs`, `gui/keyboard.rs`, `gui/preset_browser.rs`,
-      `gui/visualiser.rs`, `gui/midi_windows.rs`. Aplicar la misma estructura.
+- [ ] *(implementación)* **Modularizar gui.rs** — `gui.rs` tiene 1800+ líneas.
+      `synth-analog-rs` lo divide en `gui/{mod, panels, keyboard, preset_browser,
+      visualiser, midi_windows}.rs`.
 
-- [ ] **Undo / Redo** — Historial de cambios de parámetros para deshacer ediciones.
+- [ ] *(genérico)* **Undo / Redo** — Historial de cambios de parámetros.
 
 ---
 
-## 7. Características exclusivas reface DX
+## 7. Características exclusivas reface DX — *omitida bajo la política DX7/DX7S*
 
-- [ ] **Feedback por operador con tipo de onda** — El reface DX permite que cada
-      operador tenga su propio feedback con dos modos según la posición del slider:
-      - Arriba del centro → sawtooth (la onda evoluciona de seno puro a saw completa)
-      - Abajo del centro → square (la onda evoluciona de seno puro a square completa)
-      - Centro exacto → nivel 0, sinusoidal pura
-      Es la innovación técnica principal del reface vs. el DX7. Requiere un campo
-      `feedback_mode: FeedbackMode` en `Operator` y modificar `process_inner()`.
+Lista de referencia. Bajo la política actual no se implementa.
 
-- [ ] **Polyphonic Phrase Looper** — Hasta 2000 notas o 10 minutos grabados como
-      datos MIDI internos, con sobregrabación de capas. No afecta el motor de audio,
-      solo re-emite eventos MIDI grabados.
+- [ ] *(reface DX)* **Feedback por operador con tipo de onda** — Cada operador
+      con su propio feedback en dos modos: saw arriba / square abajo del centro.
+      Innovación técnica principal del reface vs. DX7. Requiere `feedback_mode:
+      FeedbackMode` en `Operator` y modificar `process_inner()`.
+
+- [ ] *(reface DX)* **Polyphonic Phrase Looper** — Hasta 2000 notas o 10 minutos
+      como datos MIDI internos. No afecta el motor de audio.
 
 ---
 
 ## 8. Calidad de audio
 
-- [ ] **Soft clipper de salida** — `tanh(x)` o curva personalizada antes de la salida
-      de audio. Previene clipping duro cuando múltiples voces suman amplitudes altas.
-      Una distortion suave implementada también cubre este caso.
+- [ ] *(genérico)* **Soft clipper de salida** — `tanh(x)` o curva custom antes
+      de la salida. Previene clipping duro al sumar muchas voces. El DX7 usa
+      conversión D/A 12-bit con companding (μ-law) que también suaviza picos —
+      un soft clipper digital es el equivalente moderno apropiado.
 
-- [ ] **DC offset removal** — Filtro high-pass de primer orden (fc ~5–10Hz) en la
-      salida. El feedback puede acumular componente continua.
+- [ ] *(genérico)* **DC offset removal** — Filtro high-pass de primer orden
+      (fc ~5–10 Hz) en la salida. El feedback puede acumular componente continua.
 
 ---
 
 ## 9. Rendimiento
 
-- [ ] **SIMD para voces** — Las 16 voces son independientes y candidatas ideales para
-      vectorización con `std::simd` (nightly) o `packed_simd`. Solo relevante si el
-      CPU se convierte en bottleneck con polyphony máxima + efectos.
+- [ ] *(implementación)* **SIMD para voces** — Las 16 voces son candidatas
+      ideales para vectorización con `std::simd` (nightly) o `packed_simd`.
+      Solo relevante si el CPU se vuelve bottleneck con polyphony máxima.
 
 ---
 
