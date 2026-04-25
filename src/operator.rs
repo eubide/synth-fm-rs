@@ -34,6 +34,16 @@ impl KeyScaleCurve {
             _ => KeyScaleCurve::PosLin,
         }
     }
+
+    /// Inverse of `from_dx7_code`: returns the DX7 SysEx encoding (0..3).
+    pub fn to_dx7_code(self) -> u8 {
+        match self {
+            KeyScaleCurve::NegLin => 0,
+            KeyScaleCurve::NegExp => 1,
+            KeyScaleCurve::PosExp => 2,
+            KeyScaleCurve::PosLin => 3,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

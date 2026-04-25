@@ -1,3 +1,4 @@
+use crate::presets::Dx7Preset;
 use rtrb::{Consumer, Producer, RingBuffer};
 
 /// Size of the command ring buffer.
@@ -40,7 +41,6 @@ pub enum EnvelopeParam {
 }
 
 /// Parameters that can be set on the pitch envelope.
-#[allow(dead_code)] // exposed via JSON loader; full GUI panel pending
 #[derive(Debug, Clone, Copy)]
 pub enum PitchEgParam {
     Enabled,
@@ -123,11 +123,42 @@ pub enum SynthCommand {
     SetPitchModSensitivity(u8),    // 0-7 PMS for the LFO pitch depth
     SetEgBiasSensitivity(u8),      // 0-7 mod-wheel routing depth for EG Bias (amp-side)
     SetPitchBiasSensitivity(u8),   // 0-7 mod-wheel routing depth for Pitch Bias (semitone offset)
+    // DX7S Aftertouch (channel pressure 0xD0) routing: 4 destinations (0-7 each)
+    SetAftertouchPitchSens(u8),
+    SetAftertouchAmpSens(u8),
+    SetAftertouchEgBiasSens(u8),
+    SetAftertouchPitchBiasSens(u8),
+    // DX7 Breath Controller (CC2) routing: 4 destinations (0-7 each)
+    SetBreathPitchSens(u8),
+    SetBreathAmpSens(u8),
+    SetBreathEgBiasSens(u8),
+    SetBreathPitchBiasSens(u8),
+    // DX7S Foot Controller (CC4) routing: VOLUME (0-15) + 3 destinations (0-7 each)
+    SetFootVolumeSens(u8),
+    SetFootPitchSens(u8),
+    SetFootAmpSens(u8),
+    SetFootEgBiasSens(u8),
 
     // Real-time controllers
     PitchBend(i16),
     ModWheel(f32),
     SustainPedal(bool),
+    /// DX7S channel aftertouch (0..1, mapped from MIDI 0xD0).
+    Aftertouch(f32),
+    /// DX7 Breath Controller value (0..1, mapped from MIDI CC2).
+    BreathController(f32),
+    /// DX7S Foot Controller value (0..1, mapped from MIDI CC4).
+    FootController(f32),
+    /// MIDI Expression (CC11) — generic global attenuator (1.0 = full level).
+    Expression(f32),
+    /// MIDI Bank Select MSB (CC0). Combined with LSB and the next Program Change
+    /// to address banks beyond the original 128 DX7 presets.
+    SetBankSelectMsb(u8),
+    /// MIDI Bank Select LSB (CC32).
+    SetBankSelectLsb(u8),
+    /// MIDI Program Change (0xC0). Combined with the current bank to compute the
+    /// preset index = (msb << 14 | lsb << 7 | program).
+    ProgramChange(u8),
 
     // Operator parameters
     SetOperatorParam {
@@ -164,6 +195,13 @@ pub enum SynthCommand {
 
     // Preset loading (for MIDI program change)
     LoadPreset(usize),
+
+    /// Apply a preset parsed from a DX7 SysEx single-voice dump as the live edit
+    /// buffer. The bank stays untouched.
+    LoadSysExSingleVoice(Box<Dx7Preset>),
+
+    /// Replace the entire 32-voice bank with a SysEx bulk dump.
+    LoadSysExBulk(Vec<Dx7Preset>),
 
     // Voice initialization
     VoiceInitialize,

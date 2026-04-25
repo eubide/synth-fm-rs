@@ -1,6 +1,8 @@
 use crate::algorithms;
 use crate::audio_engine::AudioEngine;
-use crate::command_queue::{EffectParam, EffectType, EnvelopeParam, LfoParam, OperatorParam};
+use crate::command_queue::{
+    EffectParam, EffectType, EnvelopeParam, LfoParam, OperatorParam, PitchEgParam,
+};
 use crate::fm_synth::{SynthController, SynthEngine};
 use crate::midi_handler::MidiHandler;
 use crate::presets::Dx7Preset;
@@ -25,6 +27,12 @@ pub struct Dx7App {
     preset_search: String,
     /// Cached snapshot from audio thread (updated each frame)
     snapshot: SynthSnapshot,
+    /// Path edited in the MIDI panel for SysEx load/save.
+    sysex_path: String,
+    /// Last status line shown in the MIDI panel (load/save feedback).
+    sysex_status: String,
+    /// Cached MIDI channel selection: None = OMNI, Some(0..15) = specific channel.
+    midi_channel_ui: Option<u8>,
 }
 
 #[derive(PartialEq)]
@@ -34,6 +42,7 @@ enum DisplayMode {
     Operator,
     LFO,
     Effects,
+    Midi,
 }
 
 impl Dx7App {
@@ -61,6 +70,9 @@ impl Dx7App {
             selected_collection: None,
             preset_search: String::new(),
             snapshot,
+            sysex_path: String::from("voice.syx"),
+            sysex_status: String::new(),
+            midi_channel_ui: None,
         }
     }
 
@@ -153,6 +165,19 @@ impl Dx7App {
                             "-"
                         };
                         format!("EFFECTS: {} {} {}", chorus, delay, reverb)
+                    }
+                    DisplayMode::Midi => {
+                        let ch_text = match self.midi_channel_ui {
+                            None => "OMNI".to_string(),
+                            Some(c) => format!("CH {}", c + 1),
+                        };
+                        format!(
+                            "MIDI: {} | AT:{:.0}% BR:{:.0}% FT:{:.0}%",
+                            ch_text,
+                            self.snapshot.aftertouch * 100.0,
+                            self.snapshot.breath * 100.0,
+                            self.snapshot.foot * 100.0
+                        )
                     }
                 };
 
@@ -613,6 +638,19 @@ impl Dx7App {
                     self.display_mode = DisplayMode::Effects;
                     self.display_text = "EFFECTS".to_string();
                 }
+
+                let midi_button = if self.display_mode == DisplayMode::Midi {
+                    egui::Button::new("MIDI")
+                        .fill(egui::Color32::from_rgb(180, 200, 220))
+                        .min_size(button_size)
+                } else {
+                    egui::Button::new("MIDI").min_size(button_size)
+                };
+
+                if ui.add(midi_button).clicked() {
+                    self.display_mode = DisplayMode::Midi;
+                    self.display_text = "MIDI / CONTROLLERS".to_string();
+                }
             });
         });
     }
@@ -871,6 +909,9 @@ impl eframe::App for Dx7App {
                 DisplayMode::Effects => {
                     self.draw_effects_panel(ui);
                 }
+                DisplayMode::Midi => {
+                    self.draw_midi_panel(ui);
+                }
             }
 
             ui.separator();
@@ -1043,6 +1084,9 @@ impl Dx7App {
                 });
 
                 ui.separator();
+                self.draw_pitch_eg_section(ui);
+
+                ui.separator();
                 let mod_pct = (self.snapshot.mod_wheel * 100.0) as i32;
                 ui.label(format!(
                     "Mod Wheel: {}%{}",
@@ -1055,6 +1099,62 @@ impl Dx7App {
                 ));
             });
         });
+    }
+
+    /// Pitch EG panel — 4 rates + 4 levels matching the amplitude EG layout.
+    /// On the DX7, level 50 means "no pitch offset"; 0 ≈ −4 octaves and 99 ≈ +4 octaves.
+    fn draw_pitch_eg_section(&self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("PITCH EG").strong());
+            let mut peg_enabled = self.snapshot.pitch_eg.enabled;
+            if ui.checkbox(&mut peg_enabled, "enabled").changed() {
+                if let Ok(mut ctrl) = self.lock_controller() {
+                    ctrl.set_pitch_eg_param(
+                        PitchEgParam::Enabled,
+                        if peg_enabled { 1.0 } else { 0.0 },
+                    );
+                }
+            }
+            ui.label(
+                egui::RichText::new("(L=50 → no offset; 0 ≈ −4 oct, 99 ≈ +4 oct)")
+                    .size(10.0)
+                    .color(egui::Color32::from_rgb(120, 120, 120)),
+            );
+        });
+
+        let peg = self.snapshot.pitch_eg;
+        egui::Grid::new("pitch_eg_grid")
+            .num_columns(4)
+            .spacing([8.0, 4.0])
+            .show(ui, |ui| {
+                self.pitch_eg_slider(ui, "R1:", peg.rate1, PitchEgParam::Rate1);
+                self.pitch_eg_slider(ui, "R2:", peg.rate2, PitchEgParam::Rate2);
+                ui.end_row();
+                self.pitch_eg_slider(ui, "L1:", peg.level1, PitchEgParam::Level1);
+                self.pitch_eg_slider(ui, "L2:", peg.level2, PitchEgParam::Level2);
+                ui.end_row();
+                self.pitch_eg_slider(ui, "R3:", peg.rate3, PitchEgParam::Rate3);
+                self.pitch_eg_slider(ui, "R4:", peg.rate4, PitchEgParam::Rate4);
+                ui.end_row();
+                self.pitch_eg_slider(ui, "L3:", peg.level3, PitchEgParam::Level3);
+                self.pitch_eg_slider(ui, "L4:", peg.level4, PitchEgParam::Level4);
+                ui.end_row();
+            });
+    }
+
+    /// One labelled 0..99 slider for a Pitch EG parameter. Mirrors the look of
+    /// the operator amplitude EG and the existing `routing_slider` helper.
+    fn pitch_eg_slider(&self, ui: &mut egui::Ui, label: &str, value: f32, param: PitchEgParam) {
+        ui.label(label);
+        let mut v = value;
+        if ui
+            .add(egui::Slider::new(&mut v, 0.0..=99.0).integer())
+            .changed()
+        {
+            if let Ok(mut ctrl) = self.lock_controller() {
+                ctrl.set_pitch_eg_param(param, v);
+            }
+        }
     }
 
     fn draw_effects_panel(&mut self, ui: &mut egui::Ui) {
@@ -1954,5 +2054,259 @@ impl Dx7App {
                     });
             });
         });
+    }
+
+    fn draw_midi_panel(&mut self, ui: &mut egui::Ui) {
+        ui.group(|ui| {
+            ui.vertical(|ui| {
+                ui.label(egui::RichText::new("MIDI / CONTROLLERS").size(14.0).strong());
+                ui.separator();
+
+                self.draw_midi_channel_section(ui);
+                ui.add_space(6.0);
+                ui.separator();
+
+                self.draw_aftertouch_routing(ui);
+                ui.add_space(4.0);
+                self.draw_breath_routing(ui);
+                ui.add_space(4.0);
+                self.draw_foot_routing(ui);
+
+                ui.add_space(6.0);
+                ui.separator();
+                self.draw_sysex_section(ui);
+            });
+        });
+    }
+
+    fn draw_midi_channel_section(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("INPUT CHANNEL").strong());
+            let label = match self.midi_channel_ui {
+                None => "OMNI".to_string(),
+                Some(c) => format!("Ch {}", c + 1),
+            };
+            egui::ComboBox::from_id_source("midi_channel_combo")
+                .selected_text(label)
+                .show_ui(ui, |ui| {
+                    if ui
+                        .selectable_label(self.midi_channel_ui.is_none(), "OMNI (all channels)")
+                        .clicked()
+                    {
+                        self.midi_channel_ui = None;
+                        if let Some(handler) = self._midi_handler.as_ref() {
+                            handler.set_channel(None);
+                        }
+                    }
+                    for ch in 0u8..16 {
+                        let selected = self.midi_channel_ui == Some(ch);
+                        if ui
+                            .selectable_label(selected, format!("Ch {}", ch + 1))
+                            .clicked()
+                        {
+                            self.midi_channel_ui = Some(ch);
+                            if let Some(handler) = self._midi_handler.as_ref() {
+                                handler.set_channel(Some(ch));
+                            }
+                        }
+                    }
+                });
+            ui.label(if self._midi_handler.is_some() {
+                "MIDI device connected"
+            } else {
+                "(no MIDI device)"
+            });
+        });
+    }
+
+    fn draw_aftertouch_routing(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new("AFTERTOUCH (0xD0)")
+                    .strong()
+                    .color(egui::Color32::from_rgb(50, 90, 160)),
+            );
+            ui.label(format!("input: {:.0}%", self.snapshot.aftertouch * 100.0));
+        });
+        ui.horizontal(|ui| {
+            self.routing_slider(
+                ui,
+                "PITCH",
+                self.snapshot.aftertouch_pitch_sens,
+                7,
+                |ctrl, v| ctrl.set_aftertouch_pitch_sens(v),
+            );
+            self.routing_slider(ui, "AMP", self.snapshot.aftertouch_amp_sens, 7, |ctrl, v| {
+                ctrl.set_aftertouch_amp_sens(v)
+            });
+            self.routing_slider(
+                ui,
+                "EG-BIAS",
+                self.snapshot.aftertouch_eg_bias_sens,
+                7,
+                |ctrl, v| ctrl.set_aftertouch_eg_bias_sens(v),
+            );
+            self.routing_slider(
+                ui,
+                "P-BIAS",
+                self.snapshot.aftertouch_pitch_bias_sens,
+                7,
+                |ctrl, v| ctrl.set_aftertouch_pitch_bias_sens(v),
+            );
+        });
+    }
+
+    fn draw_breath_routing(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new("BREATH CTRL (CC2)")
+                    .strong()
+                    .color(egui::Color32::from_rgb(50, 90, 160)),
+            );
+            ui.label(format!("input: {:.0}%", self.snapshot.breath * 100.0));
+        });
+        ui.horizontal(|ui| {
+            self.routing_slider(ui, "PITCH", self.snapshot.breath_pitch_sens, 7, |ctrl, v| {
+                ctrl.set_breath_pitch_sens(v)
+            });
+            self.routing_slider(ui, "AMP", self.snapshot.breath_amp_sens, 7, |ctrl, v| {
+                ctrl.set_breath_amp_sens(v)
+            });
+            self.routing_slider(
+                ui,
+                "EG-BIAS",
+                self.snapshot.breath_eg_bias_sens,
+                7,
+                |ctrl, v| ctrl.set_breath_eg_bias_sens(v),
+            );
+            self.routing_slider(
+                ui,
+                "P-BIAS",
+                self.snapshot.breath_pitch_bias_sens,
+                7,
+                |ctrl, v| ctrl.set_breath_pitch_bias_sens(v),
+            );
+        });
+    }
+
+    fn draw_foot_routing(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new("FOOT CTRL (CC4)")
+                    .strong()
+                    .color(egui::Color32::from_rgb(50, 90, 160)),
+            );
+            ui.label(format!("input: {:.0}%", self.snapshot.foot * 100.0));
+        });
+        ui.horizontal(|ui| {
+            // VOLUME has 0-15 range on the DX7S, the rest are 0-7.
+            self.routing_slider(ui, "VOLUME", self.snapshot.foot_volume_sens, 15, |ctrl, v| {
+                ctrl.set_foot_volume_sens(v)
+            });
+            self.routing_slider(ui, "PITCH", self.snapshot.foot_pitch_sens, 7, |ctrl, v| {
+                ctrl.set_foot_pitch_sens(v)
+            });
+            self.routing_slider(ui, "AMP", self.snapshot.foot_amp_sens, 7, |ctrl, v| {
+                ctrl.set_foot_amp_sens(v)
+            });
+            self.routing_slider(
+                ui,
+                "EG-BIAS",
+                self.snapshot.foot_eg_bias_sens,
+                7,
+                |ctrl, v| ctrl.set_foot_eg_bias_sens(v),
+            );
+        });
+    }
+
+    /// Render a labelled 0..max integer slider for a routing destination.
+    /// `apply` is called with the new value when the user changes it.
+    fn routing_slider<F>(&self, ui: &mut egui::Ui, label: &str, value: u8, max: u8, mut apply: F)
+    where
+        F: FnMut(&mut SynthController, u8),
+    {
+        ui.vertical(|ui| {
+            ui.label(label);
+            let mut v = value as i32;
+            if ui
+                .add(egui::Slider::new(&mut v, 0..=max as i32).show_value(true))
+                .changed()
+            {
+                if let Ok(mut ctrl) = self.lock_controller() {
+                    apply(&mut ctrl, v.clamp(0, max as i32) as u8);
+                }
+            }
+        });
+    }
+
+    fn draw_sysex_section(&mut self, ui: &mut egui::Ui) {
+        ui.label(egui::RichText::new("SYSEX (DX7 voice exchange)").strong());
+        ui.horizontal(|ui| {
+            ui.label("file:");
+            ui.add(egui::TextEdit::singleline(&mut self.sysex_path).desired_width(280.0));
+        });
+        ui.horizontal(|ui| {
+            if ui.button("Load .syx").clicked() {
+                self.load_sysex_from_path();
+            }
+            if ui.button("Save current voice").clicked() {
+                self.save_sysex_to_path();
+            }
+        });
+        if !self.sysex_status.is_empty() {
+            ui.label(
+                egui::RichText::new(&self.sysex_status)
+                    .size(11.0)
+                    .color(egui::Color32::from_rgb(120, 120, 120)),
+            );
+        }
+    }
+
+    fn load_sysex_from_path(&mut self) {
+        let path = self.sysex_path.trim().to_string();
+        match std::fs::read(&path) {
+            Ok(bytes) => match crate::sysex::parse_message(&bytes) {
+                Ok(crate::sysex::SysexResult::SingleVoice(preset)) => {
+                    let name = preset.name.clone();
+                    if let Ok(mut ctrl) = self.lock_controller() {
+                        ctrl.load_sysex_single_voice(*preset);
+                    }
+                    self.sysex_status = format!("Loaded single voice '{}' from {}", name, path);
+                }
+                Ok(crate::sysex::SysexResult::Bulk(presets)) => {
+                    let count = presets.len();
+                    if let Ok(mut ctrl) = self.lock_controller() {
+                        ctrl.load_sysex_bulk(presets);
+                    }
+                    self.sysex_status = format!("Loaded bulk dump ({} voices) from {}", count, path);
+                }
+                Err(e) => {
+                    self.sysex_status = format!("Parse error: {}", e);
+                }
+            },
+            Err(e) => {
+                self.sysex_status = format!("Read error ({}): {}", path, e);
+            }
+        }
+    }
+
+    fn save_sysex_to_path(&mut self) {
+        let path = self.sysex_path.trim().to_string();
+        let preset = Dx7Preset::from_snapshot(&self.snapshot);
+        let channel = self.midi_channel_ui.unwrap_or(0);
+        let bytes = crate::sysex::encode_single_voice(&preset, channel);
+        match std::fs::write(&path, &bytes) {
+            Ok(_) => {
+                self.sysex_status = format!(
+                    "Saved '{}' ({} bytes) to {}",
+                    preset.name,
+                    bytes.len(),
+                    path
+                );
+            }
+            Err(e) => {
+                self.sysex_status = format!("Write error ({}): {}", path, e);
+            }
+        }
     }
 }

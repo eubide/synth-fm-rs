@@ -142,7 +142,6 @@ pub enum VoiceMode {
 }
 
 /// Pitch envelope state mirrored to GUI for display.
-#[allow(dead_code)] // exposed via JSON loader / future PEG panel
 #[derive(Debug, Clone, Copy)]
 pub struct PitchEgSnapshot {
     pub enabled: bool,
@@ -200,6 +199,28 @@ pub struct SynthSnapshot {
     pub pitch_bend: f32,
     pub mod_wheel: f32,
     pub sustain_pedal: bool,
+    pub aftertouch: f32,
+    pub breath: f32,
+    pub foot: f32,
+    pub expression: f32,
+
+    // Aftertouch routing sensitivities (0-7 each)
+    pub aftertouch_pitch_sens: u8,
+    pub aftertouch_amp_sens: u8,
+    pub aftertouch_eg_bias_sens: u8,
+    pub aftertouch_pitch_bias_sens: u8,
+
+    // Breath Controller routing sensitivities (0-7 each)
+    pub breath_pitch_sens: u8,
+    pub breath_amp_sens: u8,
+    pub breath_eg_bias_sens: u8,
+    pub breath_pitch_bias_sens: u8,
+
+    // Foot Controller: VOLUME 0-15, others 0-7
+    pub foot_volume_sens: u8,
+    pub foot_pitch_sens: u8,
+    pub foot_amp_sens: u8,
+    pub foot_eg_bias_sens: u8,
 
     // LFO state
     pub lfo_rate: f32,
@@ -245,6 +266,25 @@ impl Default for SynthSnapshot {
             pitch_bend: 0.0,
             mod_wheel: 0.0,
             sustain_pedal: false,
+            aftertouch: 0.0,
+            breath: 0.0,
+            foot: 0.0,
+            expression: 1.0,
+
+            aftertouch_pitch_sens: 0,
+            aftertouch_amp_sens: 0,
+            aftertouch_eg_bias_sens: 0,
+            aftertouch_pitch_bias_sens: 0,
+
+            breath_pitch_sens: 0,
+            breath_amp_sens: 0,
+            breath_eg_bias_sens: 0,
+            breath_pitch_bias_sens: 0,
+
+            foot_volume_sens: 0,
+            foot_pitch_sens: 0,
+            foot_amp_sens: 0,
+            foot_eg_bias_sens: 0,
 
             lfo_rate: 35.0,
             lfo_delay: 0.0,

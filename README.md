@@ -182,6 +182,26 @@ Visual diagrams use a **column-centric layout** where:
 - Feedback loops appear as clean vertical lines
 - Automatic centering in 400x280px canvas
 
+## Documentation
+
+The deeper documentation lives in dedicated documents (in Spanish):
+
+- **[MANUAL.md](MANUAL.md)** — User manual covering every panel and control:
+  what each option does, how it sounds, and how to combine them. Includes a
+  cookbook with five worked-out patches (brass, e-piano, bell, evolving pad,
+  bass) and an advanced techniques section.
+- **[TEORIA-FM.md](TEORIA-FM.md)** — FM synthesis fundamentals specific to
+  the DX7: operators, modulation index, frequency ratios, the 32 algorithms,
+  feedback, and a "what to build → how to build it" reference table. For
+  universal concepts (sound, MIDI, ADSR, LFO basics) it cross-references the
+  sister project [`synth-analog-rs/TEORIA.md`](../synth-analog-rs/TEORIA.md).
+- **[TODO.md](TODO.md)** — Feature backlog and known technical debt,
+  organized by area (engine, LFO, MIDI, presets, GUI, audio quality,
+  performance) with an authenticity policy explaining what's DX7/DX7S
+  versus reface DX or generic.
+- **[CLAUDE.md](CLAUDE.md)** — Project instructions and architecture
+  summary intended for AI assistants and contributors.
+
 ## References & Acknowledgments
 
 This project was built using the following references for authentic DX7 behavior:

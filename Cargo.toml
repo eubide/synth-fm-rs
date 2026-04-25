@@ -1,6 +1,6 @@
 [package]
 name = "synth-fm-rs"
-version = "0.1.0"
+version = "0.4.0"
 edition = "2021"
 license = "MIT"
 
@@ -16,7 +16,7 @@ midir = "0.9"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 log = "0.4"
-env_logger = "0.10"
+env_logger = "0.11"
 lazy_static = "1.4"
 rtrb = "0.3"
 
