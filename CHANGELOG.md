@@ -2,7 +2,108 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased] - 2025-12-09
+## [Unreleased] - 2026-04-25
+
+### Major: DX7-Authentic FM Engine Rewrite
+
+Core FM synthesis engine corrected to match DX7 reference behavior, after audible deviations were traced to scaling and timing bugs. Verified against Dexed/MSFA references.
+
+#### Fixed
+- **Modulation Depth**: Added `MOD_INDEX_SCALE = 4π` so amplitude-domain operator output produces ~12.57 rad max phase modulation at level 99 (was ~3.14, far too quiet)
+- **Feedback Stability**: Replaced single-sample feedback with two-sample average `(last_output + prev_output) * 0.5`. Self-feedback now scaled by `PI / 7.0` (max ~PI rad at fb=7)
+- **Envelope Timing**: Rate formula corrected to `rate * 6.908` (was `rate * 0.5`, which collapsed every rate to ~140–160 ms)
+- **Algorithm Routing**: Algorithms 4, 5, 6, 19, and 31 had incorrect carrier/modulator wiring — now corrected
+- **Cross-Feedback (algorithms 4, 6)**: New `process_no_self_feedback()` + `cross_feedback_signal()` path; signal pre-divided by 28.0 to compensate for `MOD_INDEX_SCALE`
+
+### Major: File-Based Preset System
+
+Hardcoded Rust presets removed in favor of a JSON-based loader compatible with the itsjoesullivan `dx7-patches` schema, including the `mark/` collection.
+
+#### Added
+- **`preset_loader::scan_patches_dir()`**: Loads all `*.json` from `patches/`, with subdirectories acting as collections (`edu/`, `mark/`)
+- **Rich `Dx7Preset` struct**: Full `PresetOperator` array, `PresetPitchEg`, `PresetLfo`, transpose, PMS, optional global overrides; implements `Clone` + `Debug`
+- **JSON Compatibility**: `frequency: 0.0` → ratio 0.5 (DX7 coarse convention); per-operator `feedback` field overrides top-level `feedback`
+- **Collection-Aware Browser**: Filter bar + grid in GUI; `selected_collection: Option<String>`, search, and per-collection filtering
+- **`Dx7Preset::apply_to_synth()`**: Canonical loader path used by `SynthEngine::load_preset()`
+- **ROM1A Factory Data**: 11 presets rewritten with verified DX7 ROM1A parameters
+  - E.PIANO 1: Op2 corrected to 14:1 bell harmonic, L2 sustain levels fixed
+  - TUB BELLS, VIBES, MARIMBA, HARPSI, CLAV, GUITAR, FLUTE: Migrated to algorithm 5 with authentic ratios and envelope timing
+  - BRASS 1: Algorithm 22 with slow swell carriers (~1.6s)
+  - STRINGS: Algorithm 2 with real FM modulation chain
+  - CHOIR: Attack rates corrected from 11–28s down to ~2s
+- **References & Acknowledgments**: Credits for upstream DX7 projects (Dexed, MSFA, itsjoesullivan)
+
+### Major: Motor FM Section Completion (DX7S Fidelity)
+
+Operator and voice cores brought up to full DX7S spec so `mark/` patches load with full fidelity. Verified by parsing `brasshorns.json` end-to-end in tests.
+
+#### Added — Operator Layer
+- **Fixed-Frequency Mode**: `RATIO` / `FIXED` toggle with Hz computed from coarse/fine
+- **4-Curve Keyboard Level Scaling**: `-LIN`, `-EXP`, `+EXP`, `+LIN` with independent left/right depths and breakpoint
+- **AM Sensitivity (0–3)**: DX7 ROM table `[0%, 9%, 37%, 100%]`
+- **Oscillator Key Sync**: Free-run vs phase reset on note-on
+
+#### Added — Voice / Global
+- **Voice Mode Trio**: `Poly` / `Mono` (full portamento) / `MonoLegato`
+- **Glissando**: Portamento step quantised to nearest semitone
+- **Transpose**: −24..+24 semitones, applied before pitch bend
+- **Pitch Mod Sensitivity (0–7)**: Per voice, scales LFO pitch depth
+- **Pitch EG**: 4-rate / 4-level envelope summed in semitones
+- **Per-Preset `pitch_bend_range`** override
+
+#### JSON Loader
+- Deserializes full `mark/` schema: `keyVelocitySensitivity`, `keyboardRateScaling`, `amSensitivity`, `keyboardLevelScaling` (with breakpoints like `A-1` or `C3`), `oscillatorMode`, `fixedFrequencyCoarse/Fine`, `oscillatorKeySync`, `transpose`, `pitchEG`, full `lfo` block
+- `amDepth` tolerates string-or-int via custom deserializer
+
+#### GUI
+- 3-way voice mode selector (`POLY` / `MONO` / `M-LEG`) + glissando toggle
+- Operator panel exposes AMS, Key Sync, Fixed Hz controls
+
+### Major: LFO Section Completion
+
+Closes section 2 of TODO.md. AMS/PMS were already covered; the missing piece was static controller-driven modulation.
+
+#### Added
+- **EG Bias** (`eg_bias_sensitivity` 0–7): Mod-wheel-driven amp-side bias applied as `1 - eg_bias * ams_scale * 0.7` inside `process_inner`, so AMS gates the depth (DX7 spec)
+- **Pitch Bias** (`pitch_bias_sensitivity` 0–7): Sums up to 2 semitones into voice pitch offset alongside PMS and Pitch EG
+- **MOD WHEEL ROUTING row** in LFO panel: PMS / EG Bias / P-Bias sliders for DX7-style controller sensitivity
+- **Plumbing**: New `SynthCommand` variants, `SynthController` setters, `SynthSnapshot` exposes both sensitivities
+
+### Major: MIDI Section Completion
+
+Closes section 4 of TODO.md with full DX7S controller matrix and SysEx I/O.
+
+#### Added — Controllers
+- **Aftertouch (0xD0)**, **Breath (CC2)**, **Foot (CC4)**: DX7S 4-fold routing matrix (`PITCH` / `AMP` / `EG BIAS` / `PITCH BIAS`)
+- **Foot Volume (0–15)**: Acts as swell pedal
+- **Expression (CC11)** and **Bank Select (CC0/CC32 + Program Change)**: 14-bit bank addressing for external controllers
+- All controller contributions sum alongside Mod Wheel routings in `fm_synth::process()`
+
+#### Added — Channel Filter
+- `Arc<AtomicU8>` filter in `MidiHandler` (`0xFF` = OMNI), settable from GUI; system-status messages bypass
+
+#### Added — SysEx (`src/sysex.rs`)
+- **VCED parsing** (155-byte single-voice) and **VMEM parsing** (4096-byte packed 32-voice bank)
+- **VCED encoding** for outbound dumps
+- **Checksum validation** enforced both ways
+- `MidiHandler` dispatches incoming SysEx into single-voice load or bank replacement
+
+#### Added — GUI MIDI Panel
+- "Save current voice" via new `Dx7Preset::from_snapshot()` (rebuilds preset from live state)
+- "Load .syx" path field
+- Channel selector
+- Live readouts of AT / Breath / Foot inputs
+
+### Documentation & Policy
+
+- **Authenticity Policy**: Project sticks to DX7 / DX7S features; reface DX additions skipped. Section 3 (Effects) deferred — DX7/DX7S have no on-board effects (existing Chorus/Delay/Reverb chain in `effects.rs` flagged as pre-existing reface-style addition)
+- **TODO Origin Tags**: Each item now carries `*(DX7)* / *(DX7S)* / *(reface DX)* / *(generic)* / *(implementation)*` so scope decisions are unambiguous
+- **JSON Loader Quirks** documented: `pitchEG` rename, `amDepth` int|string, breakpoint parsing, AMS/PMS ROM tables
+- Removed obsolete `algorithms.json` diagram artifacts; updated docs to reflect hardcoded algorithm matrix
+
+---
+
+## [0.4.0] - 2025-12-09
 
 ### Major: Lock-Free Architecture Refactoring
 
