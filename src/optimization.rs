@@ -195,6 +195,5 @@ impl OptimizationTables {
 }
 
 // Global optimization tables instance
-lazy_static::lazy_static! {
-    pub static ref OPTIMIZATION_TABLES: OptimizationTables = OptimizationTables::new();
-}
+pub static OPTIMIZATION_TABLES: std::sync::LazyLock<OptimizationTables> =
+    std::sync::LazyLock::new(OptimizationTables::new);

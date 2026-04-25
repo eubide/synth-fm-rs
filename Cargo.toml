@@ -10,14 +10,13 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }
 [dependencies]
 eframe = "0.28"
 egui = "0.28"
-cpal = "0.15"
-rand = "0.8"
-midir = "0.9"
+cpal = "0.17"
+rand = "0.10"
+midir = "0.11"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 log = "0.4"
 env_logger = "0.11"
-lazy_static = "1.4"
 rtrb = "0.3"
 
 [dev-dependencies]

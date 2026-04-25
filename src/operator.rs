@@ -75,17 +75,17 @@ pub struct Operator {
     pub output_level: f32,
     pub velocity_sensitivity: f32, // 0-7, how much velocity affects output
     pub key_scale_rate: f32,       // 0-7, envelope rate scaling
-    pub key_scale_breakpoint: u8,  // MIDI note that splits left/right scaling (DX7 default A-1 = 21, our default C3 = 60)
+    pub key_scale_breakpoint: u8, // MIDI note that splits left/right scaling (DX7 default A-1 = 21, our default C3 = 60)
     pub key_scale_left_curve: KeyScaleCurve,
     pub key_scale_right_curve: KeyScaleCurve,
-    pub key_scale_left_depth: f32, // 0-99
+    pub key_scale_left_depth: f32,  // 0-99
     pub key_scale_right_depth: f32, // 0-99
     pub envelope: Envelope,
     pub feedback: f32,
-    pub am_sensitivity: u8,    // 0-3 LFO amp modulation depth scaling per operator
+    pub am_sensitivity: u8, // 0-3 LFO amp modulation depth scaling per operator
     pub oscillator_key_sync: bool, // OSC KEY SYNC: ON resets phase on note-on; OFF lets phase free-run
-    pub fixed_frequency: bool, // OSC MODE: false = RATIO (default), true = FIXED Hz
-    pub fixed_freq_hz: f32,    // Absolute frequency in Hz when fixed_frequency = true
+    pub fixed_frequency: bool,     // OSC MODE: false = RATIO (default), true = FIXED Hz
+    pub fixed_freq_hz: f32,        // Absolute frequency in Hz when fixed_frequency = true
 
     // Internal state
     phase: f32,

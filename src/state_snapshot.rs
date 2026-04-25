@@ -190,9 +190,9 @@ pub struct SynthSnapshot {
     pub portamento_time: f32,
     pub portamento_glissando: bool, // portamento step ON/OFF
     pub pitch_bend_range: f32,
-    pub transpose_semitones: i8,    // -24..+24 semitones, 0 means C3 (DX7 reference)
-    pub pitch_mod_sensitivity: u8,  // 0-7 PMS (LFO pitch depth scaler)
-    pub eg_bias_sensitivity: u8,    // 0-7 EG Bias routing from Mod Wheel
+    pub transpose_semitones: i8, // -24..+24 semitones, 0 means C3 (DX7 reference)
+    pub pitch_mod_sensitivity: u8, // 0-7 PMS (LFO pitch depth scaler)
+    pub eg_bias_sensitivity: u8, // 0-7 EG Bias routing from Mod Wheel
     pub pitch_bias_sensitivity: u8, // 0-7 Pitch Bias routing from Mod Wheel
 
     // Real-time controllers

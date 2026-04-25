@@ -371,14 +371,18 @@ impl Dx7App {
                                 ui.label("MODE:");
                                 let mut mode = voice_mode;
                                 use crate::state_snapshot::VoiceMode;
-                                if ui.selectable_value(&mut mode, VoiceMode::Poly, "POLY").clicked()
+                                if ui
+                                    .selectable_value(&mut mode, VoiceMode::Poly, "POLY")
+                                    .clicked()
                                     && voice_mode != VoiceMode::Poly
                                 {
                                     if let Ok(mut ctrl) = self.lock_controller() {
                                         ctrl.set_voice_mode(VoiceMode::Poly);
                                     }
                                 }
-                                if ui.selectable_value(&mut mode, VoiceMode::Mono, "MONO").clicked()
+                                if ui
+                                    .selectable_value(&mut mode, VoiceMode::Mono, "MONO")
+                                    .clicked()
                                     && voice_mode != VoiceMode::Mono
                                 {
                                     if let Ok(mut ctrl) = self.lock_controller() {
@@ -469,14 +473,18 @@ impl Dx7App {
         ui.horizontal(|ui| {
             ui.label("MODE:");
             let mut mode = voice_mode;
-            if ui.selectable_value(&mut mode, VoiceMode::Poly, "POLY").clicked()
+            if ui
+                .selectable_value(&mut mode, VoiceMode::Poly, "POLY")
+                .clicked()
                 && voice_mode != VoiceMode::Poly
             {
                 if let Ok(mut ctrl) = self.lock_controller() {
                     ctrl.set_voice_mode(VoiceMode::Poly);
                 }
             }
-            if ui.selectable_value(&mut mode, VoiceMode::Mono, "MONO").clicked()
+            if ui
+                .selectable_value(&mut mode, VoiceMode::Mono, "MONO")
+                .clicked()
                 && voice_mode != VoiceMode::Mono
             {
                 if let Ok(mut ctrl) = self.lock_controller() {
@@ -770,10 +778,7 @@ impl Dx7App {
                             button
                         };
 
-                        if ui
-                            .add_sized([ui.available_width(), 18.0], button)
-                            .clicked()
-                        {
+                        if ui.add_sized([ui.available_width(), 18.0], button).clicked() {
                             let preset = self.presets[global_idx].clone();
                             self.selected_preset = global_idx;
                             if let Ok(mut synth) = self.lock_engine() {
@@ -1212,7 +1217,11 @@ impl Dx7App {
                             .changed()
                         {
                             if let Ok(mut ctrl) = self.lock_controller() {
-                                ctrl.set_effect_param(EffectType::Chorus, EffectParam::ChorusRate, rate);
+                                ctrl.set_effect_param(
+                                    EffectType::Chorus,
+                                    EffectParam::ChorusRate,
+                                    rate,
+                                );
                             }
                         }
                     });
@@ -1227,7 +1236,11 @@ impl Dx7App {
                             .changed()
                         {
                             if let Ok(mut ctrl) = self.lock_controller() {
-                                ctrl.set_effect_param(EffectType::Chorus, EffectParam::ChorusDepth, depth);
+                                ctrl.set_effect_param(
+                                    EffectType::Chorus,
+                                    EffectParam::ChorusDepth,
+                                    depth,
+                                );
                             }
                         }
                     });
@@ -1299,7 +1312,11 @@ impl Dx7App {
                             .changed()
                         {
                             if let Ok(mut ctrl) = self.lock_controller() {
-                                ctrl.set_effect_param(EffectType::Delay, EffectParam::DelayTime, time_ms);
+                                ctrl.set_effect_param(
+                                    EffectType::Delay,
+                                    EffectParam::DelayTime,
+                                    time_ms,
+                                );
                             }
                         }
                     });
@@ -1725,7 +1742,9 @@ impl Dx7App {
         // Display the larger of the two side depths so a single slider can
         // drive both the left and the right scaling jointly. Power users
         // can still tweak each side via JSON / future detail panel.
-        let mut key_scale_lvl = op_snap.key_scale_left_depth.max(op_snap.key_scale_right_depth);
+        let mut key_scale_lvl = op_snap
+            .key_scale_left_depth
+            .max(op_snap.key_scale_right_depth);
         let mut key_scale_rt = op_snap.key_scale_rate;
         let mut am_sens = op_snap.am_sensitivity as f32;
         let mut osc_sync = op_snap.oscillator_key_sync;
@@ -2059,7 +2078,11 @@ impl Dx7App {
     fn draw_midi_panel(&mut self, ui: &mut egui::Ui) {
         ui.group(|ui| {
             ui.vertical(|ui| {
-                ui.label(egui::RichText::new("MIDI / CONTROLLERS").size(14.0).strong());
+                ui.label(
+                    egui::RichText::new("MIDI / CONTROLLERS")
+                        .size(14.0)
+                        .strong(),
+                );
                 ui.separator();
 
                 self.draw_midi_channel_section(ui);
@@ -2136,9 +2159,13 @@ impl Dx7App {
                 7,
                 |ctrl, v| ctrl.set_aftertouch_pitch_sens(v),
             );
-            self.routing_slider(ui, "AMP", self.snapshot.aftertouch_amp_sens, 7, |ctrl, v| {
-                ctrl.set_aftertouch_amp_sens(v)
-            });
+            self.routing_slider(
+                ui,
+                "AMP",
+                self.snapshot.aftertouch_amp_sens,
+                7,
+                |ctrl, v| ctrl.set_aftertouch_amp_sens(v),
+            );
             self.routing_slider(
                 ui,
                 "EG-BIAS",
@@ -2166,9 +2193,13 @@ impl Dx7App {
             ui.label(format!("input: {:.0}%", self.snapshot.breath * 100.0));
         });
         ui.horizontal(|ui| {
-            self.routing_slider(ui, "PITCH", self.snapshot.breath_pitch_sens, 7, |ctrl, v| {
-                ctrl.set_breath_pitch_sens(v)
-            });
+            self.routing_slider(
+                ui,
+                "PITCH",
+                self.snapshot.breath_pitch_sens,
+                7,
+                |ctrl, v| ctrl.set_breath_pitch_sens(v),
+            );
             self.routing_slider(ui, "AMP", self.snapshot.breath_amp_sens, 7, |ctrl, v| {
                 ctrl.set_breath_amp_sens(v)
             });
@@ -2200,9 +2231,13 @@ impl Dx7App {
         });
         ui.horizontal(|ui| {
             // VOLUME has 0-15 range on the DX7S, the rest are 0-7.
-            self.routing_slider(ui, "VOLUME", self.snapshot.foot_volume_sens, 15, |ctrl, v| {
-                ctrl.set_foot_volume_sens(v)
-            });
+            self.routing_slider(
+                ui,
+                "VOLUME",
+                self.snapshot.foot_volume_sens,
+                15,
+                |ctrl, v| ctrl.set_foot_volume_sens(v),
+            );
             self.routing_slider(ui, "PITCH", self.snapshot.foot_pitch_sens, 7, |ctrl, v| {
                 ctrl.set_foot_pitch_sens(v)
             });
@@ -2278,7 +2313,8 @@ impl Dx7App {
                     if let Ok(mut ctrl) = self.lock_controller() {
                         ctrl.load_sysex_bulk(presets);
                     }
-                    self.sysex_status = format!("Loaded bulk dump ({} voices) from {}", count, path);
+                    self.sysex_status =
+                        format!("Loaded bulk dump ({} voices) from {}", count, path);
                 }
                 Err(e) => {
                     self.sysex_status = format!("Parse error: {}", e);

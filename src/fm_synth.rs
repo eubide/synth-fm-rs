@@ -714,9 +714,7 @@ impl SynthEngine {
                 OperatorParam::KeyScaleRightCurve => {
                     op.key_scale_right_curve = KeyScaleCurve::from_dx7_code(value as u8)
                 }
-                OperatorParam::AmSensitivity => {
-                    op.am_sensitivity = value.clamp(0.0, 3.0) as u8
-                }
+                OperatorParam::AmSensitivity => op.am_sensitivity = value.clamp(0.0, 3.0) as u8,
                 OperatorParam::OscillatorKeySync => op.oscillator_key_sync = value > 0.5,
                 OperatorParam::FixedFrequency => {
                     op.fixed_frequency = value > 0.5;

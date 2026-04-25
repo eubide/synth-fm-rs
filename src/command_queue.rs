@@ -20,9 +20,9 @@ pub enum OperatorParam {
     KeyScaleRightDepth,
     KeyScaleLeftCurve, // payload: encoded KeyScaleCurve (0..3)
     KeyScaleRightCurve,
-    AmSensitivity,    // 0-3
+    AmSensitivity, // 0-3
     OscillatorKeySync,
-    FixedFrequency,    // bool: 0 = ratio, 1 = fixed
+    FixedFrequency, // bool: 0 = ratio, 1 = fixed
     FixedFreqHz,
     Enabled,
 }
@@ -119,10 +119,10 @@ pub enum SynthCommand {
     SetPortamentoEnable(bool),
     SetPortamentoTime(f32),
     SetPortamentoGlissando(bool), // step (semitone) glide instead of continuous
-    SetTranspose(i8),              // -24..+24 semitones around C3
-    SetPitchModSensitivity(u8),    // 0-7 PMS for the LFO pitch depth
-    SetEgBiasSensitivity(u8),      // 0-7 mod-wheel routing depth for EG Bias (amp-side)
-    SetPitchBiasSensitivity(u8),   // 0-7 mod-wheel routing depth for Pitch Bias (semitone offset)
+    SetTranspose(i8),             // -24..+24 semitones around C3
+    SetPitchModSensitivity(u8),   // 0-7 PMS for the LFO pitch depth
+    SetEgBiasSensitivity(u8),     // 0-7 mod-wheel routing depth for EG Bias (amp-side)
+    SetPitchBiasSensitivity(u8),  // 0-7 mod-wheel routing depth for Pitch Bias (semitone offset)
     // DX7S Aftertouch (channel pressure 0xD0) routing: 4 destinations (0-7 each)
     SetAftertouchPitchSens(u8),
     SetAftertouchAmpSens(u8),
