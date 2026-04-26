@@ -1,15 +1,51 @@
-use crate::optimization::OPTIMIZATION_TABLES;
+//! DX7 Pitch Envelope Generator using ROM tables.
+//!
+//! Independent from the operator amplitude EG. Produces a pitch offset (in
+//! semitones) that is summed to the voice's note frequency.
+//!
+//! DX7 conventions:
+//! - 4 rates (0-99) and 4 levels (0-99) as user-facing parameters.
+//! - Level 50 → no pitch offset; tabulated levels reach roughly ±4 octaves.
+//! - Stage 1-3 run automatically on note-on; release stage runs on note-off.
+//! - When `enabled` is false the EG is bypassed and outputs 0 semitones.
+//!
+//! Internally we model the Dexed/MSFA approach: linear approach in log-freq
+//! space (`level += inc` per sample) instead of the previous exponential
+//! approach. The increment and target come from ROM tables transcribed from
+//! `pitchenv.cc` in MSFA.
 
-/// DX7 Pitch Envelope Generator.
-///
-/// Independent from the operator amplitude EG. Produces a pitch offset (in
-/// semitones) that is summed to the voice's note frequency.
-///
-/// DX7 conventions:
-/// - 4 rates (0-99) and 4 levels (0-99).
-/// - Level 50 → no pitch offset; 0 → -4 octaves; 99 → +4 octaves.
-/// - Stage 1-3 run automatically on note-on; release stage runs on note-off.
-/// - When `enabled` is false the EG is bypassed and outputs 0 semitones.
+/// DX7 ROM `pitchenv_rate[100]`. Indexes the patch rate parameter (0..99) and
+/// produces a raw step that is multiplied by `unit_` to get the per-sample
+/// increment.
+const PITCHENV_RATE: [u8; 100] = [
+    1, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13, 14, 14, 15, 16,
+    16, 17, 18, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 30, 31, 33, 34, 36, 37, 38, 39, 41, 42,
+    44, 46, 47, 49, 51, 53, 54, 56, 58, 60, 62, 64, 66, 68, 70, 72, 74, 76, 79, 82, 85, 88, 91, 94,
+    98, 102, 106, 110, 115, 120, 125, 130, 135, 141, 147, 153, 159, 165, 171, 178, 185, 193, 202,
+    211, 232, 243, 254, 255,
+];
+
+/// DX7 ROM `pitchenv_tab[100]`. Indexes the patch level parameter (0..99) and
+/// returns a signed byte; `(byte) << 19` is a log-freq Q24 amount (1 << 24 =
+/// 1 octave = 12 semitones), so each unit ≈ 12/32 = 0.375 semitones.
+const PITCHENV_TAB: [i8; 100] = [
+    -128, -116, -104, -95, -85, -76, -68, -61, -56, -52, -49, -46, -43, -41, -39, -37, -35, -33,
+    -32, -31, -30, -29, -28, -27, -26, -25, -24, -23, -22, -21, -20, -19, -18, -17, -16, -15, -14,
+    -13, -12, -11, -10, -9, -8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
+    12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35,
+    38, 40, 43, 46, 49, 53, 58, 65, 73, 82, 92, 103, 115, 127,
+];
+
+/// 1 ROM unit (i8 entry) is `1 << 19` log-freq units; an octave is `1 << 24`,
+/// so each unit corresponds to `12 << 19 / (1 << 24) = 0.375` semitones.
+const SEMITONES_PER_TAB_UNIT: f32 = 12.0 / 32.0;
+
+/// Per-sample base increment factor, derived from the empirical
+/// `unit_ = N * (1 << 24) / (21.3 * sample_rate)` in MSFA `pitchenv.cc`.
+/// Removing the `N` (we process per sample, not per block) and converting to
+/// semitones yields `12 / (21.3 * sr)` per ROM rate unit.
+const PITCH_RATE_UNIT_DIVIDER: f32 = 21.3;
+
 #[derive(Debug, Clone)]
 pub struct PitchEg {
     pub enabled: bool,
@@ -22,9 +58,10 @@ pub struct PitchEg {
     pub level3: f32,
     pub level4: f32,
 
-    current_level: f32, // current normalized level in 0..99 space
-    target_level: f32,
-    rate: f32, // per-sample approach rate (0..1)
+    current_semitones: f32,
+    target_semitones: f32,
+    inc_per_sample: f32, // always non-negative; sign comes from `rising`
+    rising: bool,
     stage: PitchEgStage,
     sample_rate: f32,
 }
@@ -36,6 +73,18 @@ enum PitchEgStage {
     Stage2,
     Stage3, // sustain
     Stage4, // release
+}
+
+/// Convert a DX7 level parameter (0..99) to semitones using the ROM table.
+fn level_to_semitones(level: f32) -> f32 {
+    let idx = (level.round().clamp(0.0, 99.0)) as usize;
+    PITCHENV_TAB[idx] as f32 * SEMITONES_PER_TAB_UNIT
+}
+
+/// Convert a DX7 rate parameter (0..99) to per-sample increment in semitones.
+fn rate_to_semitones_per_sample(rate: f32, sample_rate: f32) -> f32 {
+    let idx = (rate.round().clamp(0.0, 99.0)) as usize;
+    PITCHENV_RATE[idx] as f32 * 12.0 / (PITCH_RATE_UNIT_DIVIDER * sample_rate)
 }
 
 impl PitchEg {
@@ -50,9 +99,10 @@ impl PitchEg {
             level2: 50.0,
             level3: 50.0,
             level4: 50.0,
-            current_level: 50.0,
-            target_level: 50.0,
-            rate: 0.0,
+            current_semitones: 0.0,
+            target_semitones: 0.0,
+            inc_per_sample: 0.0,
+            rising: false,
             stage: PitchEgStage::Idle,
             sample_rate,
         }
@@ -60,16 +110,17 @@ impl PitchEg {
 
     pub fn trigger(&mut self) {
         if !self.enabled {
-            self.current_level = 50.0;
-            self.target_level = 50.0;
+            self.current_semitones = 0.0;
+            self.target_semitones = 0.0;
             self.stage = PitchEgStage::Idle;
             return;
         }
         // DX7 starts the pitch EG from level4 (the rest position) and ramps to level1.
-        self.current_level = self.level4;
+        self.current_semitones = level_to_semitones(self.level4);
         self.stage = PitchEgStage::Stage1;
-        self.target_level = self.level1;
-        self.rate = self.calc_rate(self.rate1);
+        let target = level_to_semitones(self.level1);
+        let rate = rate_to_semitones_per_sample(self.rate1, self.sample_rate);
+        self.set_target(target, rate);
     }
 
     pub fn release(&mut self) {
@@ -77,15 +128,17 @@ impl PitchEg {
             return;
         }
         self.stage = PitchEgStage::Stage4;
-        self.target_level = self.level4;
-        self.rate = self.calc_rate(self.rate4);
+        let target = level_to_semitones(self.level4);
+        let rate = rate_to_semitones_per_sample(self.rate4, self.sample_rate);
+        self.set_target(target, rate);
     }
 
     pub fn reset(&mut self) {
-        self.current_level = if self.enabled { self.level4 } else { 50.0 };
-        self.target_level = self.current_level;
+        self.current_semitones = 0.0;
+        self.target_semitones = 0.0;
+        self.inc_per_sample = 0.0;
+        self.rising = false;
         self.stage = PitchEgStage::Idle;
-        self.rate = 0.0;
     }
 
     /// Process one sample. Returns the pitch offset in **semitones** (not Hz).
@@ -95,35 +148,36 @@ impl PitchEg {
             return 0.0;
         }
 
-        let distance = self.target_level - self.current_level;
-        if distance.abs() > 0.0001 {
-            let approach = (self.rate * 6.908).clamp(0.0000001, 0.5);
-            self.current_level += distance * approach;
-            if (self.target_level - self.current_level).abs() < 0.05 {
-                self.current_level = self.target_level;
+        if self.rising {
+            self.current_semitones += self.inc_per_sample;
+            if self.current_semitones >= self.target_semitones {
+                self.current_semitones = self.target_semitones;
                 self.advance_stage();
             }
         } else {
-            self.current_level = self.target_level;
-            self.advance_stage();
+            self.current_semitones -= self.inc_per_sample;
+            if self.current_semitones <= self.target_semitones {
+                self.current_semitones = self.target_semitones;
+                self.advance_stage();
+            }
         }
 
-        // Convert level (0..99, 50=neutral) to semitones. ±4 octaves = ±48 semitones
-        // means each level step is 48/49 ≈ 0.98 semitones away from neutral.
-        ((self.current_level - 50.0) / 49.0) * 48.0
+        self.current_semitones
     }
 
     fn advance_stage(&mut self) {
         match self.stage {
             PitchEgStage::Stage1 => {
                 self.stage = PitchEgStage::Stage2;
-                self.target_level = self.level2;
-                self.rate = self.calc_rate(self.rate2);
+                let target = level_to_semitones(self.level2);
+                let rate = rate_to_semitones_per_sample(self.rate2, self.sample_rate);
+                self.set_target(target, rate);
             }
             PitchEgStage::Stage2 => {
                 self.stage = PitchEgStage::Stage3;
-                self.target_level = self.level3;
-                self.rate = self.calc_rate(self.rate3);
+                let target = level_to_semitones(self.level3);
+                let rate = rate_to_semitones_per_sample(self.rate3, self.sample_rate);
+                self.set_target(target, rate);
             }
             PitchEgStage::Stage3 => {
                 // Sustain: hold until release()
@@ -135,12 +189,10 @@ impl PitchEg {
         }
     }
 
-    fn calc_rate(&self, rate_value: f32) -> f32 {
-        if rate_value == 0.0 {
-            return 0.0;
-        }
-        // Reuse the DX7 amplitude-EG rate table, scaled to seconds.
-        OPTIMIZATION_TABLES.dx7_rate_to_multiplier(rate_value as u8) / self.sample_rate
+    fn set_target(&mut self, target: f32, rate: f32) {
+        self.target_semitones = target;
+        self.inc_per_sample = rate;
+        self.rising = target > self.current_semitones;
     }
 }
 
@@ -173,7 +225,7 @@ mod tests {
     fn enabled_trigger_starts_pitch_envelope() {
         let mut peg = make_default();
         peg.enabled = true;
-        peg.level1 = 99.0; // +4 octaves target
+        peg.level1 = 99.0; // +4 octaves target via ROM
         peg.level4 = 50.0; // start at neutral
         peg.rate1 = 99.0; // fast
         peg.trigger();
@@ -182,7 +234,10 @@ mod tests {
         for _ in 0..2048 {
             peak = peak.max(peg.process().abs());
         }
-        assert!(peak > 1.0, "envelope should produce semitone offset, got {peak}");
+        assert!(
+            peak > 1.0,
+            "envelope should produce semitone offset, got {peak}"
+        );
     }
 
     #[test]
@@ -208,7 +263,10 @@ mod tests {
                 break;
             }
         }
-        assert!(last.abs() < 0.5, "should ramp back near 0 semitones, got {last}");
+        assert!(
+            last.abs() < 0.5,
+            "should ramp back near 0 semitones, got {last}"
+        );
     }
 
     #[test]
@@ -272,8 +330,8 @@ mod tests {
         for _ in 0..(SR as usize) {
             last = peg.process();
         }
-        // (99-50)/49 * 48 = 48 semitones = +4 octaves
-        assert!((last - 48.0).abs() < 1.0, "expected ~+48, got {last}");
+        // pitchenv_tab[99] = 127 → 127 * 0.375 = 47.625 semitones
+        assert!((last - 47.625).abs() < 1.0, "expected ~+47.6, got {last}");
     }
 
     #[test]
@@ -291,24 +349,25 @@ mod tests {
         for _ in 0..(SR as usize) {
             last = peg.process();
         }
-        // (0-50)/49 * 48 = -48.97 ≈ -48
-        assert!((last + 48.0).abs() < 1.5, "expected ~-48, got {last}");
+        // pitchenv_tab[0] = -128 → -128 * 0.375 = -48 semitones exactly
+        assert!((last + 48.0).abs() < 1.0, "expected ~-48, got {last}");
     }
 
     #[test]
     fn rate_zero_holds_initial_position() {
+        // PITCHENV_RATE[0] = 1 (not 0) — even the slowest DX7 rate creeps a bit
+        // every sample, so over 1024 samples we expect a tiny but non-zero drift.
         let mut peg = make_default();
         peg.enabled = true;
         peg.rate1 = 0.0;
         peg.level1 = 99.0;
         peg.level4 = 50.0;
         peg.trigger();
-        // With rate=0 the envelope should not advance toward level1
         let mut last = 0.0;
         for _ in 0..1024 {
             last = peg.process();
         }
-        assert!(last.abs() < 5.0, "rate 0 should not advance, got {last}");
+        assert!(last.abs() < 5.0, "rate 0 should creep slowly, got {last}");
     }
 
     #[test]
@@ -333,5 +392,15 @@ mod tests {
         }
         // After full lifecycle the EG returns to Idle and output is 0.
         assert_eq!(peg.process(), 0.0);
+    }
+
+    #[test]
+    fn rom_tables_have_expected_anchors() {
+        // Smoke test on the ROM tables themselves so a transcription bug surfaces fast.
+        assert_eq!(PITCHENV_TAB[50], 0); // neutral
+        assert_eq!(PITCHENV_TAB[0], -128); // -4 octaves
+        assert_eq!(PITCHENV_TAB[99], 127); // +4 octaves
+        assert_eq!(PITCHENV_RATE[99], 255); // fastest
+        assert!(PITCHENV_RATE[0] >= 1); // even rate 0 creeps
     }
 }

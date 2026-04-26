@@ -1,4 +1,4 @@
-use crate::optimization::OPTIMIZATION_TABLES;
+use crate::optimization::dx7_rate_to_multiplier;
 
 #[derive(Debug, Clone)]
 pub struct Envelope {
@@ -157,8 +157,7 @@ impl Envelope {
             return 0.0;
         }
 
-        // Use optimized DX7 rate calculation
-        let multiplier = OPTIMIZATION_TABLES.dx7_rate_to_multiplier(rate_value as u8);
+        let multiplier = dx7_rate_to_multiplier(rate_value as u8);
         multiplier / self.sample_rate
     }
 
@@ -230,7 +229,10 @@ mod tests {
         for _ in 0..256 {
             last = env.process();
         }
-        assert!(last > 0.0, "envelope should produce non-zero output after trigger");
+        assert!(
+            last > 0.0,
+            "envelope should produce non-zero output after trigger"
+        );
     }
 
     #[test]
@@ -244,7 +246,10 @@ mod tests {
         for _ in 0..2000 {
             peak = peak.max(env.process());
         }
-        assert!(peak > 0.95, "fast attack should reach near unity, got {peak}");
+        assert!(
+            peak > 0.95,
+            "fast attack should reach near unity, got {peak}"
+        );
     }
 
     #[test]
@@ -257,7 +262,10 @@ mod tests {
         for _ in 0..64 {
             last = env.process();
         }
-        assert!(last < 0.5, "slow attack should still be ramping after 64 samples, got {last}");
+        assert!(
+            last < 0.5,
+            "slow attack should still be ramping after 64 samples, got {last}"
+        );
     }
 
     #[test]
@@ -305,7 +313,10 @@ mod tests {
             peak_full = peak_full.max(env_full.process());
             peak_half = peak_half.max(env_half.process());
         }
-        assert!(peak_full > peak_half * 1.5, "full velocity should output significantly more than half ({peak_full} vs {peak_half})");
+        assert!(
+            peak_full > peak_half * 1.5,
+            "full velocity should output significantly more than half ({peak_full} vs {peak_half})"
+        );
     }
 
     #[test]
@@ -323,7 +334,10 @@ mod tests {
             last_norm = env_norm.process();
             last_fast = env_fast.process();
         }
-        assert!(last_fast >= last_norm, "key-scaled envelope should ramp faster: norm={last_norm}, fast={last_fast}");
+        assert!(
+            last_fast >= last_norm,
+            "key-scaled envelope should ramp faster: norm={last_norm}, fast={last_fast}"
+        );
     }
 
     #[test]
@@ -339,7 +353,10 @@ mod tests {
         let v1 = env.process();
         // With rate=0 the approach factor is clamped to a tiny value but never increases
         // level beyond what the floating point noise allows. Both should be ~ near v0.
-        assert!((v1 - v0).abs() < 0.5, "rate 0 should not move appreciably: v0={v0}, v1={v1}");
+        assert!(
+            (v1 - v0).abs() < 0.5,
+            "rate 0 should not move appreciably: v0={v0}, v1={v1}"
+        );
     }
 
     #[test]
@@ -363,7 +380,10 @@ mod tests {
             env.process();
         }
         let live = env.current_output();
-        assert!(live > 0.0 && live <= 1.0, "live output should be 0-1, got {live}");
+        assert!(
+            live > 0.0 && live <= 1.0,
+            "live output should be 0-1, got {live}"
+        );
     }
 
     #[test]
@@ -382,7 +402,10 @@ mod tests {
         for _ in 0..8192 {
             last = env.process();
         }
-        assert!((last - 0.4).abs() < 0.1, "should hold near level3=0.4, got {last}");
+        assert!(
+            (last - 0.4).abs() < 0.1,
+            "should hold near level3=0.4, got {last}"
+        );
 
         env.release();
         for _ in 0..(SR as usize / 10) {

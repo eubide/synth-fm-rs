@@ -1,5 +1,31 @@
-use crate::optimization::OPTIMIZATION_TABLES;
+use crate::optimization::fast_sin;
 use std::f32::consts::PI;
+
+/// DX7 ROM LFO rate-to-Hz table indexed 0..99 (rate parameter).
+///
+/// Source: `lfoSource[100]` in MSFA / Dexed `lfo.cc`. Replaces an analytical
+/// `0.062 * (1 + fast_exp(rate/99) * 320)` curve that topped out near 20 Hz —
+/// the real DX7 reaches ~49 Hz at rate 99, so fast LFO patches (saw/triangle
+/// at high rate, used for buzz/zip effects) lost most of their character.
+///
+/// The literals carry more decimals than `f32` can represent so a future
+/// reader can match them byte-for-byte against the upstream ROM dump; the
+/// trailing digits are silently truncated by the compiler.
+#[allow(clippy::excessive_precision)]
+const LFO_FREQ_TABLE: [f32; 100] = [
+    0.062541, 0.125031, 0.312393, 0.437120, 0.624610, 0.750694, 0.936330, 1.125302, 1.249609,
+    1.436782, 1.560915, 1.752081, 1.875117, 2.062494, 2.247191, 2.374451, 2.560492, 2.686728,
+    2.873976, 2.998950, 3.188013, 3.369840, 3.500175, 3.682224, 3.812065, 4.000800, 4.186202,
+    4.310716, 4.501260, 4.623209, 4.814636, 4.930480, 5.121901, 5.315191, 5.434783, 5.617346,
+    5.750431, 5.946717, 6.062811, 6.248438, 6.431695, 6.564264, 6.749460, 6.868132, 7.052186,
+    7.250580, 7.375719, 7.556294, 7.687577, 7.877738, 7.993605, 8.181967, 8.372405, 8.504848,
+    8.685079, 8.810573, 8.986341, 9.122423, 9.300595, 9.500285, 9.607994, 9.798158, 9.950249,
+    10.117361, 11.251125, 11.384335, 12.562814, 13.676149, 13.904338, 15.092062, 16.366612,
+    16.638935, 17.869907, 19.193858, 19.425019, 20.833333, 21.034918, 22.502250, 24.003841,
+    24.260068, 25.746653, 27.173913, 27.578599, 29.052876, 30.693677, 31.191516, 32.658393,
+    34.317090, 34.674064, 36.416606, 38.197097, 38.550501, 40.387722, 40.749796, 42.625746,
+    44.326241, 44.883303, 46.772685, 48.590865, 49.261084,
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum LFOWaveform {
@@ -81,18 +107,20 @@ impl LFO {
         }
     }
 
-    /// Convert DX7 rate (0-99) to Hz using optimized exponential lookup
+    /// Convert DX7 rate (0-99) to Hz via the ROM `LFO_FREQ_TABLE`. Fractional
+    /// rates are linearly interpolated between adjacent table entries so the
+    /// GUI slider is smooth even though the underlying parameter is integer.
     fn dx7_rate_to_hz(rate: f32) -> f32 {
         if rate <= 0.0 {
-            0.0
-        } else {
-            // Use optimized exponential lookup table
-            // Map rate to exponential curve: approximately 0.062Hz to 20Hz
-            let normalized = (rate / 99.0).clamp(0.0, 1.0);
-            // Scale normalized value for exponential range (6.0 gives ~20Hz max)
-            let exp_input = normalized; // Already 0-1 for fast_exp
-            0.062 * (1.0 + OPTIMIZATION_TABLES.fast_exp(exp_input) * 320.0)
+            return 0.0;
         }
+        let r = rate.min(99.0);
+        let lo_idx = r as usize;
+        let hi_idx = (lo_idx + 1).min(99);
+        let frac = r - lo_idx as f32;
+        let lo = LFO_FREQ_TABLE[lo_idx];
+        let hi = LFO_FREQ_TABLE[hi_idx];
+        lo + (hi - lo) * frac
     }
 
     /// Convert DX7 delay (0-99) to seconds
@@ -123,7 +151,7 @@ impl LFO {
     /// Generate waveform value for current phase (-1.0 to 1.0)
     fn generate_waveform(&mut self, phase: f32) -> f32 {
         match self.waveform {
-            LFOWaveform::Sine => OPTIMIZATION_TABLES.fast_sin(phase * 2.0 * PI),
+            LFOWaveform::Sine => fast_sin(phase * 2.0 * PI),
 
             LFOWaveform::Triangle => {
                 if phase < 0.5 {
@@ -541,6 +569,9 @@ mod tests {
                 current_run = 1;
             }
         }
-        assert!(max_run > 50, "S&H should hold value for many samples, max_run={max_run}");
+        assert!(
+            max_run > 50,
+            "S&H should hold value for many samples, max_run={max_run}"
+        );
     }
 }

@@ -1,6 +1,44 @@
 use crate::envelope::Envelope;
-use crate::optimization::OPTIMIZATION_TABLES;
+use crate::optimization::{dx7_level_to_amplitude, fast_sin};
 use std::f32::consts::PI;
+
+/// DX7 AMS (amplitude mod sensitivity) ROM lookup, indexed 0..3.
+///
+/// Values come from the 8-bit DX7 ROM (`{0, 66, 109, 255}`) normalised to f32.
+/// Source: `ampmodsenstab[4]` in MSFA / Dexed `dx7note.cc`, where the table is
+/// stored as Q24 (`{0, 4_342_338, 7_171_437, 16_777_216}`) and divided by `1<<24`.
+///
+/// Replaces an earlier `{0.0, 0.09, 0.37, 1.0}` approximation whose intermediate
+/// values were ~3× too low — patches with AMS=1 or AMS=2 lost most of their
+/// LFO amplitude character.
+const AMS_SCALE_TABLE: [f32; 4] = [0.0, 0.258_820_65, 0.427_440_64, 1.0];
+
+/// DX7 ROM lookup for the four exponential scaling curves, used by the
+/// keyboard level scaling formula. Indexed by `group` (0..32 inclusive).
+///
+/// Source: `exp_scale_data[33]` in MSFA / Dexed `dx7note.cc`.
+const EXP_SCALE_DATA: [u8; 33] = [
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 14, 16, 19, 23, 27, 33, 39, 47, 56, 66, 80, 94, 110, 126,
+    142, 158, 174, 190, 206, 222, 238, 250,
+];
+
+/// DX7 ROM velocity scaling table, indexed by `MIDI_velocity >> 1` (0..63).
+///
+/// Source: `velocity_data[64]` in MSFA / Dexed `dx7note.cc`. The integer offset
+/// `-239` sets the neutral point at MIDI velocity ≈ 100; values below are
+/// attenuations and above are boosts (same convention as the DX7 hardware).
+const VELOCITY_DATA: [u8; 64] = [
+    0, 70, 86, 97, 106, 114, 121, 126, 132, 138, 142, 148, 152, 156, 160, 163, 166, 170, 173, 174,
+    178, 181, 184, 186, 189, 190, 194, 196, 198, 200, 202, 205, 206, 209, 211, 214, 216, 218, 220,
+    222, 224, 225, 227, 229, 230, 232, 233, 235, 237, 238, 240, 241, 242, 243, 244, 246, 246, 248,
+    249, 250, 251, 252, 253, 254,
+];
+
+/// One DX7 output-level substep in dB. The hardware encodes operator level in
+/// `<<5` (32 substeps per logical level) where each *level* step is ~0.75 dB,
+/// so each *substep* ≈ 0.0234 dB. Same factor governs key-level scaling and
+/// velocity scaling because both add into the same outlevel domain.
+const DX7_OUTLEVEL_DB_PER_SUBSTEP: f32 = 0.75 / 32.0;
 
 /// DX7 keyboard level scaling curve type. Applied independently to the
 /// left and right of the breakpoint note.
@@ -51,7 +89,6 @@ struct CachedValues {
     level_amplitude: f32,
     velocity_factor: f32,
     key_scale_level_factor: f32,
-    key_scale_rate_factor: f32,
     params_dirty: bool,
 }
 
@@ -61,10 +98,18 @@ impl CachedValues {
             level_amplitude: 1.0,
             velocity_factor: 1.0,
             key_scale_level_factor: 1.0,
-            key_scale_rate_factor: 1.0,
             params_dirty: true,
         }
     }
+}
+
+/// Convert outlevel substeps to a linear amplitude factor. The DX7 encodes
+/// every per-operator gain (output level, velocity scaling, key-level
+/// scaling) in the same dB-per-substep domain (~0.0234 dB), so anything that
+/// produces "substeps" goes through this exponential at the end.
+fn outlevel_substeps_to_amplitude(substeps: i32) -> f32 {
+    let db = substeps as f32 * DX7_OUTLEVEL_DB_PER_SUBSTEP;
+    10.0_f32.powf(db / 20.0)
 }
 
 #[derive(Debug, Clone)]
@@ -177,75 +222,65 @@ impl Operator {
             return;
         }
 
-        // Cache level amplitude using optimized lookup
-        self.cached_values.level_amplitude =
-            OPTIMIZATION_TABLES.dx7_level_to_amplitude(self.output_level as u8);
+        self.cached_values.level_amplitude = dx7_level_to_amplitude(self.output_level as u8);
 
-        // DX7-style velocity sensitivity (0-7 range)
-        // At sensitivity 0: velocity has no effect (always full volume)
-        // At sensitivity 7: full velocity range effect
-        // Uses power curve for natural dynamics
-        let vel_sens_factor = self.velocity_sensitivity / 7.0;
-        let velocity_power = 1.0 + vel_sens_factor * 2.0; // Power from 1.0 to 3.0
-        let velocity_curve = self.current_velocity.powf(velocity_power);
-        // Blend between full volume and velocity-scaled based on sensitivity
-        self.cached_values.velocity_factor =
-            (1.0 - vel_sens_factor) + (vel_sens_factor * velocity_curve);
+        // DX7 ROM `ScaleVelocity`: vel_value = velocity_data[v>>1] - 239,
+        // scaled = ((sens * vel_value + 7) >> 3) << 4 (outlevel substeps).
+        // At sens = 0 collapses to factor = 1.0 (velocity has no effect).
+        let midi_velocity = (self.current_velocity * 127.0).round().clamp(0.0, 127.0) as i32;
+        let vel_idx = ((midi_velocity >> 1).max(0) as usize).min(63);
+        let vel_value = VELOCITY_DATA[vel_idx] as i32 - 239;
+        let sens = self.velocity_sensitivity.round().clamp(0.0, 7.0) as i32;
+        let scaled = ((sens * vel_value + 7) >> 3) << 4;
+        self.cached_values.velocity_factor = outlevel_substeps_to_amplitude(scaled);
 
-        // Cache key level scaling: independent left/right curves with DX7-style depth.
         self.cached_values.key_scale_level_factor = self.calculate_key_level_factor();
-
-        // Rate key scaling factor (1.0 means no change). Used by the envelope side via
-        // `calculate_key_scale_factor()` which calls into similar logic; this cached
-        // value is currently unused at the operator level but kept for future hooks.
-        let key_distance = self.current_note as f32 - self.key_scale_breakpoint as f32;
-        self.cached_values.key_scale_rate_factor = if self.key_scale_rate > 0.0 {
-            let normalized = key_distance / 24.0;
-            let rate_scale_amount = self.key_scale_rate / 7.0;
-            1.0 + (normalized * rate_scale_amount).clamp(-0.75, 0.75)
-        } else {
-            1.0
-        };
 
         self.cached_values.params_dirty = false;
     }
 
-    /// DX7 keyboard level scaling: amplitude is multiplied by a factor derived from
-    /// the distance between the played note and the breakpoint, the curve type
-    /// (linear vs exponential, positive vs negative), and a 0-99 depth.
-    ///
-    /// We model the DX7 behaviour where the breakpoint defines a hinge: notes below
-    /// use `left_curve`/`left_depth`, notes above use `right_curve`/`right_depth`.
-    /// A factor of 1.0 means no scaling; values below 1.0 attenuate; values above 1.0
-    /// would boost (clamped to a moderate range to avoid runaway gain).
+    /// DX7 keyboard level scaling. Port of `ScaleLevel` / `ScaleCurve` in
+    /// MSFA `dx7note.cc`. The breakpoint defines a hinge: notes below use
+    /// `left_curve`/`left_depth`, above use `right_curve`/`right_depth`. The
+    /// hardware groups notes in 3-semitone blocks counted from
+    /// `breakpoint + 17`, so a breakpoint at MIDI 60 keeps the response flat
+    /// across roughly the next octave.
     fn calculate_key_level_factor(&self) -> f32 {
-        let distance = self.current_note as f32 - self.key_scale_breakpoint as f32;
-        let (curve, depth) = if distance < 0.0 {
-            (self.key_scale_left_curve, self.key_scale_left_depth)
+        let offset = self.current_note as i32 - self.key_scale_breakpoint as i32 - 17;
+        let (group, depth, curve) = if offset >= 0 {
+            (
+                (offset + 1) / 3,
+                self.key_scale_right_depth,
+                self.key_scale_right_curve,
+            )
         } else {
-            (self.key_scale_right_curve, self.key_scale_right_depth)
+            (
+                (-(offset + 1)) / 3,
+                self.key_scale_left_depth,
+                self.key_scale_left_curve,
+            )
         };
 
         if depth <= 0.0 {
             return 1.0;
         }
+        let depth_int = depth.round().clamp(0.0, 99.0) as i32;
+        let group = group.max(0);
 
-        // Normalize distance over a 4-octave reference (DX7 reaches max effect at ~48 semitones).
-        let normalized = (distance.abs() / 48.0).clamp(0.0, 1.0);
-
-        // Curve shape: linear is just `normalized`; exponential emphasises further-away notes.
-        let shape = match curve {
-            KeyScaleCurve::NegLin | KeyScaleCurve::PosLin => normalized,
-            KeyScaleCurve::NegExp | KeyScaleCurve::PosExp => normalized * normalized,
+        let magnitude = match curve {
+            KeyScaleCurve::NegLin | KeyScaleCurve::PosLin => (group * depth_int * 329) >> 12,
+            KeyScaleCurve::NegExp | KeyScaleCurve::PosExp => {
+                let g = (group as usize).min(32);
+                (EXP_SCALE_DATA[g] as i32 * depth_int * 329) >> 15
+            }
         };
 
-        let amount = (depth / 99.0) * shape; // 0..1 effective amount
-        let factor = match curve {
-            KeyScaleCurve::NegLin | KeyScaleCurve::NegExp => 1.0 - amount, // attenuate
-            KeyScaleCurve::PosLin | KeyScaleCurve::PosExp => 1.0 + amount, // boost
+        let signed = match curve {
+            KeyScaleCurve::NegLin | KeyScaleCurve::NegExp => -magnitude,
+            KeyScaleCurve::PosLin | KeyScaleCurve::PosExp => magnitude,
         };
 
-        factor.clamp(0.0, 2.0)
+        outlevel_substeps_to_amplitude(signed).clamp(0.0, 4.0)
     }
 
     pub fn release(&mut self) {
@@ -254,13 +289,18 @@ impl Operator {
 
     pub fn update_frequency(&mut self) {
         // FIXED mode bypasses the note-tracked base frequency and uses an absolute Hz value.
-        // Detune still applies as a small percentage offset, matching DX7 behaviour.
+        // Detune still applies as a fine cents offset, matching DX7 behaviour.
         let actual_freq = if self.fixed_frequency {
             self.fixed_freq_hz
         } else {
             self.base_frequency * self.frequency_ratio
         };
-        let detuned_freq = actual_freq * (1.0 + self.detune / 100.0);
+        // DX7 detune: parameter range -7..+7 is a *fine* offset of roughly ±7 cents
+        // at the extremes (Hexter / Synthmania reference). The previous formula
+        // `1 + detune/100` treated the value as a percentage, producing ±7%
+        // (≈±117 cents — almost a semitone and a half) and made detuned patches
+        // sound like multiple instruments out of tune.
+        let detuned_freq = actual_freq * 2.0_f32.powf(self.detune / 1200.0);
 
         // Validate frequency range
         if detuned_freq.is_finite()
@@ -293,6 +333,62 @@ impl Operator {
     pub fn set_detune(&mut self, detune: f32) {
         self.detune = detune;
         self.update_frequency();
+    }
+
+    /// Mark the cached values stale. Call after any bulk write to operator
+    /// fields that bypasses the typed setters (preset apply, SysEx load).
+    pub fn invalidate_cache(&mut self) {
+        self.cached_values.params_dirty = true;
+    }
+
+    /// Setters that clamp to DX7 range and invalidate the cache. Use these
+    /// from any path that writes during a sustained note.
+    pub fn set_output_level(&mut self, level: f32) {
+        self.output_level = level.clamp(0.0, 99.0);
+        self.cached_values.params_dirty = true;
+    }
+
+    pub fn set_velocity_sensitivity(&mut self, sens: f32) {
+        self.velocity_sensitivity = sens.clamp(0.0, 7.0);
+        self.cached_values.params_dirty = true;
+    }
+
+    pub fn set_key_scale_breakpoint(&mut self, note: u8) {
+        self.key_scale_breakpoint = note.min(127);
+        self.cached_values.params_dirty = true;
+    }
+
+    pub fn set_key_scale_left_depth(&mut self, depth: f32) {
+        self.key_scale_left_depth = depth.clamp(0.0, 99.0);
+        self.cached_values.params_dirty = true;
+    }
+
+    pub fn set_key_scale_right_depth(&mut self, depth: f32) {
+        self.key_scale_right_depth = depth.clamp(0.0, 99.0);
+        self.cached_values.params_dirty = true;
+    }
+
+    pub fn set_key_scale_left_curve(&mut self, curve: KeyScaleCurve) {
+        self.key_scale_left_curve = curve;
+        self.cached_values.params_dirty = true;
+    }
+
+    pub fn set_key_scale_right_curve(&mut self, curve: KeyScaleCurve) {
+        self.key_scale_right_curve = curve;
+        self.cached_values.params_dirty = true;
+    }
+
+    /// Setters for fields read directly each sample (no cache).
+    pub fn set_feedback(&mut self, feedback: f32) {
+        self.feedback = feedback.clamp(0.0, 7.0);
+    }
+
+    pub fn set_key_scale_rate(&mut self, rate: f32) {
+        self.key_scale_rate = rate.clamp(0.0, 7.0);
+    }
+
+    pub fn set_am_sensitivity(&mut self, sens: u8) {
+        self.am_sensitivity = sens.min(3);
     }
 
     pub fn process(&mut self, modulation: f32) -> f32 {
@@ -352,17 +448,12 @@ impl Operator {
         // Scale incoming modulation to DX7-authentic depth
         // Feedback has its own independent scaling (not multiplied by MOD_INDEX_SCALE)
         let total_modulation = (modulation * MOD_INDEX_SCALE) + feedback_mod;
-        let sin_result = OPTIMIZATION_TABLES.fast_sin(self.phase + total_modulation);
+        let sin_result = fast_sin(self.phase + total_modulation);
 
         // DX7 AMS table (0..3): how much the LFO amplitude modulation affects this op.
-        // 0 = none, 3 = maximum. Mapped to a per-sample gain factor centred on 1.0.
-        // Multiplier table mirrors the DX7 ROM (~0%, ~9%, ~37%, ~100%).
-        let ams_scale = match self.am_sensitivity.min(3) {
-            0 => 0.0,
-            1 => 0.09,
-            2 => 0.37,
-            _ => 1.0,
-        };
+        // 0 = none, 3 = maximum. Values come straight from the DX7 ROM via
+        // `AMS_SCALE_TABLE` ({0, 66, 109, 255}/255).
+        let ams_scale = AMS_SCALE_TABLE[self.am_sensitivity.min(3) as usize];
         let amp_mod_factor = 1.0 + (self.current_lfo_amp_mod * ams_scale);
 
         // EG Bias attenuates the op output by a static, controller-driven amount.
@@ -411,24 +502,26 @@ impl Operator {
         self.envelope.reset();
     }
 
-    // Calculate key scaling factor for envelope rates
+    /// DX7 Key Rate Scaling — port of `ScaleRate` in MSFA `dx7note.cc`.
+    ///
+    /// Reference is fixed at MIDI 21 (A-1) and is **independent** of the
+    /// per-operator level breakpoint (a previous version of this function
+    /// reused `key_scale_breakpoint`, which is wrong: the DX7 KRS uses a
+    /// hardware-implicit reference, not the patch's level scaling hinge).
+    ///
+    /// Integer ROM math:
+    ///     x          = clamp(midinote / 3 - 7, 0, 31)
+    ///     qratedelta = (sensitivity * x) >> 3
+    /// `qratedelta` is in quarter-rate-step units; 4 quarter-steps double the
+    /// envelope speed, so the multiplicative factor is `2^(qratedelta / 4)`.
     fn calculate_key_scale_factor(&self, note: u8) -> f32 {
         if self.key_scale_rate == 0.0 {
             return 1.0;
         }
-
-        // Key scale rate affects how fast envelopes run based on key position
-        // Higher notes = faster envelopes
-        let distance = note as i32 - self.key_scale_breakpoint as i32;
-        if distance > 0 {
-            // Above breakpoint - faster rates
-            1.0 + (distance as f32 * self.key_scale_rate / 7.0 / 24.0) // 24 = 2 octaves
-        } else if distance < 0 {
-            // Below breakpoint - slower rates
-            1.0 / (1.0 + (-distance as f32 * self.key_scale_rate / 7.0 / 24.0))
-        } else {
-            1.0
-        }
+        let x = ((note as i32) / 3 - 7).clamp(0, 31);
+        let sens = self.key_scale_rate.round().clamp(0.0, 7.0) as i32;
+        let qratedelta = (sens * x) >> 3;
+        2.0_f32.powf(qratedelta as f32 / 4.0)
     }
 }
 
@@ -568,7 +661,10 @@ mod tests {
         let mut op = Operator::new(SR);
         op.trigger(440.0, 1.0, 60);
         let peak = warmup(&mut op, 4096);
-        assert!(peak > 0.05, "expected audible output after trigger, got peak={peak}");
+        assert!(
+            peak > 0.05,
+            "expected audible output after trigger, got peak={peak}"
+        );
     }
 
     #[test]
@@ -586,7 +682,10 @@ mod tests {
                 break;
             }
         }
-        assert!(!op.is_active(), "operator should reach inactive state after release");
+        assert!(
+            !op.is_active(),
+            "operator should reach inactive state after release"
+        );
     }
 
     #[test]
@@ -609,7 +708,7 @@ mod tests {
         op.fixed_frequency = true;
         op.fixed_freq_hz = 1000.0;
         op.trigger(440.0, 1.0, 60); // base_frequency ignored
-        // Operator should produce a 1kHz wave; just ensure it's audible
+                                    // Operator should produce a 1kHz wave; just ensure it's audible
         let peak = warmup(&mut op, 4096);
         assert!(peak > 0.05);
     }
@@ -624,6 +723,57 @@ mod tests {
         // process should still run and produce silence (sin(0)=0)
         let out = op.process(0.0);
         assert!(out.abs() < 1e-3);
+    }
+
+    /// Recover the operator's tuned frequency from its phase increment so we can
+    /// assert on cents-level deviations regardless of internal representation.
+    fn frequency_from_phase_increment(op: &Operator) -> f32 {
+        op.phase_increment * op.sample_rate / (2.0 * PI)
+    }
+
+    fn cents_offset(actual_hz: f32, reference_hz: f32) -> f32 {
+        1200.0 * (actual_hz / reference_hz).log2()
+    }
+
+    #[test]
+    fn detune_zero_keeps_frequency_exact() {
+        let mut op = Operator::new(SR);
+        op.set_detune(0.0);
+        op.trigger(440.0, 1.0, 60);
+        let f = frequency_from_phase_increment(&op);
+        assert!(
+            (f - 440.0).abs() < 0.01,
+            "detune=0 must be exact, got {f} Hz"
+        );
+    }
+
+    #[test]
+    fn detune_plus_seven_is_about_seven_cents_sharp() {
+        // DX7 detune ±7 should be a *fine* offset (≈ ±7 cents), not a wild
+        // percentage shift. Regression test for the bug that scaled detune as
+        // `1 + detune/100`, producing ~+117 cents at detune=+7.
+        let mut op = Operator::new(SR);
+        op.set_detune(7.0);
+        op.trigger(440.0, 1.0, 60);
+        let f = frequency_from_phase_increment(&op);
+        let cents = cents_offset(f, 440.0);
+        assert!(
+            (cents - 7.0).abs() < 0.5,
+            "detune=+7 should produce ~+7 cents, got {cents:.2} cents (freq {f:.2} Hz)"
+        );
+    }
+
+    #[test]
+    fn detune_minus_seven_is_about_seven_cents_flat() {
+        let mut op = Operator::new(SR);
+        op.set_detune(-7.0);
+        op.trigger(440.0, 1.0, 60);
+        let f = frequency_from_phase_increment(&op);
+        let cents = cents_offset(f, 440.0);
+        assert!(
+            (cents + 7.0).abs() < 0.5,
+            "detune=-7 should produce ~-7 cents, got {cents:.2} cents (freq {f:.2} Hz)"
+        );
     }
 
     #[test]
@@ -667,7 +817,10 @@ mod tests {
                 differ += 1;
             }
         }
-        assert!(differ > 100, "modulation should change the waveform on most samples ({differ} differing)");
+        assert!(
+            differ > 100,
+            "modulation should change the waveform on most samples ({differ} differing)"
+        );
     }
 
     #[test]
@@ -684,7 +837,10 @@ mod tests {
         let p_off = warmup(&mut op_off, 2048);
         let p_on = warmup(&mut op_on, 2048);
         // AMS=3 doubles the gain at full LFO; should produce a bigger peak
-        assert!(p_on > p_off * 1.1, "AMS=3 should boost over AMS=0: off={p_off}, on={p_on}");
+        assert!(
+            p_on > p_off * 1.1,
+            "AMS=3 should boost over AMS=0: off={p_off}, on={p_on}"
+        );
     }
 
     #[test]
@@ -773,7 +929,10 @@ mod tests {
         }
         let low = op.cross_feedback_signal(1.0).abs();
         let high = op.cross_feedback_signal(7.0).abs();
-        assert!(high >= low, "depth=7 should scale at least as much as depth=1");
+        assert!(
+            high >= low,
+            "depth=7 should scale at least as much as depth=1"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -800,7 +959,10 @@ mod tests {
 
         let p_close = warmup(&mut op_close, 4096);
         let p_far = warmup(&mut op_far, 4096);
-        assert!(p_far <= p_close, "neg-curve should attenuate far note: close={p_close} far={p_far}");
+        assert!(
+            p_far <= p_close,
+            "neg-curve should attenuate far note: close={p_close} far={p_far}"
+        );
     }
 
     #[test]
@@ -864,5 +1026,130 @@ mod tests {
         // No assertion on shape — we just want the code path to execute.
         warmup(&mut op_low, 128);
         warmup(&mut op_high, 128);
+    }
+
+    // -----------------------------------------------------------------------
+    // Regression: live-tweak setters must invalidate the cache
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn set_output_level_takes_effect_mid_note() {
+        // Reproduces the params_dirty bug where direct field writes to
+        // output_level were ignored until the next note-on.
+        let mut op = Operator::new(SR);
+        op.set_output_level(99.0);
+        op.trigger(440.0, 1.0, 60);
+        let peak_loud = warmup(&mut op, 4096);
+
+        op.set_output_level(20.0);
+        let peak_quiet = warmup(&mut op, 4096);
+
+        assert!(
+            peak_quiet < peak_loud * 0.5,
+            "output_level change mid-note should quiet the operator: loud={peak_loud}, quiet={peak_quiet}"
+        );
+    }
+
+    #[test]
+    fn set_velocity_sensitivity_takes_effect_mid_note() {
+        let mut op_a = Operator::new(SR);
+        let mut op_b = Operator::new(SR);
+        op_a.trigger(440.0, 0.5, 60);
+        op_b.trigger(440.0, 0.5, 60);
+        let peak_no_sens = warmup(&mut op_a, 4096);
+
+        // Same low velocity but now with high sensitivity → should attenuate.
+        op_b.set_velocity_sensitivity(7.0);
+        let peak_sens = warmup(&mut op_b, 4096);
+
+        assert!(
+            peak_sens < peak_no_sens,
+            "velocity sensitivity change should quiet the op at v=0.5: no_sens={peak_no_sens}, sens={peak_sens}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Regression: setters clamp parameters to DX7 range
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn set_feedback_clamps_above_seven() {
+        let mut op = Operator::new(SR);
+        op.set_feedback(99.0);
+        assert_eq!(op.feedback, 7.0);
+        op.set_feedback(-3.0);
+        assert_eq!(op.feedback, 0.0);
+    }
+
+    #[test]
+    fn set_output_level_clamps() {
+        let mut op = Operator::new(SR);
+        op.set_output_level(200.0);
+        assert_eq!(op.output_level, 99.0);
+        op.set_output_level(-5.0);
+        assert_eq!(op.output_level, 0.0);
+    }
+
+    #[test]
+    fn set_velocity_sensitivity_clamps() {
+        let mut op = Operator::new(SR);
+        op.set_velocity_sensitivity(50.0);
+        assert_eq!(op.velocity_sensitivity, 7.0);
+    }
+
+    #[test]
+    fn set_key_scale_rate_clamps() {
+        let mut op = Operator::new(SR);
+        op.set_key_scale_rate(99.0);
+        assert_eq!(op.key_scale_rate, 7.0);
+    }
+
+    // -----------------------------------------------------------------------
+    // Regression: Key Rate Scaling reference is MIDI 21 (A-1), not the
+    // operator's level breakpoint.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn key_rate_scaling_is_independent_of_level_breakpoint() {
+        // Two operators with the same KRS sensitivity playing the same note
+        // but with very different level breakpoints. The KRS factor must be
+        // identical because the DX7 reference is fixed at A-1, not the per-op
+        // breakpoint.
+        let mut op_low_bp = Operator::new(SR);
+        let mut op_high_bp = Operator::new(SR);
+        op_low_bp.key_scale_rate = 7.0;
+        op_high_bp.key_scale_rate = 7.0;
+        op_low_bp.key_scale_breakpoint = 24; // C0
+        op_high_bp.key_scale_breakpoint = 96; // C6
+        let f_low_bp = op_low_bp.calculate_key_scale_factor(60);
+        let f_high_bp = op_high_bp.calculate_key_scale_factor(60);
+        assert!(
+            (f_low_bp - f_high_bp).abs() < 1e-6,
+            "KRS factor should be breakpoint-independent: low_bp={f_low_bp}, high_bp={f_high_bp}"
+        );
+    }
+
+    #[test]
+    fn key_rate_scaling_at_a_minus_1_is_unity() {
+        // ROM formula: x = clamp(midinote/3 - 7, 0, 31) → at midinote=21, x=0,
+        // qratedelta=0, factor=2^0=1.0 (no scaling at the reference note).
+        let mut op = Operator::new(SR);
+        op.key_scale_rate = 7.0;
+        let f = op.calculate_key_scale_factor(21);
+        assert!((f - 1.0).abs() < 1e-6, "KRS at A-1 should be 1.0, got {f}");
+    }
+
+    #[test]
+    fn key_rate_scaling_matches_dexed_rom_formula() {
+        // At C3 (midinote=60) with sens=7: x=13, qratedelta=(7*13)>>3=11,
+        // factor = 2^(11/4) ≈ 6.727.
+        let mut op = Operator::new(SR);
+        op.key_scale_rate = 7.0;
+        let f = op.calculate_key_scale_factor(60);
+        let expected = 2.0_f32.powf(11.0 / 4.0);
+        assert!(
+            (f - expected).abs() < 1e-3,
+            "KRS at C3 should be 2^(11/4) ≈ {expected}, got {f}"
+        );
     }
 }
