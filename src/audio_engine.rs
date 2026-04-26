@@ -148,7 +148,10 @@ mod tests {
             return; // headless host: no output device
         };
         let sr = probe.sample_rate();
-        assert!((8_000.0..=384_000.0).contains(&sr), "implausible sample rate: {sr}");
+        assert!(
+            (8_000.0..=384_000.0).contains(&sr),
+            "implausible sample rate: {sr}"
+        );
     }
 
     #[test]

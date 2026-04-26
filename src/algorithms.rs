@@ -845,7 +845,10 @@ mod tests {
     fn every_algorithm_produces_audio() {
         for alg in 1..=32u8 {
             let (peak, energy) = run_algorithm_for_samples(alg, 2048);
-            assert!(peak > 1e-6, "algorithm {alg} produced no audio (peak={peak})");
+            assert!(
+                peak > 1e-6,
+                "algorithm {alg} produced no audio (peak={peak})"
+            );
             assert!(energy > 1e-6, "algorithm {alg} has no signal energy");
             // Output should stay within sane bounds (post-mix scaling).
             assert!(peak < 5.0, "algorithm {alg} peak too high: {peak}");
@@ -878,7 +881,11 @@ mod tests {
                 assert!((1..=6).contains(from), "alg {alg} connection from {from}");
                 assert!((1..=6).contains(to), "alg {alg} connection to {to}");
             }
-            assert!(info.feedback_op <= 6, "alg {alg} bad feedback_op {}", info.feedback_op);
+            assert!(
+                info.feedback_op <= 6,
+                "alg {alg} bad feedback_op {}",
+                info.feedback_op
+            );
         }
     }
 
@@ -912,7 +919,10 @@ mod tests {
         for alg in 1..=32u8 {
             let name = get_algorithm_name(alg);
             assert!(!name.is_empty(), "alg {alg} has empty name");
-            assert!(name.starts_with(&format!("{}:", alg)), "alg {alg} name '{name}' should start with the number");
+            assert!(
+                name.starts_with(&format!("{}:", alg)),
+                "alg {alg} name '{name}' should start with the number"
+            );
         }
     }
 
@@ -945,7 +955,10 @@ mod tests {
                 diff += 1;
             }
         }
-        assert!(diff > 100, "cross feedback should change the signal ({diff} differing)");
+        assert!(
+            diff > 100,
+            "cross feedback should change the signal ({diff} differing)"
+        );
     }
 
     #[test]

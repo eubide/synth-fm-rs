@@ -473,7 +473,10 @@ mod tests {
                 got_echo = true;
             }
         }
-        assert!(got_echo, "delay should produce an echo within ~60ms, max={max_after}");
+        assert!(
+            got_echo,
+            "delay should produce an echo within ~60ms, max={max_after}"
+        );
     }
 
     #[test]
@@ -524,7 +527,10 @@ mod tests {
             let (l, rr) = r.process(0.0, 0.0);
             tail_energy += l * l + rr * rr;
         }
-        assert!(tail_energy > 1e-3, "reverb should leave a decaying tail, energy={tail_energy}");
+        assert!(
+            tail_energy > 1e-3,
+            "reverb should leave a decaying tail, energy={tail_energy}"
+        );
     }
 
     #[test]

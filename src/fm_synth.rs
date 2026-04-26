@@ -7,7 +7,7 @@ use crate::dc_blocker::DcBlocker;
 use crate::effects::EffectsChain;
 use crate::lfo::{LFOWaveform, LFO};
 use crate::operator::{KeyScaleCurve, Operator};
-use crate::optimization::OPTIMIZATION_TABLES;
+use crate::optimization::{midi_to_hz, voice_scale};
 use crate::pitch_eg::PitchEg;
 use crate::presets::Dx7Preset;
 use crate::state_snapshot::{
@@ -90,7 +90,7 @@ impl Voice {
 
     pub fn trigger(&mut self, note: u8, velocity: f32, master_tune: f32, portamento_enable: bool) {
         self.note = note;
-        let base_frequency = OPTIMIZATION_TABLES.get_midi_frequency(note);
+        let base_frequency = midi_to_hz(note);
         let new_frequency = base_frequency * 2.0_f32.powf((master_tune / 100.0) / 12.0);
 
         let use_portamento = portamento_enable
@@ -129,7 +129,7 @@ impl Voice {
     /// Honours portamento when `portamento` is true.
     pub fn retarget(&mut self, note: u8, master_tune: f32, portamento: bool) {
         self.note = note;
-        let base_frequency = OPTIMIZATION_TABLES.get_midi_frequency(note);
+        let base_frequency = midi_to_hz(note);
         let new_frequency = base_frequency * 2.0_f32.powf((master_tune / 100.0) / 12.0);
         self.frequency = new_frequency;
         if portamento && self.current_frequency > 0.0 {
@@ -324,6 +324,16 @@ impl SynthEngine {
             voices.push(Voice::new_with_sample_rate(sample_rate));
         }
 
+        // The DX7 itself shipped without on-board effects, but its iconic sound on
+        // every record from 1983-89 came through external chorus + reverb. Boot
+        // with both ON at modest mix levels so factory presets sound like the user
+        // remembers them; users wanting the bone-dry signal can flip them off.
+        let mut effects = EffectsChain::new(sample_rate);
+        effects.chorus.enabled = true;
+        effects.chorus.mix = 0.15;
+        effects.reverb.enabled = true;
+        effects.reverb.mix = 0.22;
+
         Self {
             voices,
             held_notes: HashMap::new(),
@@ -331,7 +341,7 @@ impl SynthEngine {
             preset_name: "Init Voice".to_string(),
             lfo: LFO::new(sample_rate),
             pitch_eg: PitchEg::new(sample_rate),
-            effects: EffectsChain::new(sample_rate),
+            effects,
             command_rx,
             snapshot_tx,
             note_counter: 0,
@@ -699,27 +709,23 @@ impl SynthEngine {
             let op = &mut voice.operators[op_index];
             match param {
                 OperatorParam::Ratio => op.set_frequency_ratio(value),
-                OperatorParam::Level => op.output_level = value,
+                OperatorParam::Level => op.set_output_level(value),
                 OperatorParam::Detune => op.set_detune(value),
-                OperatorParam::Feedback => op.feedback = value,
-                OperatorParam::VelocitySensitivity => op.velocity_sensitivity = value,
-                OperatorParam::KeyScaleRate => op.key_scale_rate = value,
+                OperatorParam::Feedback => op.set_feedback(value),
+                OperatorParam::VelocitySensitivity => op.set_velocity_sensitivity(value),
+                OperatorParam::KeyScaleRate => op.set_key_scale_rate(value),
                 OperatorParam::KeyScaleBreakpoint => {
-                    op.key_scale_breakpoint = value.clamp(0.0, 127.0) as u8
+                    op.set_key_scale_breakpoint(value.clamp(0.0, 127.0) as u8)
                 }
-                OperatorParam::KeyScaleLeftDepth => {
-                    op.key_scale_left_depth = value.clamp(0.0, 99.0)
-                }
-                OperatorParam::KeyScaleRightDepth => {
-                    op.key_scale_right_depth = value.clamp(0.0, 99.0)
-                }
+                OperatorParam::KeyScaleLeftDepth => op.set_key_scale_left_depth(value),
+                OperatorParam::KeyScaleRightDepth => op.set_key_scale_right_depth(value),
                 OperatorParam::KeyScaleLeftCurve => {
-                    op.key_scale_left_curve = KeyScaleCurve::from_dx7_code(value as u8)
+                    op.set_key_scale_left_curve(KeyScaleCurve::from_dx7_code(value as u8))
                 }
                 OperatorParam::KeyScaleRightCurve => {
-                    op.key_scale_right_curve = KeyScaleCurve::from_dx7_code(value as u8)
+                    op.set_key_scale_right_curve(KeyScaleCurve::from_dx7_code(value as u8))
                 }
-                OperatorParam::AmSensitivity => op.am_sensitivity = value.clamp(0.0, 3.0) as u8,
+                OperatorParam::AmSensitivity => op.set_am_sensitivity(value.clamp(0.0, 3.0) as u8),
                 OperatorParam::OscillatorKeySync => op.oscillator_key_sync = value > 0.5,
                 OperatorParam::FixedFrequency => {
                     op.fixed_frequency = value > 0.5;
@@ -908,9 +914,21 @@ impl SynthEngine {
 
         let (lfo_pitch_mod_raw, lfo_amp_mod_raw) = self.lfo.process(self.mod_wheel);
 
-        // PMS table (DX7 ROM): 0..7 → fractional pitch depth multiplier.
-        // PMS=0: no LFO pitch effect; PMS=7: maximum (~1 semitone of swing).
-        const PMS_TABLE: [f32; 8] = [0.0, 0.082, 0.16, 0.32, 0.5, 0.79, 1.26, 2.0];
+        // PMS (Pitch Mod Sensitivity) ROM lookup. Source: `pitchmodsenstab[8]`
+        // in MSFA / Dexed `dx7note.cc` = {0, 10, 20, 33, 55, 92, 153, 255},
+        // normalised by 255 then scaled to our depth domain. The `* 2.0`
+        // factor preserves the previous max swing of ~2 semitones at PMS=7
+        // (downstream code applies `* 0.5` to convert back to semitones).
+        const PMS_TABLE: [f32; 8] = [
+            0.0,
+            (10.0 / 255.0) * 2.0,  // 0.0784
+            (20.0 / 255.0) * 2.0,  // 0.1569
+            (33.0 / 255.0) * 2.0,  // 0.2588
+            (55.0 / 255.0) * 2.0,  // 0.4314
+            (92.0 / 255.0) * 2.0,  // 0.7216
+            (153.0 / 255.0) * 2.0, // 1.2000
+            2.0,
+        ];
         let pms_scale = PMS_TABLE[self.pitch_mod_sensitivity.min(7) as usize];
 
         // Each external controller (Aftertouch / Breath / Foot) routes to four
@@ -964,11 +982,7 @@ impl SynthEngine {
             }
         }
 
-        let voice_scaling = if active_voice_count > 0 {
-            OPTIMIZATION_TABLES.get_voice_scale(active_voice_count)
-        } else {
-            1.0
-        };
+        let voice_scaling = voice_scale(active_voice_count);
 
         // Foot Controller VOLUME (DX7S): when sensitivity > 0, the foot pedal acts
         // as a volume swell. Sens=0 leaves the master untouched; sens=15 makes
@@ -1734,7 +1748,10 @@ mod tests {
                 break;
             }
         }
-        assert!(!v.active, "stolen voice should fade out and become inactive");
+        assert!(
+            !v.active,
+            "stolen voice should fade out and become inactive"
+        );
     }
 
     #[test]
@@ -1767,7 +1784,10 @@ mod tests {
                 break;
             }
         }
-        assert!(v.current_frequency > initial, "current should glide upward toward target");
+        assert!(
+            v.current_frequency > initial,
+            "current should glide upward toward target"
+        );
         assert!(v.current_frequency <= target * 1.01, "should not overshoot");
     }
 
@@ -1845,7 +1865,10 @@ mod tests {
         assert_eq!(engine.voice_mode, crate::state_snapshot::VoiceMode::Mono);
         ctrl.set_voice_mode(crate::state_snapshot::VoiceMode::MonoLegato);
         engine.process_commands();
-        assert_eq!(engine.voice_mode, crate::state_snapshot::VoiceMode::MonoLegato);
+        assert_eq!(
+            engine.voice_mode,
+            crate::state_snapshot::VoiceMode::MonoLegato
+        );
         ctrl.set_voice_mode(crate::state_snapshot::VoiceMode::Poly);
         engine.process_commands();
         assert_eq!(engine.voice_mode, crate::state_snapshot::VoiceMode::Poly);
@@ -1920,6 +1943,37 @@ mod tests {
             peak = peak.max(engine.process().abs());
         }
         assert!(peak > 0.001, "expected audio after note on, peak={peak}");
+    }
+
+    #[test]
+    fn engine_boots_with_chorus_and_reverb_on_at_modest_mix() {
+        // Fresh SynthEngine should ship the typical "DX7-through-outboard" sound:
+        // Chorus and Reverb both ON, with mixes low enough that the dry signal
+        // still dominates. Regression guard for the UX default.
+        let (engine, _ctrl) = make_engine();
+        assert!(
+            engine.effects.chorus.enabled,
+            "chorus should be on by default"
+        );
+        assert!(
+            engine.effects.reverb.enabled,
+            "reverb should be on by default"
+        );
+        assert!(
+            (engine.effects.chorus.mix - 0.15).abs() < 1e-6,
+            "chorus mix expected 0.15, got {}",
+            engine.effects.chorus.mix
+        );
+        assert!(
+            (engine.effects.reverb.mix - 0.22).abs() < 1e-6,
+            "reverb mix expected 0.22, got {}",
+            engine.effects.reverb.mix
+        );
+        // Delay stays off — it's a deliberate effect, not part of the canonical DX7 flavour.
+        assert!(
+            !engine.effects.delay.enabled,
+            "delay should remain off by default"
+        );
     }
 
     #[test]

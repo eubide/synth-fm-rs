@@ -266,6 +266,7 @@ impl Dx7Preset {
                 op.envelope.level3 = l3;
                 op.envelope.level4 = l4;
                 op.update_frequency();
+                op.invalidate_cache();
             }
         }
     }
