@@ -548,8 +548,7 @@ mod tests {
 
     #[test]
     fn load_json_file_supports_oscillator_key_sync_off() {
-        let dir =
-            std::env::temp_dir().join(format!("synth-fm-rs-test-osc-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("synth-fm-rs-test-osc-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("mkdir");
         let json = r#"{
             "name": "TEST",

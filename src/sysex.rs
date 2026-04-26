@@ -968,7 +968,18 @@ mod tests {
         // High bits should be masked off; trailing spaces trimmed.
         let raw = b"PIANO     ";
         assert_eq!(parse_voice_name(raw), "PIANO");
-        let with_high = [b'A' | 0x80, b'B', b'C', b' ', b' ', b' ', b' ', b' ', b' ', b' '];
+        let with_high = [
+            b'A' | 0x80,
+            b'B',
+            b'C',
+            b' ',
+            b' ',
+            b' ',
+            b' ',
+            b' ',
+            b' ',
+            b' ',
+        ];
         assert_eq!(parse_voice_name(&with_high), "ABC");
     }
 
