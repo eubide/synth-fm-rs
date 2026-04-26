@@ -2,11 +2,64 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased] - 2026-04-25
+## [0.5.0] - 2026-04-26
+
+### Fixed
+
+- **Live parameter changes did not invalidate the operator cache**: writing
+  `Operator::output_level`, `velocity_sensitivity`, `key_scale_*_depth`,
+  `key_scale_*_curve`, or `key_scale_breakpoint` directly during a sustained
+  note was silently ignored — the cached `level_amplitude` /
+  `velocity_factor` / `key_scale_level_factor` only refreshed on the next
+  note-on. Introduced clamping setters that mark `params_dirty`, and routed
+  `SynthEngine::set_operator_param` through them.
+- **Setters silently accepted out-of-range values**: `Level`, `Feedback`,
+  `VelocitySensitivity`, and `KeyScaleRate` had no clamp on the live-tweak
+  path. A misbehaving MIDI CC sending feedback=99 produced ~44 rad of
+  self-modulation (essentially DC + noise). All setters now clamp to the
+  DX7 0..99 / 0..7 range.
+- **Key Rate Scaling referenced the operator's level breakpoint instead of
+  the DX7 hardware reference (A-1, MIDI 21)**: moving the level-scaling
+  hinge accidentally changed envelope speed too. KRS reference is now fixed
+  at MIDI 21 with `x = clamp(midinote/3 - 7, 0, 31)`,
+  `qratedelta = (sens * x) >> 3`, factor = `2^(qratedelta/4)`. KRS is
+  independent of the per-operator level breakpoint, matching hardware.
+
+### Changed — DX7 authenticity pass on six calibration tables
+
+Six tables and formulas in the synthesis core were recalibrated against the
+DX7 hardware reference. Audible effects:
+
+- **AMS (per-operator amp mod sensitivity)** now uses the hardware
+  `{0.0, 0.2588, 0.4274, 1.0}` ratio. AMS=1 and AMS=2 are about 3× louder
+  than before; patches with mid AMS regain LFO amplitude character.
+- **PMS (patch pitch mod sensitivity)** recalibrated so the eight steps
+  follow the hardware curve; PMS=7 still produces ~2 semitones of swing.
+- **LFO Hz range** now reaches ~49 Hz at rate 99 (was capped near 20 Hz).
+  Fast LFO patches (saw/triangle for buzz/zip effects) regain their snap.
+- **Velocity sensitivity** uses the hardware curve with neutral point at
+  MIDI ~100 (was at `velocity = 1.0`). High-sensitivity patches respond more
+  authentically across the velocity range.
+- **Key level scaling** uses the hardware `+LIN/-LIN/+EXP/-EXP` curves with
+  the `breakpoint - 17` offset and 3-semitone grouping. Extreme keyboard
+  positions match the DX7 instead of the previous polynomial approximation.
+- **Pitch envelope** is now linear-in-log-freq with hardware-matched level
+  and rate tables; max range is ±4 octaves with the proper non-linear curve
+  between levels.
+
+Also removed unused `fast_exp` / `exp_table` machinery from `optimization.rs`.
+
+### Added
+
+- **`NOTICE`** file documenting third-party attributions for the project.
+- **Reference comparison** section in `TODO.md` covering pending audible
+  differences (envelope dB-linear refactor, LFO delay fade-in, frequency-
+  dependent detune) and design decisions kept as project character (1/√N
+  voice scaling, tanh soft-clip, DC blocker).
 
 ### Major: DX7-Authentic FM Engine Rewrite
 
-Core FM synthesis engine corrected to match DX7 reference behavior, after audible deviations were traced to scaling and timing bugs. Verified against Dexed/MSFA references.
+Core FM synthesis engine corrected to match DX7 reference behaviour, after audible deviations were traced to scaling and timing bugs.
 
 #### Fixed
 - **Modulation Depth**: Added `MOD_INDEX_SCALE = 4π` so amplitude-domain operator output produces ~12.57 rad max phase modulation at level 99 (was ~3.14, far too quiet)
@@ -17,7 +70,7 @@ Core FM synthesis engine corrected to match DX7 reference behavior, after audibl
 
 ### Major: File-Based Preset System
 
-Hardcoded Rust presets removed in favor of a JSON-based loader compatible with the itsjoesullivan `dx7-patches` schema, including the `mark/` collection.
+Hardcoded Rust presets removed in favor of a JSON-based loader compatible with the `dx7-patches` schema, including the `mark/` collection.
 
 #### Added
 - **`preset_loader::scan_patches_dir()`**: Loads all `*.json` from `patches/`, with subdirectories acting as collections (`edu/`, `mark/`)
@@ -31,7 +84,6 @@ Hardcoded Rust presets removed in favor of a JSON-based loader compatible with t
   - BRASS 1: Algorithm 22 with slow swell carriers (~1.6s)
   - STRINGS: Algorithm 2 with real FM modulation chain
   - CHOIR: Attack rates corrected from 11–28s down to ~2s
-- **References & Acknowledgments**: Credits for upstream DX7 projects (Dexed, MSFA, itsjoesullivan)
 
 ### Major: Motor FM Section Completion (DX7S Fidelity)
 
