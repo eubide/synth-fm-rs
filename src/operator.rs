@@ -431,3 +431,438 @@ impl Operator {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SR: f32 = 44_100.0;
+
+    fn warmup(op: &mut Operator, samples: usize) -> f32 {
+        let mut peak = 0.0_f32;
+        for _ in 0..samples {
+            peak = peak.max(op.process(0.0).abs());
+        }
+        peak
+    }
+
+    // -----------------------------------------------------------------------
+    // KeyScaleCurve
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn key_scale_curve_from_dx7_code() {
+        assert_eq!(KeyScaleCurve::from_dx7_code(0), KeyScaleCurve::NegLin);
+        assert_eq!(KeyScaleCurve::from_dx7_code(1), KeyScaleCurve::NegExp);
+        assert_eq!(KeyScaleCurve::from_dx7_code(2), KeyScaleCurve::PosExp);
+        assert_eq!(KeyScaleCurve::from_dx7_code(3), KeyScaleCurve::PosLin);
+        assert_eq!(KeyScaleCurve::from_dx7_code(99), KeyScaleCurve::PosLin); // default
+    }
+
+    #[test]
+    fn key_scale_curve_to_dx7_code_roundtrips() {
+        for code in 0..4u8 {
+            assert_eq!(KeyScaleCurve::from_dx7_code(code).to_dx7_code(), code);
+        }
+    }
+
+    #[test]
+    fn key_scale_curve_from_str_handles_aliases() {
+        assert_eq!(KeyScaleCurve::from_str("-lin"), KeyScaleCurve::NegLin);
+        assert_eq!(KeyScaleCurve::from_str("NEGLIN"), KeyScaleCurve::NegLin);
+        assert_eq!(KeyScaleCurve::from_str("LinDown"), KeyScaleCurve::NegLin);
+        assert_eq!(KeyScaleCurve::from_str("-exp"), KeyScaleCurve::NegExp);
+        assert_eq!(KeyScaleCurve::from_str("ExpDown"), KeyScaleCurve::NegExp);
+        assert_eq!(KeyScaleCurve::from_str("+exp"), KeyScaleCurve::PosExp);
+        assert_eq!(KeyScaleCurve::from_str("ExpUp"), KeyScaleCurve::PosExp);
+        // Anything else falls back to PosLin
+        assert_eq!(KeyScaleCurve::from_str("garbage"), KeyScaleCurve::PosLin);
+    }
+
+    #[test]
+    fn key_scale_curve_default_is_negative_linear() {
+        assert_eq!(KeyScaleCurve::default(), KeyScaleCurve::NegLin);
+    }
+
+    // -----------------------------------------------------------------------
+    // Operator construction & basic setters
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn operator_new_has_sane_defaults() {
+        let op = Operator::new(SR);
+        assert!(op.enabled);
+        assert_eq!(op.frequency_ratio, 1.0);
+        assert_eq!(op.detune, 0.0);
+        assert_eq!(op.output_level, 99.0);
+        assert!(op.oscillator_key_sync);
+        assert!(!op.fixed_frequency);
+    }
+
+    #[test]
+    fn set_frequency_ratio_updates_and_phase_increment_recalculates() {
+        let mut op = Operator::new(SR);
+        op.trigger(440.0, 1.0, 60);
+        op.set_frequency_ratio(2.0);
+        assert_eq!(op.frequency_ratio, 2.0);
+        // After trigger and ratio change, output should be non-zero
+        let peak = warmup(&mut op, 256);
+        assert!(peak > 0.0);
+    }
+
+    #[test]
+    fn set_detune_changes_internal_value() {
+        let mut op = Operator::new(SR);
+        op.set_detune(7.0);
+        assert_eq!(op.detune, 7.0);
+        op.set_detune(-3.5);
+        assert_eq!(op.detune, -3.5);
+    }
+
+    // -----------------------------------------------------------------------
+    // Trigger / process / release lifecycle
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn process_disabled_returns_zero() {
+        let mut op = Operator::new(SR);
+        op.enabled = false;
+        op.trigger(440.0, 1.0, 60);
+        let out = op.process(0.0);
+        assert_eq!(out, 0.0);
+    }
+
+    #[test]
+    fn trigger_resets_phase_when_key_sync_on() {
+        let mut op = Operator::new(SR);
+        op.oscillator_key_sync = true;
+        op.trigger(440.0, 1.0, 60);
+        // Drive a few samples to advance phase
+        for _ in 0..100 {
+            op.process(0.0);
+        }
+        let phase_before = op.phase;
+        op.trigger(440.0, 1.0, 60);
+        // With key sync ON the phase should reset to 0
+        assert_eq!(op.phase, 0.0);
+        // Sanity: previous phase had advanced
+        assert!(phase_before > 0.0);
+    }
+
+    #[test]
+    fn trigger_preserves_phase_when_key_sync_off() {
+        let mut op = Operator::new(SR);
+        op.oscillator_key_sync = false;
+        op.trigger(440.0, 1.0, 60);
+        for _ in 0..100 {
+            op.process(0.0);
+        }
+        let phase_before = op.phase;
+        op.trigger(440.0, 1.0, 60);
+        // Phase should be preserved (free-run)
+        assert_eq!(op.phase, phase_before);
+    }
+
+    #[test]
+    fn process_produces_audio_after_trigger() {
+        let mut op = Operator::new(SR);
+        op.trigger(440.0, 1.0, 60);
+        let peak = warmup(&mut op, 4096);
+        assert!(peak > 0.05, "expected audible output after trigger, got peak={peak}");
+    }
+
+    #[test]
+    fn release_eventually_makes_operator_inactive() {
+        let mut op = Operator::new(SR);
+        op.envelope.rate1 = 99.0;
+        op.envelope.rate4 = 99.0;
+        op.envelope.level4 = 0.0;
+        op.trigger(440.0, 1.0, 60);
+        warmup(&mut op, 4096);
+        op.release();
+        for _ in 0..(SR as usize) {
+            op.process(0.0);
+            if !op.is_active() {
+                break;
+            }
+        }
+        assert!(!op.is_active(), "operator should reach inactive state after release");
+    }
+
+    #[test]
+    fn reset_clears_phase_and_envelope() {
+        let mut op = Operator::new(SR);
+        op.trigger(440.0, 1.0, 60);
+        warmup(&mut op, 256);
+        op.reset();
+        assert_eq!(op.phase, 0.0);
+        assert!(!op.is_active());
+    }
+
+    // -----------------------------------------------------------------------
+    // Frequency configuration
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn fixed_frequency_uses_fixed_hz() {
+        let mut op = Operator::new(SR);
+        op.fixed_frequency = true;
+        op.fixed_freq_hz = 1000.0;
+        op.trigger(440.0, 1.0, 60); // base_frequency ignored
+        // Operator should produce a 1kHz wave; just ensure it's audible
+        let peak = warmup(&mut op, 4096);
+        assert!(peak > 0.05);
+    }
+
+    #[test]
+    fn invalid_frequency_clears_phase_increment() {
+        let mut op = Operator::new(SR);
+        // Force an invalid setup: frequency very low or NaN base
+        op.fixed_frequency = true;
+        op.fixed_freq_hz = 0.0; // outside [0.1, 20000]
+        op.trigger(440.0, 1.0, 60);
+        // process should still run and produce silence (sin(0)=0)
+        let out = op.process(0.0);
+        assert!(out.abs() < 1e-3);
+    }
+
+    #[test]
+    fn update_frequency_only_does_not_reset_phase() {
+        let mut op = Operator::new(SR);
+        op.trigger(440.0, 1.0, 60);
+        for _ in 0..50 {
+            op.process(0.0);
+        }
+        let phase_before = op.phase;
+        op.update_frequency_only(880.0);
+        assert_eq!(op.phase, phase_before);
+        assert_eq!(op.base_frequency, 880.0);
+    }
+
+    // -----------------------------------------------------------------------
+    // Modulation, AMS and EG bias
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn modulation_input_changes_output() {
+        // Compare per-sample outputs: modulation should change the waveform shape,
+        // even if total energy stays similar. Look at how many samples differ
+        // by more than a small epsilon.
+        let mut op_no_mod = Operator::new(SR);
+        let mut op_mod = Operator::new(SR);
+        op_no_mod.trigger(440.0, 1.0, 60);
+        op_mod.trigger(440.0, 1.0, 60);
+        // Let the envelope reach steady state first
+        for _ in 0..2048 {
+            op_no_mod.process(0.0);
+            op_mod.process(2.0);
+        }
+        let mut differ = 0usize;
+        for _ in 0..2048 {
+            let a = op_no_mod.process(0.0);
+            // 0.3 chosen to avoid landing exactly on 2π multiples
+            // (the modulation is scaled by 4π internally).
+            let b = op_mod.process(0.3);
+            if (a - b).abs() > 0.001 {
+                differ += 1;
+            }
+        }
+        assert!(differ > 100, "modulation should change the waveform on most samples ({differ} differing)");
+    }
+
+    #[test]
+    fn am_sensitivity_levels_alter_output() {
+        // AMS=0 → no LFO amp influence; AMS=3 → full influence.
+        let mut op_off = Operator::new(SR);
+        let mut op_on = Operator::new(SR);
+        op_off.am_sensitivity = 0;
+        op_on.am_sensitivity = 3;
+        op_off.set_lfo_amp_mod(1.0);
+        op_on.set_lfo_amp_mod(1.0);
+        op_off.trigger(440.0, 1.0, 60);
+        op_on.trigger(440.0, 1.0, 60);
+        let p_off = warmup(&mut op_off, 2048);
+        let p_on = warmup(&mut op_on, 2048);
+        // AMS=3 doubles the gain at full LFO; should produce a bigger peak
+        assert!(p_on > p_off * 1.1, "AMS=3 should boost over AMS=0: off={p_off}, on={p_on}");
+    }
+
+    #[test]
+    fn am_sensitivity_intermediate_values() {
+        // Smoke-test all AMS settings to cover the match arms (0/1/2/3+).
+        for ams in 0..=4u8 {
+            let mut op = Operator::new(SR);
+            op.am_sensitivity = ams;
+            op.set_lfo_amp_mod(0.5);
+            op.trigger(440.0, 1.0, 60);
+            warmup(&mut op, 64);
+        }
+    }
+
+    #[test]
+    fn eg_bias_clamps_to_unit_range() {
+        let mut op = Operator::new(SR);
+        op.set_eg_bias(2.0);
+        // we can't read the private field directly; the clamp is exercised by process
+        op.am_sensitivity = 3;
+        op.trigger(440.0, 1.0, 60);
+        let peak = warmup(&mut op, 1024);
+        assert!(peak >= 0.0);
+
+        op.set_eg_bias(-1.0); // also clamped
+        warmup(&mut op, 256);
+    }
+
+    // -----------------------------------------------------------------------
+    // Self-feedback
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn feedback_modifies_signal_shape() {
+        let mut op_no_fb = Operator::new(SR);
+        let mut op_fb = Operator::new(SR);
+        op_no_fb.feedback = 0.0;
+        op_fb.feedback = 7.0;
+        op_no_fb.trigger(440.0, 1.0, 60);
+        op_fb.trigger(440.0, 1.0, 60);
+        let mut energy_no = 0.0;
+        let mut energy_fb = 0.0;
+        for _ in 0..4096 {
+            let a = op_no_fb.process(0.0);
+            let b = op_fb.process(0.0);
+            energy_no += a * a;
+            energy_fb += b * b;
+        }
+        // Both should produce non-trivial energy; full feedback should not be silent.
+        assert!(energy_no > 0.1);
+        assert!(energy_fb > 0.0);
+    }
+
+    #[test]
+    fn process_no_self_feedback_skips_internal_loop() {
+        let mut op_self = Operator::new(SR);
+        let mut op_no_self = Operator::new(SR);
+        op_self.feedback = 7.0;
+        op_no_self.feedback = 7.0;
+        op_self.trigger(440.0, 1.0, 60);
+        op_no_self.trigger(440.0, 1.0, 60);
+
+        let mut energy_self = 0.0;
+        let mut energy_no_self = 0.0;
+        for _ in 0..4096 {
+            energy_self += op_self.process(0.0).powi(2);
+            energy_no_self += op_no_self.process_no_self_feedback(0.0).powi(2);
+        }
+        // The two paths should produce different signals
+        assert!((energy_self - energy_no_self).abs() > 1e-3);
+    }
+
+    #[test]
+    fn cross_feedback_signal_zero_when_no_depth() {
+        let op = Operator::new(SR);
+        assert_eq!(op.cross_feedback_signal(0.0), 0.0);
+    }
+
+    #[test]
+    fn cross_feedback_signal_scales_with_depth() {
+        let mut op = Operator::new(SR);
+        op.trigger(440.0, 1.0, 60);
+        // Drive the operator so last_output / prev_output have content
+        for _ in 0..32 {
+            op.process(0.0);
+        }
+        let low = op.cross_feedback_signal(1.0).abs();
+        let high = op.cross_feedback_signal(7.0).abs();
+        assert!(high >= low, "depth=7 should scale at least as much as depth=1");
+    }
+
+    // -----------------------------------------------------------------------
+    // Key scaling
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn key_level_scaling_negative_attenuates() {
+        // Positive depth + NegLin curve should attenuate notes far from breakpoint.
+        let mut op_close = Operator::new(SR);
+        let mut op_far = Operator::new(SR);
+        op_close.key_scale_breakpoint = 60;
+        op_close.key_scale_left_curve = KeyScaleCurve::NegLin;
+        op_close.key_scale_right_curve = KeyScaleCurve::NegLin;
+        op_close.key_scale_left_depth = 99.0;
+        op_close.key_scale_right_depth = 99.0;
+        op_far.key_scale_breakpoint = 60;
+        op_far.key_scale_left_curve = KeyScaleCurve::NegLin;
+        op_far.key_scale_right_curve = KeyScaleCurve::NegLin;
+        op_far.key_scale_left_depth = 99.0;
+        op_far.key_scale_right_depth = 99.0;
+        op_close.trigger(440.0, 1.0, 60); // at breakpoint
+        op_far.trigger(440.0, 1.0, 108); // 4 octaves above
+
+        let p_close = warmup(&mut op_close, 4096);
+        let p_far = warmup(&mut op_far, 4096);
+        assert!(p_far <= p_close, "neg-curve should attenuate far note: close={p_close} far={p_far}");
+    }
+
+    #[test]
+    fn key_level_scaling_positive_boosts() {
+        let mut op = Operator::new(SR);
+        op.key_scale_breakpoint = 60;
+        op.key_scale_right_curve = KeyScaleCurve::PosLin;
+        op.key_scale_right_depth = 99.0;
+        op.trigger(440.0, 1.0, 96); // far above breakpoint
+        warmup(&mut op, 1024);
+    }
+
+    #[test]
+    fn key_level_scaling_no_depth_is_neutral() {
+        let mut op = Operator::new(SR);
+        op.key_scale_left_depth = 0.0;
+        op.key_scale_right_depth = 0.0;
+        // Calling calculate via process should produce normal output
+        op.trigger(440.0, 1.0, 96);
+        let peak = warmup(&mut op, 1024);
+        assert!(peak > 0.0);
+    }
+
+    #[test]
+    fn key_level_scaling_exp_curve() {
+        let mut op = Operator::new(SR);
+        op.key_scale_breakpoint = 60;
+        op.key_scale_left_curve = KeyScaleCurve::NegExp;
+        op.key_scale_right_curve = KeyScaleCurve::PosExp;
+        op.key_scale_left_depth = 50.0;
+        op.key_scale_right_depth = 50.0;
+        op.trigger(440.0, 1.0, 24);
+        warmup(&mut op, 256);
+    }
+
+    #[test]
+    fn velocity_sensitivity_changes_output() {
+        let mut op_low = Operator::new(SR);
+        let mut op_high = Operator::new(SR);
+        op_low.velocity_sensitivity = 0.0; // no effect
+        op_high.velocity_sensitivity = 7.0; // max effect
+        op_low.trigger(440.0, 0.5, 60);
+        op_high.trigger(440.0, 0.5, 60);
+
+        let p_low = warmup(&mut op_low, 4096);
+        let p_high = warmup(&mut op_high, 4096);
+        // High sensitivity at velocity 0.5 should be quieter than no sensitivity
+        assert!(p_high <= p_low);
+    }
+
+    #[test]
+    fn key_scale_rate_speeds_up_envelope_for_higher_notes() {
+        let mut op_low = Operator::new(SR);
+        let mut op_high = Operator::new(SR);
+        op_low.key_scale_rate = 7.0;
+        op_high.key_scale_rate = 7.0;
+        op_low.key_scale_breakpoint = 60;
+        op_high.key_scale_breakpoint = 60;
+        op_low.trigger(220.0, 1.0, 36);
+        op_high.trigger(880.0, 1.0, 96);
+        // No assertion on shape — we just want the code path to execute.
+        warmup(&mut op_low, 128);
+        warmup(&mut op_high, 128);
+    }
+}

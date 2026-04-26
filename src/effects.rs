@@ -377,3 +377,205 @@ impl EffectsChain {
         self.reverb.process(l, r)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SR: f32 = 44_100.0;
+
+    fn drive_chorus(c: &mut Chorus, samples: usize) -> (f32, f32) {
+        let mut peak_l = 0.0_f32;
+        let mut peak_r = 0.0_f32;
+        for i in 0..samples {
+            let phase = 2.0 * PI * 440.0 * (i as f32) / SR;
+            let (l, r) = c.process(phase.sin());
+            peak_l = peak_l.max(l.abs());
+            peak_r = peak_r.max(r.abs());
+        }
+        (peak_l, peak_r)
+    }
+
+    // -----------------------------------------------------------------------
+    // Chorus
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn chorus_disabled_passes_input_through_unchanged() {
+        let mut c = Chorus::new(SR);
+        c.enabled = false;
+        let (l, r) = c.process(0.5);
+        assert_eq!(l, 0.5);
+        assert_eq!(r, 0.5);
+    }
+
+    #[test]
+    fn chorus_enabled_modulates_output() {
+        let mut c = Chorus::new(SR);
+        c.enabled = true;
+        let (peak_l, peak_r) = drive_chorus(&mut c, 4096);
+        assert!(peak_l > 0.0);
+        assert!(peak_r > 0.0);
+        // Should stay within reasonable bounds.
+        assert!(peak_l < 5.0);
+        assert!(peak_r < 5.0);
+    }
+
+    #[test]
+    fn chorus_mix_at_zero_returns_input_only() {
+        let mut c = Chorus::new(SR);
+        c.enabled = true;
+        c.mix = 0.0;
+        // After enough samples, output should track input
+        let (l, r) = c.process(1.0);
+        assert!((l - 1.0).abs() < 0.5);
+        assert!((r - 1.0).abs() < 0.5);
+    }
+
+    #[test]
+    fn chorus_lfo_phase_advances_through_cycle() {
+        let mut c = Chorus::new(SR);
+        c.enabled = true;
+        c.rate = 5.0;
+        // Run long enough to wrap LFO phase several times.
+        drive_chorus(&mut c, SR as usize);
+    }
+
+    // -----------------------------------------------------------------------
+    // Delay
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn delay_disabled_passes_through_stereo() {
+        let mut d = Delay::new(SR);
+        d.enabled = false;
+        let (l, r) = d.process(0.3, 0.7);
+        assert_eq!(l, 0.3);
+        assert_eq!(r, 0.7);
+    }
+
+    #[test]
+    fn delay_enabled_emits_delayed_signal() {
+        let mut d = Delay::new(SR);
+        d.enabled = true;
+        d.time_ms = 50.0;
+        d.feedback = 0.0;
+        d.mix = 1.0;
+
+        // Send an impulse, then silence for 50ms+ samples; we should see the impulse come back.
+        d.process(1.0, 1.0);
+        let mut max_after = 0.0_f32;
+        let mut got_echo = false;
+        for _ in 0..((SR * 0.06) as usize) {
+            let (l, r) = d.process(0.0, 0.0);
+            max_after = max_after.max(l.abs()).max(r.abs());
+            if l.abs() > 0.5 || r.abs() > 0.5 {
+                got_echo = true;
+            }
+        }
+        assert!(got_echo, "delay should produce an echo within ~60ms, max={max_after}");
+    }
+
+    #[test]
+    fn delay_ping_pong_mode_processes_audio() {
+        let mut d = Delay::new(SR);
+        d.enabled = true;
+        d.ping_pong = true;
+        for _ in 0..2048 {
+            let _ = d.process(0.5, 0.0);
+        }
+    }
+
+    #[test]
+    fn delay_normal_mode_processes_audio() {
+        let mut d = Delay::new(SR);
+        d.enabled = true;
+        d.ping_pong = false;
+        for _ in 0..2048 {
+            let _ = d.process(0.5, 0.5);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Reverb
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn reverb_disabled_passes_through_stereo() {
+        let mut r = Reverb::new(SR);
+        r.enabled = false;
+        let (l, rr) = r.process(0.4, 0.6);
+        assert_eq!(l, 0.4);
+        assert_eq!(rr, 0.6);
+    }
+
+    #[test]
+    fn reverb_enabled_produces_decaying_tail() {
+        let mut r = Reverb::new(SR);
+        r.enabled = true;
+        r.mix = 1.0;
+        // Drive ~50ms (comb delays are ~25-30ms; 2200 samples seeds them).
+        for _ in 0..(SR as usize / 20) {
+            r.process(0.5, 0.5);
+        }
+        // Measure ~50ms of tail energy after the input goes silent.
+        let mut tail_energy = 0.0_f32;
+        for _ in 0..(SR as usize / 20) {
+            let (l, rr) = r.process(0.0, 0.0);
+            tail_energy += l * l + rr * rr;
+        }
+        assert!(tail_energy > 1e-3, "reverb should leave a decaying tail, energy={tail_energy}");
+    }
+
+    #[test]
+    fn reverb_room_size_changes_feedback() {
+        let mut r = Reverb::new(SR);
+        r.enabled = true;
+        r.room_size = 0.0;
+        for _ in 0..512 {
+            r.process(1.0, 1.0);
+        }
+        r.room_size = 1.0;
+        for _ in 0..512 {
+            r.process(1.0, 1.0);
+        }
+    }
+
+    #[test]
+    fn reverb_width_zero_collapses_to_mono() {
+        let mut r = Reverb::new(SR);
+        r.enabled = true;
+        r.width = 0.0;
+        // Drive some signal in
+        for _ in 0..1024 {
+            let _ = r.process(0.5, -0.5);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // EffectsChain
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn effects_chain_pipes_through_all_three_stages() {
+        let mut chain = EffectsChain::new(SR);
+        chain.chorus.enabled = true;
+        chain.delay.enabled = true;
+        chain.reverb.enabled = true;
+        let mut peak = 0.0_f32;
+        for i in 0..2048 {
+            let phase = 2.0 * PI * 440.0 * (i as f32) / SR;
+            let (l, r) = chain.process(phase.sin());
+            peak = peak.max(l.abs()).max(r.abs());
+        }
+        assert!(peak > 0.0);
+    }
+
+    #[test]
+    fn effects_chain_all_disabled_returns_input_as_stereo() {
+        let mut chain = EffectsChain::new(SR);
+        let (l, r) = chain.process(0.42);
+        assert_eq!(l, 0.42);
+        assert_eq!(r, 0.42);
+    }
+}

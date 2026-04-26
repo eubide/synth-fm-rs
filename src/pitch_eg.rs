@@ -143,3 +143,195 @@ impl PitchEg {
         OPTIMIZATION_TABLES.dx7_rate_to_multiplier(rate_value as u8) / self.sample_rate
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SR: f32 = 44_100.0;
+
+    fn make_default() -> PitchEg {
+        PitchEg::new(SR)
+    }
+
+    #[test]
+    fn new_pitch_eg_is_disabled_and_idle() {
+        let mut peg = make_default();
+        assert!(!peg.enabled);
+        assert_eq!(peg.process(), 0.0);
+    }
+
+    #[test]
+    fn disabled_trigger_resets_state_and_outputs_zero() {
+        let mut peg = make_default();
+        peg.enabled = false;
+        peg.trigger();
+        assert_eq!(peg.process(), 0.0);
+    }
+
+    #[test]
+    fn enabled_trigger_starts_pitch_envelope() {
+        let mut peg = make_default();
+        peg.enabled = true;
+        peg.level1 = 99.0; // +4 octaves target
+        peg.level4 = 50.0; // start at neutral
+        peg.rate1 = 99.0; // fast
+        peg.trigger();
+
+        let mut peak = 0.0_f32;
+        for _ in 0..2048 {
+            peak = peak.max(peg.process().abs());
+        }
+        assert!(peak > 1.0, "envelope should produce semitone offset, got {peak}");
+    }
+
+    #[test]
+    fn release_drives_envelope_back_to_neutral_when_level4_is_neutral() {
+        let mut peg = make_default();
+        peg.enabled = true;
+        peg.level1 = 80.0;
+        peg.level2 = 80.0;
+        peg.level3 = 80.0;
+        peg.level4 = 50.0;
+        peg.rate1 = 99.0;
+        peg.rate4 = 99.0;
+        peg.trigger();
+
+        for _ in 0..1024 {
+            peg.process();
+        }
+        peg.release();
+        let mut last = 0.0;
+        for _ in 0..(SR as usize) {
+            last = peg.process();
+            if last.abs() < 0.01 {
+                break;
+            }
+        }
+        assert!(last.abs() < 0.5, "should ramp back near 0 semitones, got {last}");
+    }
+
+    #[test]
+    fn release_when_disabled_is_noop() {
+        let mut peg = make_default();
+        peg.enabled = false;
+        peg.release();
+        assert_eq!(peg.process(), 0.0);
+    }
+
+    #[test]
+    fn release_when_idle_is_noop() {
+        let mut peg = make_default();
+        peg.enabled = true;
+        // No trigger → still Idle
+        peg.release();
+        assert_eq!(peg.process(), 0.0);
+    }
+
+    #[test]
+    fn reset_returns_to_baseline() {
+        let mut peg = make_default();
+        peg.enabled = true;
+        peg.trigger();
+        for _ in 0..256 {
+            peg.process();
+        }
+        peg.reset();
+        // After reset, output should be 0 (idle stage)
+        assert_eq!(peg.process(), 0.0);
+    }
+
+    #[test]
+    fn level_50_means_zero_semitones() {
+        let mut peg = make_default();
+        peg.enabled = true;
+        peg.level1 = 50.0;
+        peg.level2 = 50.0;
+        peg.level3 = 50.0;
+        peg.level4 = 50.0;
+        peg.rate1 = 99.0;
+        peg.trigger();
+        for _ in 0..1024 {
+            let s = peg.process();
+            assert!(s.abs() < 0.5, "all levels=50 should produce ~0, got {s}");
+        }
+    }
+
+    #[test]
+    fn level_99_at_sustain_targets_about_plus_four_octaves() {
+        let mut peg = make_default();
+        peg.enabled = true;
+        peg.level1 = 99.0;
+        peg.level2 = 99.0;
+        peg.level3 = 99.0;
+        peg.rate1 = 99.0;
+        peg.rate2 = 99.0;
+        peg.rate3 = 99.0;
+        peg.trigger();
+        let mut last = 0.0;
+        for _ in 0..(SR as usize) {
+            last = peg.process();
+        }
+        // (99-50)/49 * 48 = 48 semitones = +4 octaves
+        assert!((last - 48.0).abs() < 1.0, "expected ~+48, got {last}");
+    }
+
+    #[test]
+    fn level_zero_targets_minus_four_octaves() {
+        let mut peg = make_default();
+        peg.enabled = true;
+        peg.level1 = 0.0;
+        peg.level2 = 0.0;
+        peg.level3 = 0.0;
+        peg.rate1 = 99.0;
+        peg.rate2 = 99.0;
+        peg.rate3 = 99.0;
+        peg.trigger();
+        let mut last = 0.0;
+        for _ in 0..(SR as usize) {
+            last = peg.process();
+        }
+        // (0-50)/49 * 48 = -48.97 ≈ -48
+        assert!((last + 48.0).abs() < 1.5, "expected ~-48, got {last}");
+    }
+
+    #[test]
+    fn rate_zero_holds_initial_position() {
+        let mut peg = make_default();
+        peg.enabled = true;
+        peg.rate1 = 0.0;
+        peg.level1 = 99.0;
+        peg.level4 = 50.0;
+        peg.trigger();
+        // With rate=0 the envelope should not advance toward level1
+        let mut last = 0.0;
+        for _ in 0..1024 {
+            last = peg.process();
+        }
+        assert!(last.abs() < 5.0, "rate 0 should not advance, got {last}");
+    }
+
+    #[test]
+    fn full_lifecycle_traverses_stages() {
+        let mut peg = make_default();
+        peg.enabled = true;
+        peg.rate1 = 99.0;
+        peg.rate2 = 99.0;
+        peg.rate3 = 99.0;
+        peg.rate4 = 99.0;
+        peg.level1 = 70.0;
+        peg.level2 = 60.0;
+        peg.level3 = 50.0;
+        peg.level4 = 50.0;
+        peg.trigger();
+        for _ in 0..(SR as usize / 2) {
+            peg.process();
+        }
+        peg.release();
+        for _ in 0..(SR as usize / 2) {
+            peg.process();
+        }
+        // After full lifecycle the EG returns to Idle and output is 0.
+        assert_eq!(peg.process(), 0.0);
+    }
+}

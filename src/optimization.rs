@@ -197,3 +197,211 @@ impl OptimizationTables {
 // Global optimization tables instance
 pub static OPTIMIZATION_TABLES: std::sync::LazyLock<OptimizationTables> =
     std::sync::LazyLock::new(OptimizationTables::new);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::f32::consts::PI;
+
+    fn tables() -> OptimizationTables {
+        OptimizationTables::new()
+    }
+
+    // -----------------------------------------------------------------------
+    // fast_sin
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn fast_sin_matches_built_in_within_tolerance() {
+        let t = tables();
+        for i in 0..256 {
+            let phase = (i as f32 / 256.0) * 2.0 * PI;
+            let approx = t.fast_sin(phase);
+            let exact = phase.sin();
+            assert!((approx - exact).abs() < 1e-3, "phase={phase}, approx={approx}, exact={exact}");
+        }
+    }
+
+    #[test]
+    fn fast_sin_handles_negative_phase() {
+        let t = tables();
+        let neg = t.fast_sin(-PI / 2.0);
+        assert!((neg - (-1.0)).abs() < 1e-3);
+    }
+
+    #[test]
+    fn fast_sin_periodic_above_two_pi() {
+        let t = tables();
+        let a = t.fast_sin(PI / 4.0);
+        let b = t.fast_sin(PI / 4.0 + 2.0 * PI);
+        assert!((a - b).abs() < 1e-3);
+    }
+
+    // -----------------------------------------------------------------------
+    // fast_exp
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn fast_exp_zero_to_one_range_makes_sense() {
+        let t = tables();
+        // At input 0 the exp curve is near 0.001, at input 1 it's near 1.0.
+        let v0 = t.fast_exp(0.0);
+        let v1 = t.fast_exp(1.0);
+        assert!(v0 < v1);
+        assert!(v1 > 0.99);
+    }
+
+    #[test]
+    fn fast_exp_clamps_input_above_one() {
+        let t = tables();
+        let v_clamped = t.fast_exp(2.0);
+        let v_one = t.fast_exp(1.0);
+        assert_eq!(v_clamped, v_one);
+    }
+
+    #[test]
+    fn fast_exp_clamps_negative_input() {
+        let t = tables();
+        let v_clamped = t.fast_exp(-1.0);
+        let v_zero = t.fast_exp(0.0);
+        assert_eq!(v_clamped, v_zero);
+    }
+
+    // -----------------------------------------------------------------------
+    // MIDI frequencies
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn a4_midi_69_is_440_hz() {
+        let t = tables();
+        let f = t.get_midi_frequency(69);
+        assert!((f - 440.0).abs() < 0.01, "MIDI 69 = {f} Hz");
+    }
+
+    #[test]
+    fn a3_midi_57_is_220_hz() {
+        let t = tables();
+        let f = t.get_midi_frequency(57);
+        assert!((f - 220.0).abs() < 0.05);
+    }
+
+    #[test]
+    fn out_of_range_midi_falls_back_to_a4() {
+        let t = tables();
+        // u8 max is 255, well above MIDI 127 → fallback path
+        assert_eq!(t.get_midi_frequency(255), 440.0);
+        // Boundary: 127 should still be valid
+        let f127 = t.get_midi_frequency(127);
+        assert!(f127 > 12000.0 && f127 < 13000.0);
+    }
+
+    // -----------------------------------------------------------------------
+    // DX7 level table
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn dx7_level_99_is_unity_amplitude() {
+        let t = tables();
+        let amp = t.dx7_level_to_amplitude(99);
+        assert!((amp - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn dx7_level_zero_is_silent() {
+        let t = tables();
+        assert_eq!(t.dx7_level_to_amplitude(0), 0.0);
+    }
+
+    #[test]
+    fn dx7_level_table_is_monotonic() {
+        let t = tables();
+        let mut prev = 0.0;
+        for level in 1..=99u8 {
+            let a = t.dx7_level_to_amplitude(level);
+            assert!(a > prev, "level {level}: {a} should be > previous {prev}");
+            prev = a;
+        }
+    }
+
+    #[test]
+    fn dx7_level_clamps_above_99() {
+        let t = tables();
+        let a99 = t.dx7_level_to_amplitude(99);
+        let a200 = t.dx7_level_to_amplitude(200);
+        assert_eq!(a99, a200);
+    }
+
+    // -----------------------------------------------------------------------
+    // DX7 rate table
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn dx7_rate_zero_is_very_slow() {
+        let t = tables();
+        let time = t.dx7_rate_to_time(0);
+        assert!(time >= 40.0, "rate 0 should be ~41s, got {time}");
+    }
+
+    #[test]
+    fn dx7_rate_99_is_very_fast() {
+        let t = tables();
+        let time = t.dx7_rate_to_time(99);
+        assert!(time <= 0.05, "rate 99 should be ~10ms, got {time}");
+    }
+
+    #[test]
+    fn dx7_rate_to_multiplier_inverts_time() {
+        let t = tables();
+        let time = t.dx7_rate_to_time(50);
+        let mult = t.dx7_rate_to_multiplier(50);
+        assert!((mult * time - 1.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn dx7_rate_to_multiplier_clamps_above_99() {
+        let t = tables();
+        let m99 = t.dx7_rate_to_multiplier(99);
+        let m200 = t.dx7_rate_to_multiplier(200);
+        assert_eq!(m99, m200);
+    }
+
+    // -----------------------------------------------------------------------
+    // Voice scale table
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn voice_scale_zero_is_unity() {
+        let t = tables();
+        assert_eq!(t.get_voice_scale(0), 1.0);
+    }
+
+    #[test]
+    fn voice_scale_for_one_voice_is_unity() {
+        let t = tables();
+        assert!((t.get_voice_scale(1) - 1.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn voice_scale_decreases_with_more_voices() {
+        let t = tables();
+        let s1 = t.get_voice_scale(1);
+        let s4 = t.get_voice_scale(4);
+        let s16 = t.get_voice_scale(16);
+        assert!(s1 > s4);
+        assert!(s4 > s16);
+    }
+
+    #[test]
+    fn voice_scale_above_16_uses_fallback() {
+        let t = tables();
+        let s = t.get_voice_scale(32);
+        assert!(s > 0.0 && s <= 1.0);
+    }
+
+    #[test]
+    fn global_lazy_lock_is_initialized() {
+        // Touch the global instance so the LazyLock path is exercised.
+        let _ = OPTIMIZATION_TABLES.dx7_level_to_amplitude(50);
+        let _ = OPTIMIZATION_TABLES.fast_sin(0.5);
+    }
+}
