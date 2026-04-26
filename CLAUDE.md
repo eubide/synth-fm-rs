@@ -23,7 +23,20 @@ cargo clippy -- -D warnings   # Fail on warnings
 ```bash
 cargo check                   # Quick syntax check
 cargo build --all-features    # Build with all features
+cargo test --bin synth-fm-rs  # Run all unit tests (no library target)
 ```
+
+### Coverage
+```bash
+# Install once: cargo install cargo-llvm-cov --locked
+#
+# Project-wide coverage. Target: ≥90% lines.
+cargo llvm-cov --bin synth-fm-rs --summary-only
+```
+`audio_engine` and `gui` use `try_default_output()` and a `new_for_test()`
+constructor so unit tests can run without a graphics surface or audio device.
+The DSP / synth core sits at ≥95% lines covered; the project as a whole is
+≥90%.
 
 ## Architecture Overview
 
