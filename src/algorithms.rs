@@ -798,3 +798,173 @@ pub fn get_algorithm_info(algorithm_number: u8) -> AlgorithmInfo {
         _ => get_algorithm_info(1),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SR: f32 = 44_100.0;
+
+    fn build_ops() -> [Operator; 6] {
+        [
+            Operator::new(SR),
+            Operator::new(SR),
+            Operator::new(SR),
+            Operator::new(SR),
+            Operator::new(SR),
+            Operator::new(SR),
+        ]
+    }
+
+    fn triggered_ops() -> [Operator; 6] {
+        let mut ops = build_ops();
+        for op in ops.iter_mut() {
+            op.envelope.rate1 = 99.0;
+            op.trigger(440.0, 1.0, 60);
+        }
+        ops
+    }
+
+    fn run_algorithm_for_samples(alg: u8, samples: usize) -> (f32, f32) {
+        let mut ops = triggered_ops();
+        // Warm up envelope to steady state
+        for _ in 0..2048 {
+            process_algorithm(alg, &mut ops);
+        }
+        let mut peak = 0.0_f32;
+        let mut energy = 0.0_f32;
+        for _ in 0..samples {
+            let s = process_algorithm(alg, &mut ops);
+            peak = peak.max(s.abs());
+            energy += s * s;
+        }
+        (peak, energy)
+    }
+
+    #[test]
+    fn every_algorithm_produces_audio() {
+        for alg in 1..=32u8 {
+            let (peak, energy) = run_algorithm_for_samples(alg, 2048);
+            assert!(peak > 1e-6, "algorithm {alg} produced no audio (peak={peak})");
+            assert!(energy > 1e-6, "algorithm {alg} has no signal energy");
+            // Output should stay within sane bounds (post-mix scaling).
+            assert!(peak < 5.0, "algorithm {alg} peak too high: {peak}");
+        }
+    }
+
+    #[test]
+    fn invalid_algorithm_falls_back_to_one() {
+        let (peak_one, _) = run_algorithm_for_samples(1, 256);
+        let (peak_zero, _) = run_algorithm_for_samples(0, 256);
+        let (peak_huge, _) = run_algorithm_for_samples(99, 256);
+        // Fallback should produce a similar-shaped signal to algorithm 1.
+        assert!((peak_zero - peak_one).abs() < 0.5);
+        assert!((peak_huge - peak_one).abs() < 0.5);
+    }
+
+    // -----------------------------------------------------------------------
+    // get_algorithm_info coverage
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn every_algorithm_info_is_self_consistent() {
+        for alg in 1..=32u8 {
+            let info = get_algorithm_info(alg);
+            assert!(!info.carriers.is_empty(), "alg {alg} has no carriers");
+            for &c in &info.carriers {
+                assert!((1..=6).contains(&c), "alg {alg} has invalid carrier {c}");
+            }
+            for (from, to) in &info.connections {
+                assert!((1..=6).contains(from), "alg {alg} connection from {from}");
+                assert!((1..=6).contains(to), "alg {alg} connection to {to}");
+            }
+            assert!(info.feedback_op <= 6, "alg {alg} bad feedback_op {}", info.feedback_op);
+        }
+    }
+
+    #[test]
+    fn invalid_algorithm_info_falls_back_to_one() {
+        let one = get_algorithm_info(1);
+        let invalid = get_algorithm_info(0);
+        assert_eq!(one.carriers, invalid.carriers);
+        assert_eq!(one.feedback_op, invalid.feedback_op);
+    }
+
+    #[test]
+    fn algorithm_5_has_three_carriers() {
+        let info = get_algorithm_info(5);
+        assert_eq!(info.carriers, vec![1, 3, 5]);
+    }
+
+    #[test]
+    fn algorithm_32_has_all_carriers() {
+        let info = get_algorithm_info(32);
+        assert_eq!(info.carriers, vec![1, 2, 3, 4, 5, 6]);
+        assert!(info.connections.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // Algorithm naming
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn every_algorithm_has_a_name() {
+        for alg in 1..=32u8 {
+            let name = get_algorithm_name(alg);
+            assert!(!name.is_empty(), "alg {alg} has empty name");
+            assert!(name.starts_with(&format!("{}:", alg)), "alg {alg} name '{name}' should start with the number");
+        }
+    }
+
+    #[test]
+    fn invalid_algorithm_name_falls_back_to_one() {
+        assert_eq!(get_algorithm_name(0), get_algorithm_name(1));
+        assert_eq!(get_algorithm_name(99), get_algorithm_name(1));
+    }
+
+    // -----------------------------------------------------------------------
+    // Cross-feedback paths (algorithms 4 and 6)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn algorithm_4_uses_cross_feedback_when_op4_has_feedback() {
+        // Trigger an op stack and engage Op4 cross feedback.
+        let mut ops_no_fb = triggered_ops();
+        let mut ops_fb = triggered_ops();
+        ops_fb[3].feedback = 7.0;
+        // Warm up
+        for _ in 0..2048 {
+            process_algorithm(4, &mut ops_no_fb);
+            process_algorithm(4, &mut ops_fb);
+        }
+        let mut diff = 0;
+        for _ in 0..2048 {
+            let a = process_algorithm(4, &mut ops_no_fb);
+            let b = process_algorithm(4, &mut ops_fb);
+            if (a - b).abs() > 1e-3 {
+                diff += 1;
+            }
+        }
+        assert!(diff > 100, "cross feedback should change the signal ({diff} differing)");
+    }
+
+    #[test]
+    fn algorithm_6_uses_cross_feedback_when_op6_has_feedback() {
+        let mut ops_no_fb = triggered_ops();
+        let mut ops_fb = triggered_ops();
+        ops_fb[5].feedback = 7.0;
+        for _ in 0..2048 {
+            process_algorithm(6, &mut ops_no_fb);
+            process_algorithm(6, &mut ops_fb);
+        }
+        let mut diff = 0;
+        for _ in 0..2048 {
+            let a = process_algorithm(6, &mut ops_no_fb);
+            let b = process_algorithm(6, &mut ops_fb);
+            if (a - b).abs() > 1e-3 {
+                diff += 1;
+            }
+        }
+        assert!(diff > 100, "alg 6 cross feedback should differ ({diff})");
+    }
+}

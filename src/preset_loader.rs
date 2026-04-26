@@ -389,6 +389,220 @@ mod tests {
         assert_eq!(parse_transpose(&serde_json::json!(50)), 24); // clamped
     }
 
+    fn write_temp_patch(dir: &std::path::Path, name: &str, content: &str) {
+        std::fs::write(dir.join(name), content).expect("write");
+    }
+
+    #[test]
+    fn parse_note_name_handles_negative_octaves() {
+        // Convention: C3 = MIDI 60, so the formula `(octave + 2) * 12 + semitone`
+        // gives C-1 = 12, C0 = 24, C2 = 48, C3 = 60.
+        assert_eq!(parse_note_name("A-1"), Some(21));
+        assert_eq!(parse_note_name("C-1"), Some(12));
+        assert_eq!(parse_note_name("C0"), Some(24));
+    }
+
+    #[test]
+    fn parse_note_name_rejects_empty_and_invalid() {
+        assert!(parse_note_name("").is_none());
+        assert!(parse_note_name("   ").is_none());
+        assert!(parse_note_name("X3").is_none());
+        assert!(parse_note_name("Czz").is_none());
+    }
+
+    #[test]
+    fn parse_breakpoint_handles_number_string_and_other() {
+        assert_eq!(parse_breakpoint(&serde_json::json!(72)), 72);
+        assert_eq!(parse_breakpoint(&serde_json::json!("C3")), 60);
+        // Boolean falls through to default (60)
+        assert_eq!(parse_breakpoint(&serde_json::json!(true)), 60);
+    }
+
+    #[test]
+    fn parse_breakpoint_clamps_to_midi_range() {
+        assert_eq!(parse_breakpoint(&serde_json::json!(200)), 127);
+    }
+
+    #[test]
+    fn parse_lfo_wave_recognises_all_aliases() {
+        assert_eq!(parse_lfo_wave("triangle"), LFOWaveform::Triangle);
+        assert_eq!(parse_lfo_wave("TRI"), LFOWaveform::Triangle);
+        assert_eq!(parse_lfo_wave("sawdown"), LFOWaveform::SawDown);
+        assert_eq!(parse_lfo_wave("saw_down"), LFOWaveform::SawDown);
+        assert_eq!(parse_lfo_wave("saw-up"), LFOWaveform::SawUp);
+        assert_eq!(parse_lfo_wave("Square"), LFOWaveform::Square);
+        assert_eq!(parse_lfo_wave("sin"), LFOWaveform::Sine);
+        assert_eq!(parse_lfo_wave("S&H"), LFOWaveform::SampleHold);
+        assert_eq!(parse_lfo_wave("garbage"), LFOWaveform::Triangle); // default
+    }
+
+    #[test]
+    fn deserialize_lenient_f32_accepts_string_or_number() {
+        // The helper is tested indirectly via JSON roundtrip.
+        let json = r#"{
+            "wave": "triangle",
+            "speed": 35,
+            "delay": 0,
+            "pitchModDepth": 5,
+            "amDepth": "0",
+            "sync": "off",
+            "pitchModSensitivity": 0
+        }"#;
+        let lfo: JsonLfo = serde_json::from_str(json).expect("parse lfo");
+        assert_eq!(lfo.am_depth, 0.0);
+        assert_eq!(lfo.speed, 35.0);
+    }
+
+    #[test]
+    fn convert_operator_uses_top_feedback_only_for_op6() {
+        let json_op = JsonOperator {
+            frequency: 1.0,
+            output_level: 99.0,
+            am_sensitivity: 0,
+            ..Default::default()
+        };
+        let op_a = convert_operator(&json_op, 7.0, false);
+        assert_eq!(op_a.feedback, 0.0); // not op 6 → top feedback ignored
+        let op_b = convert_operator(&json_op, 7.0, true);
+        assert_eq!(op_b.feedback, 7.0); // op 6 → top feedback applied
+    }
+
+    #[test]
+    fn convert_operator_zero_frequency_maps_to_half_ratio() {
+        let json_op = JsonOperator {
+            frequency: 0.0,
+            output_level: 99.0,
+            ..Default::default()
+        };
+        let op = convert_operator(&json_op, 0.0, false);
+        assert_eq!(op.frequency_ratio, 0.5);
+    }
+
+    #[test]
+    fn convert_operator_per_op_feedback_overrides_top() {
+        let json_op = JsonOperator {
+            frequency: 2.0,
+            feedback: 4.0,
+            ..Default::default()
+        };
+        let op = convert_operator(&json_op, 7.0, true);
+        assert_eq!(op.feedback, 4.0);
+    }
+
+    #[test]
+    fn convert_operator_fixed_frequency_uses_coarse_fine() {
+        let json_op = JsonOperator {
+            oscillator_mode: "fixed".to_string(),
+            fixed_frequency_coarse: 2.0,
+            fixed_frequency_fine: 50.0,
+            ..Default::default()
+        };
+        let op = convert_operator(&json_op, 0.0, false);
+        assert!(op.fixed_frequency);
+        // 10^2 * (1 + 50/100) = 150
+        assert!((op.fixed_freq_hz - 150.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn scan_patches_dir_returns_sorted_results_for_real_subdirs() {
+        let path = std::path::Path::new("patches");
+        if !path.exists() {
+            eprintln!("Skipping: no patches directory");
+            return;
+        }
+        let presets = scan_patches_dir(path);
+        // We expect at least one preset to load successfully.
+        assert!(!presets.is_empty());
+        // Collections sort alphabetically.
+        if presets.len() >= 2 {
+            assert!(presets[0].collection <= presets[1].collection);
+        }
+    }
+
+    #[test]
+    fn scan_patches_dir_handles_missing_directory_gracefully() {
+        let presets = scan_patches_dir(std::path::Path::new("/nonexistent_path_xyz"));
+        assert!(presets.is_empty());
+    }
+
+    #[test]
+    fn load_json_file_returns_none_for_missing_operators() {
+        let dir = std::env::temp_dir().join(format!("synth-fm-rs-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        let json = r#"{"name": "BAD", "algorithm": 1, "operators": []}"#;
+        write_temp_patch(&dir, "bad.json", json);
+        let result = load_json_file(&dir.join("bad.json"), "test");
+        assert!(result.is_none());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn load_json_file_returns_none_for_invalid_json() {
+        let dir = std::env::temp_dir().join(format!("synth-fm-rs-test-bad-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        write_temp_patch(&dir, "bad.json", "{not valid json");
+        let result = load_json_file(&dir.join("bad.json"), "test");
+        assert!(result.is_none());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn load_json_file_supports_oscillator_key_sync_off() {
+        let dir =
+            std::env::temp_dir().join(format!("synth-fm-rs-test-osc-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        let json = r#"{
+            "name": "TEST",
+            "algorithm": 5,
+            "feedback": 7,
+            "oscillatorKeySync": "off",
+            "operators": [
+                {"frequency": 1.0, "outputLevel": 99},
+                {"frequency": 1.0, "outputLevel": 99},
+                {"frequency": 1.0, "outputLevel": 99},
+                {"frequency": 1.0, "outputLevel": 99},
+                {"frequency": 1.0, "outputLevel": 99},
+                {"frequency": 1.0, "outputLevel": 99}
+            ]
+        }"#;
+        write_temp_patch(&dir, "good.json", json);
+        let preset = load_json_file(&dir.join("good.json"), "test").expect("parse");
+        assert_eq!(preset.name, "TEST");
+        assert!(!preset.operators[0].oscillator_key_sync);
+        assert_eq!(preset.operators[5].feedback, 7.0);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn load_json_file_with_keyboard_level_scaling_block() {
+        let dir = std::env::temp_dir().join(format!("synth-fm-rs-test-kls-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        let json = r#"{
+            "name": "KLS",
+            "algorithm": 5,
+            "operators": [
+                {"frequency": 1.0, "outputLevel": 99,
+                 "keyboardLevelScaling": {
+                     "breakpoint": "C4",
+                     "leftCurve": "-exp",
+                     "rightCurve": "+lin",
+                     "leftDepth": 50,
+                     "rightDepth": 50
+                 }},
+                {"frequency": 1.0, "outputLevel": 99},
+                {"frequency": 1.0, "outputLevel": 99},
+                {"frequency": 1.0, "outputLevel": 99},
+                {"frequency": 1.0, "outputLevel": 99},
+                {"frequency": 1.0, "outputLevel": 99}
+            ]
+        }"#;
+        write_temp_patch(&dir, "kls.json", json);
+        let preset = load_json_file(&dir.join("kls.json"), "test").expect("parse");
+        assert_eq!(preset.operators[0].key_scale_breakpoint, 72);
+        assert_eq!(preset.operators[0].key_scale_left_depth, 50.0);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
     #[test]
     fn parse_brasshorns_patch_full_fidelity() {
         let path = std::path::Path::new("patches/mark/brasshorns.json");

@@ -14,7 +14,7 @@ use crate::operator::KeyScaleCurve;
 use crate::presets::{Dx7Preset, PresetLfo, PresetOperator, PresetPitchEg};
 
 /// Yamaha manufacturer SysEx ID.
-const YAMAHA_ID: u8 = 0x43;
+pub(crate) const YAMAHA_ID: u8 = 0x43;
 
 /// Length of one unpacked voice block (VCED).
 pub const VCED_LEN: usize = 155;
@@ -166,9 +166,27 @@ pub fn encode_single_voice(preset: &Dx7Preset, channel: u8) -> Vec<u8> {
 }
 
 /// Two's-complement of the running 7-bit sum, masked to 7 bits.
-fn compute_checksum(data: &[u8]) -> u8 {
+pub(crate) fn compute_checksum(data: &[u8]) -> u8 {
     let sum: u32 = data.iter().map(|&b| b as u32).sum();
     ((!sum).wrapping_add(1) & 0x7F) as u8
+}
+
+/// Wrap an arbitrary payload in DX7 SysEx framing (`F0 ... F7`) with the given
+/// format byte. Used by tests across modules to build VCED/VMEM messages without
+/// duplicating the magic-number assembly.
+#[cfg(test)]
+pub(crate) fn build_sysex_message(format: u8, payload: &[u8]) -> Vec<u8> {
+    let mut msg = Vec::with_capacity(payload.len() + 8);
+    msg.push(0xF0);
+    msg.push(YAMAHA_ID);
+    msg.push(0x00); // sub-status 0, channel 0
+    msg.push(format);
+    msg.push((payload.len() >> 7) as u8 & 0x7F);
+    msg.push((payload.len() & 0x7F) as u8);
+    msg.extend_from_slice(payload);
+    msg.push(compute_checksum(payload));
+    msg.push(0xF7);
+    msg
 }
 
 // ---------------------------------------------------------------------------
@@ -697,5 +715,282 @@ mod tests {
             parse_message(&bytes),
             Err(SysexError::ChecksumMismatch { .. })
         ));
+    }
+
+    // ----------------------------------------------------------------------
+    // Additional error handling
+    // ----------------------------------------------------------------------
+
+    #[test]
+    fn detects_too_short_message() {
+        let bytes = vec![0xF0, 0x43, 0x00, 0x00, 0xF7];
+        assert!(matches!(parse_message(&bytes), Err(SysexError::TooShort)));
+    }
+
+    #[test]
+    fn detects_unsupported_sub_status() {
+        let mut bytes = vec![0; 12];
+        bytes[0] = 0xF0;
+        bytes[1] = YAMAHA_ID;
+        bytes[2] = 0x10; // sub-status nibble != 0
+        bytes[11] = 0xF7;
+        assert!(matches!(
+            parse_message(&bytes),
+            Err(SysexError::UnsupportedSubStatus(0x10))
+        ));
+    }
+
+    #[test]
+    fn detects_unsupported_format_byte() {
+        let mut bytes = vec![0u8; 12];
+        bytes[0] = 0xF0;
+        bytes[1] = YAMAHA_ID;
+        bytes[2] = 0x00;
+        bytes[3] = 5; // unsupported format
+        bytes[4] = 0x00;
+        bytes[5] = 0x02;
+        // 2 data bytes
+        bytes[6] = 0x10;
+        bytes[7] = 0x20;
+        bytes[8] = compute_checksum(&[0x10, 0x20]);
+        bytes[9] = 0xF7;
+        bytes.truncate(10);
+        assert!(matches!(
+            parse_message(&bytes),
+            Err(SysexError::UnsupportedFormat(5))
+        ));
+    }
+
+    #[test]
+    fn detects_length_mismatch_in_header() {
+        let mut bytes = vec![0u8; 12];
+        bytes[0] = 0xF0;
+        bytes[1] = YAMAHA_ID;
+        bytes[2] = 0x00;
+        bytes[3] = 0x00;
+        // Declare 100 bytes but only have 4 data bytes after header
+        bytes[4] = 0x00;
+        bytes[5] = 0x64; // 100
+        bytes[11] = 0xF7;
+        assert!(matches!(
+            parse_message(&bytes),
+            Err(SysexError::LengthMismatch { .. })
+        ));
+    }
+
+    #[test]
+    fn vced_data_block_wrong_size_is_rejected() {
+        // Build a "format 0" message with the wrong byte count in the body.
+        let mut bytes = vec![0u8; 12];
+        bytes[0] = 0xF0;
+        bytes[1] = YAMAHA_ID;
+        bytes[2] = 0x00;
+        bytes[3] = 0x00;
+        bytes[4] = 0x00;
+        bytes[5] = 0x02; // 2 data bytes
+        bytes[6] = 0x10;
+        bytes[7] = 0x20;
+        bytes[8] = compute_checksum(&[0x10, 0x20]);
+        bytes[9] = 0xF7;
+        bytes.truncate(10);
+        assert!(matches!(
+            parse_message(&bytes),
+            Err(SysexError::LengthMismatch { .. })
+        ));
+    }
+
+    // ----------------------------------------------------------------------
+    // Display impls for error variants
+    // ----------------------------------------------------------------------
+
+    #[test]
+    fn display_strings_are_descriptive() {
+        // Touch every Display arm so the Debug-only paths get covered too.
+        let errs: Vec<SysexError> = vec![
+            SysexError::InvalidFraming,
+            SysexError::TooShort,
+            SysexError::NotYamaha(0x42),
+            SysexError::UnsupportedSubStatus(0x10),
+            SysexError::UnsupportedFormat(9),
+            SysexError::TruncatedData,
+            SysexError::LengthMismatch {
+                declared: 1,
+                actual: 2,
+            },
+            SysexError::ChecksumMismatch {
+                expected: 0x10,
+                computed: 0x20,
+            },
+        ];
+        for e in errs {
+            let msg = format!("{}", e);
+            assert!(!msg.is_empty(), "empty display for {:?}", e);
+        }
+    }
+
+    // ----------------------------------------------------------------------
+    // VMEM bulk dump roundtrip
+    // ----------------------------------------------------------------------
+
+    #[test]
+    fn parses_vmem_bulk_dump_with_32_voices() {
+        let msg = build_sysex_message(9, &vec![0u8; VMEM_LEN]);
+        match parse_message(&msg).expect("parse VMEM") {
+            SysexResult::Bulk(presets) => assert_eq!(presets.len(), 32),
+            _ => panic!("expected bulk result"),
+        }
+    }
+
+    // ----------------------------------------------------------------------
+    // Encoder edge cases
+    // ----------------------------------------------------------------------
+
+    #[test]
+    fn encoder_handles_fixed_frequency_operators() {
+        let mut preset = make_test_preset();
+        preset.operators[0].fixed_frequency = true;
+        preset.operators[0].fixed_freq_hz = 100.0;
+        let bytes = encode_single_voice(&preset, 0);
+        // Decode and verify the fixed flag was preserved
+        let parsed = parse_message(&bytes).expect("parse");
+        match parsed {
+            SysexResult::SingleVoice(boxed) => {
+                assert!(boxed.operators[0].fixed_frequency);
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn encoder_handles_long_voice_names_truncated_to_ten_chars() {
+        let mut preset = make_test_preset();
+        preset.name = "A_REALLY_LONG_NAME_HERE".to_string();
+        let bytes = encode_single_voice(&preset, 0);
+        let parsed = parse_message(&bytes).expect("parse");
+        match parsed {
+            SysexResult::SingleVoice(boxed) => {
+                assert_eq!(boxed.name.len(), 10);
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn encoder_handles_short_names_padded_with_spaces() {
+        let mut preset = make_test_preset();
+        preset.name = "ABC".to_string();
+        let bytes = encode_single_voice(&preset, 0);
+        let parsed = parse_message(&bytes).expect("parse");
+        match parsed {
+            SysexResult::SingleVoice(boxed) => {
+                assert!(boxed.name.starts_with("ABC"));
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn encoder_round_trips_pitch_eg() {
+        let mut preset = make_test_preset();
+        preset.pitch_eg = Some(PresetPitchEg {
+            rate1: 90.0,
+            rate2: 80.0,
+            rate3: 70.0,
+            rate4: 60.0,
+            level1: 70.0,
+            level2: 60.0,
+            level3: 55.0,
+            level4: 50.0,
+        });
+        let bytes = encode_single_voice(&preset, 0);
+        let parsed = parse_message(&bytes).expect("parse");
+        match parsed {
+            SysexResult::SingleVoice(boxed) => {
+                let peg = boxed.pitch_eg.expect("pitch eg present");
+                assert_eq!(peg.rate1, 90.0);
+                assert_eq!(peg.level3, 55.0);
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn encoder_round_trips_lfo_settings() {
+        let mut preset = make_test_preset();
+        preset.lfo = Some(PresetLfo {
+            waveform: crate::lfo::LFOWaveform::Square,
+            rate: 70.0,
+            delay: 30.0,
+            pitch_mod_depth: 50.0,
+            amp_mod_depth: 40.0,
+            key_sync: true,
+        });
+        let bytes = encode_single_voice(&preset, 0);
+        let parsed = parse_message(&bytes).expect("parse");
+        match parsed {
+            SysexResult::SingleVoice(boxed) => {
+                let lfo = boxed.lfo.expect("lfo present");
+                assert_eq!(lfo.waveform, crate::lfo::LFOWaveform::Square);
+                assert_eq!(lfo.rate, 70.0);
+                assert!(lfo.key_sync);
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn encoder_round_trips_transpose() {
+        let mut preset = make_test_preset();
+        preset.transpose_semitones = -5;
+        let bytes = encode_single_voice(&preset, 0);
+        let parsed = parse_message(&bytes).expect("parse");
+        match parsed {
+            SysexResult::SingleVoice(boxed) => {
+                assert_eq!(boxed.transpose_semitones, -5);
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn lfo_wave_table_round_trips_all_codes() {
+        for code in 0..=5u8 {
+            let wave = lfo_wave_from_dx7(code);
+            assert_eq!(lfo_wave_to_dx7(wave), code);
+        }
+        // Codes above 5 fold into SampleHold
+        assert_eq!(lfo_wave_from_dx7(6), crate::lfo::LFOWaveform::SampleHold);
+        assert_eq!(lfo_wave_from_dx7(7), crate::lfo::LFOWaveform::SampleHold);
+    }
+
+    #[test]
+    fn parse_voice_name_strips_trailing_spaces_and_high_bits() {
+        // High bits should be masked off; trailing spaces trimmed.
+        let raw = b"PIANO     ";
+        assert_eq!(parse_voice_name(raw), "PIANO");
+        let with_high = [b'A' | 0x80, b'B', b'C', b' ', b' ', b' ', b' ', b' ', b' ', b' '];
+        assert_eq!(parse_voice_name(&with_high), "ABC");
+    }
+
+    #[test]
+    fn clamp_99_clamps_outside_range() {
+        assert_eq!(clamp_99(-5.0), 0);
+        assert_eq!(clamp_99(50.4), 50);
+        assert_eq!(clamp_99(50.6), 51);
+        assert_eq!(clamp_99(99.0), 99);
+        assert_eq!(clamp_99(150.0), 99);
+    }
+
+    #[test]
+    fn parse_vced_with_too_short_data_returns_truncated() {
+        // Build the framing correctly but provide a malformed body for direct call.
+        let result = parse_vced(&[0u8; 50], "SysEx");
+        assert!(matches!(result, Err(SysexError::TruncatedData)));
+    }
+
+    #[test]
+    fn parse_vmem_with_wrong_size_returns_truncated() {
+        let result = parse_vmem(&[0u8; 100]);
+        assert!(matches!(result, Err(SysexError::TruncatedData)));
     }
 }

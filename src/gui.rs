@@ -13,7 +13,9 @@ use std::sync::{Arc, Mutex};
 pub struct Dx7App {
     engine: Arc<Mutex<SynthEngine>>,
     controller: Arc<Mutex<SynthController>>,
-    _audio_engine: AudioEngine,
+    /// Owned to keep the audio stream alive. Optional so unit tests can
+    /// construct a `Dx7App` without a real audio device.
+    _audio_engine: Option<AudioEngine>,
     _midi_handler: Option<MidiHandler>,
     selected_operator: usize,
     display_mode: DisplayMode,
@@ -53,8 +55,27 @@ impl Dx7App {
         midi_handler: Option<MidiHandler>,
         presets: Vec<Dx7Preset>,
     ) -> Self {
-        let snapshot = controller.lock().map(|c| c.snapshot()).unwrap_or_default();
+        Self::build(engine, controller, Some(audio_engine), midi_handler, presets)
+    }
 
+    /// Test-only constructor: builds a `Dx7App` without a real audio engine.
+    #[cfg(test)]
+    pub fn new_for_test(
+        engine: Arc<Mutex<SynthEngine>>,
+        controller: Arc<Mutex<SynthController>>,
+        presets: Vec<Dx7Preset>,
+    ) -> Self {
+        Self::build(engine, controller, None, None, presets)
+    }
+
+    fn build(
+        engine: Arc<Mutex<SynthEngine>>,
+        controller: Arc<Mutex<SynthController>>,
+        audio_engine: Option<AudioEngine>,
+        midi_handler: Option<MidiHandler>,
+        presets: Vec<Dx7Preset>,
+    ) -> Self {
+        let snapshot = controller.lock().map(|c| c.snapshot()).unwrap_or_default();
         Self {
             engine,
             controller,
@@ -80,6 +101,60 @@ impl Dx7App {
     fn update_snapshot(&mut self) {
         if let Ok(ctrl) = self.controller.lock() {
             self.snapshot = ctrl.snapshot();
+        }
+    }
+
+    /// Frame-independent rendering: drives one full GUI frame against the given
+    /// `egui::Context`. Split out from `App::update` so tests can call it
+    /// without constructing an `eframe::Frame`.
+    pub(crate) fn render(&mut self, ctx: &egui::Context) {
+        self.update_snapshot();
+        self.handle_keyboard_input(ctx);
+        ctx.set_visuals(egui::Visuals::light());
+
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.vertical_centered(|ui| {
+                ui.heading("DX7-STYLE DIGITAL FM SYNTHESIZER");
+            });
+            ui.separator();
+
+            self.draw_dx7_display(ui);
+            ui.add_space(8.0);
+            self.draw_global_controls(ui);
+            ui.add_space(8.0);
+            self.draw_membrane_buttons(ui);
+            ui.add_space(8.0);
+
+            match self.display_mode {
+                DisplayMode::Voice => self.draw_preset_selector(ui),
+                DisplayMode::Operator => {
+                    ui.columns(2, |columns| {
+                        columns[0].vertical(|ui| {
+                            self.draw_algorithm_diagram_compact(ui);
+                            ui.add_space(4.0);
+                            self.draw_operator_selector_strip(ui);
+                        });
+                        columns[1].vertical(|ui| {
+                            self.draw_operator_full_panel(ui);
+                        });
+                    });
+                }
+                DisplayMode::LFO => self.draw_lfo_panel(ui),
+                DisplayMode::Effects => self.draw_effects_panel(ui),
+                DisplayMode::Midi => self.draw_midi_panel(ui),
+            }
+
+            ui.separator();
+            ui.horizontal(|ui| {
+                ui.label("Keyboard: Z-M (lower octave), Q-U (upper octave)");
+                ui.label(format!("| Octave: {}", self.current_octave));
+                ui.label("| Space: Panic");
+                ui.label("| Up/Down: Change octave");
+            });
+        });
+
+        if ctx.input(|i| !i.events.is_empty()) {
+            ctx.request_repaint_after(std::time::Duration::from_millis(16)); // ~60 FPS
         }
     }
 
@@ -858,81 +933,7 @@ impl Dx7App {
 
 impl eframe::App for Dx7App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Update snapshot from audio thread once per frame
-        self.update_snapshot();
-
-        self.handle_keyboard_input(ctx);
-
-        // Set light theme with soft colors
-        ctx.set_visuals(egui::Visuals::light());
-
-        egui::CentralPanel::default().show(ctx, |ui| {
-            // Header
-            ui.vertical_centered(|ui| {
-                ui.heading("DX7-STYLE DIGITAL FM SYNTHESIZER");
-            });
-            ui.separator();
-
-            // DX7 LCD Display
-            self.draw_dx7_display(ui);
-
-            ui.add_space(8.0);
-
-            // Global Controls Panel (always visible)
-            self.draw_global_controls(ui);
-
-            ui.add_space(8.0);
-
-            // Mode Selection Buttons
-            self.draw_membrane_buttons(ui);
-
-            ui.add_space(8.0);
-
-            match self.display_mode {
-                DisplayMode::Voice => {
-                    self.draw_preset_selector(ui);
-                }
-                DisplayMode::Operator => {
-                    // Two-column layout: Left = Algorithm + Op selector, Right = Selected Op details
-                    ui.columns(2, |columns| {
-                        // LEFT COLUMN: Algorithm diagram + Operator selector strip
-                        columns[0].vertical(|ui| {
-                            self.draw_algorithm_diagram_compact(ui);
-                            ui.add_space(4.0);
-                            self.draw_operator_selector_strip(ui);
-                        });
-
-                        // RIGHT COLUMN: Selected operator full details with envelope
-                        columns[1].vertical(|ui| {
-                            self.draw_operator_full_panel(ui);
-                        });
-                    });
-                }
-                DisplayMode::LFO => {
-                    self.draw_lfo_panel(ui);
-                }
-                DisplayMode::Effects => {
-                    self.draw_effects_panel(ui);
-                }
-                DisplayMode::Midi => {
-                    self.draw_midi_panel(ui);
-                }
-            }
-
-            ui.separator();
-
-            ui.horizontal(|ui| {
-                ui.label("Keyboard: Z-M (lower octave), Q-U (upper octave)");
-                ui.label(format!("| Octave: {}", self.current_octave));
-                ui.label("| Space: Panic");
-                ui.label("| Up/Down: Change octave");
-            });
-        });
-
-        // Only repaint when needed (user interaction or animation)
-        if ctx.input(|i| !i.events.is_empty()) {
-            ctx.request_repaint_after(std::time::Duration::from_millis(16)); // ~60 FPS
-        }
+        self.render(ctx);
     }
 }
 
@@ -2358,3 +2359,380 @@ impl Dx7App {
 /// Max fraction of white blended into an active operator's fill (0..=1).
 /// Tunable: lower = subtler highlight, higher = whiter at full envelope.
 const ACTIVITY_BRIGHTEN_MAX: f32 = 0.6;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::fm_synth::create_synth;
+    use crate::presets::{PresetLfo, PresetOperator, PresetPitchEg};
+
+    fn make_app() -> Dx7App {
+        make_app_with_presets(Vec::new())
+    }
+
+    fn make_app_with_presets(presets: Vec<Dx7Preset>) -> Dx7App {
+        let (engine, controller) = create_synth(44_100.0);
+        let engine = Arc::new(Mutex::new(engine));
+        let controller = Arc::new(Mutex::new(controller));
+        Dx7App::new_for_test(engine, controller, presets)
+    }
+
+    fn make_preset(name: &str, alg: u8, collection: &str) -> Dx7Preset {
+        Dx7Preset {
+            name: name.to_string(),
+            collection: collection.to_string(),
+            algorithm: alg,
+            operators: std::array::from_fn(|_| PresetOperator::default()),
+            master_tune: None,
+            pitch_bend_range: None,
+            portamento_enable: None,
+            portamento_time: None,
+            mono_mode: None,
+            transpose_semitones: 0,
+            pitch_mod_sensitivity: 0,
+            pitch_eg: Some(PresetPitchEg::default()),
+            lfo: Some(PresetLfo::default()),
+        }
+    }
+
+    /// Run one egui frame against a fresh test context.
+    fn run_one_frame<F: FnOnce(&egui::Context)>(f: F) {
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| f(ctx));
+    }
+
+    // ---------------------------------------------------------------------
+    // Constructor / state
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn new_for_test_initialises_default_state() {
+        let app = make_app();
+        assert_eq!(app.selected_operator, 0);
+        assert_eq!(app.current_octave, 4);
+        assert_eq!(app.display_text, "DX7 FM SYNTH");
+        assert!(app._audio_engine.is_none());
+        assert!(app._midi_handler.is_none());
+        assert!(app.presets.is_empty());
+        assert!(app.midi_channel_ui.is_none());
+    }
+
+    #[test]
+    fn new_for_test_keeps_provided_presets() {
+        let presets = vec![
+            make_preset("FOO", 1, "edu"),
+            make_preset("BAR", 2, "mark"),
+        ];
+        let app = make_app_with_presets(presets);
+        assert_eq!(app.presets.len(), 2);
+        assert_eq!(app.presets[0].name, "FOO");
+    }
+
+    #[test]
+    fn lock_engine_and_controller_succeed() {
+        let app = make_app();
+        assert!(app.lock_engine().is_ok());
+        assert!(app.lock_controller().is_ok());
+    }
+
+    #[test]
+    fn update_snapshot_refreshes_field_from_controller() {
+        let mut app = make_app();
+        if let Ok(mut eng) = app.engine.lock() {
+            eng.set_algorithm(11);
+            eng.update_snapshot();
+        }
+        app.update_snapshot();
+        assert_eq!(app.snapshot.algorithm, 11);
+    }
+
+    // ---------------------------------------------------------------------
+    // Pure helper: calculate_operator_positions_compact
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn operator_positions_lay_out_inside_rect_for_algorithm_1() {
+        let app = make_app();
+        let alg_info = algorithms::get_algorithm_info(1);
+        let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(400.0, 280.0));
+        let positions = app.calculate_operator_positions_compact(&alg_info, rect);
+        // Every operator must land inside the rect.
+        for (i, p) in positions.iter().enumerate() {
+            assert!(rect.contains(*p), "op {} position {:?} outside rect", i + 1, p);
+        }
+    }
+
+    #[test]
+    fn operator_positions_unique_per_operator() {
+        let app = make_app();
+        for alg in 1..=32u8 {
+            let alg_info = algorithms::get_algorithm_info(alg);
+            let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(400.0, 280.0));
+            let positions = app.calculate_operator_positions_compact(&alg_info, rect);
+            // No two operators should occupy the exact same point.
+            for i in 0..positions.len() {
+                for j in (i + 1)..positions.len() {
+                    let dx = (positions[i].x - positions[j].x).abs();
+                    let dy = (positions[i].y - positions[j].y).abs();
+                    assert!(
+                        dx > 0.001 || dy > 0.001,
+                        "alg {}: ops {} and {} overlap at {:?}",
+                        alg, i + 1, j + 1, positions[i]
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn operator_positions_carriers_at_bottom_layer() {
+        let app = make_app();
+        // Algorithm 32: all carriers — they should all share the bottom y.
+        let alg_info = algorithms::get_algorithm_info(32);
+        let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(400.0, 280.0));
+        let positions = app.calculate_operator_positions_compact(&alg_info, rect);
+        let bottom_y = positions[0].y;
+        for p in &positions[1..] {
+            assert!((p.y - bottom_y).abs() < 0.5, "alg 32: all ops should share bottom row");
+        }
+    }
+
+    #[test]
+    fn operator_positions_modulators_above_carriers() {
+        let app = make_app();
+        // Algorithm 1: ops 1 & 3 are carriers, the others are higher in the tree.
+        let alg_info = algorithms::get_algorithm_info(1);
+        let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(400.0, 280.0));
+        let positions = app.calculate_operator_positions_compact(&alg_info, rect);
+        // Op2 modulates Op1 → must sit above (smaller y) Op1.
+        assert!(positions[1].y < positions[0].y);
+        // Op6 → Op5 → Op4 → Op3 stack. Op6 should be the topmost.
+        assert!(positions[5].y < positions[4].y);
+        assert!(positions[4].y < positions[3].y);
+    }
+
+    // ---------------------------------------------------------------------
+    // SysEx load / save
+    // ---------------------------------------------------------------------
+
+    fn temp_path(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("synth-fm-rs-gui-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        dir.join(name)
+    }
+
+    #[test]
+    fn save_sysex_writes_file_with_voice_name_in_status() {
+        let mut app = make_app();
+        let path = temp_path("save_voice.syx");
+        app.sysex_path = path.to_string_lossy().into_owned();
+        app.save_sysex_to_path();
+        assert!(path.exists(), "save did not create file");
+        assert!(app.sysex_status.contains("Saved"));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn load_sysex_round_trips_a_saved_voice() {
+        let mut app = make_app();
+        let path = temp_path("roundtrip_voice.syx");
+        app.sysex_path = path.to_string_lossy().into_owned();
+        app.save_sysex_to_path();
+        app.sysex_status.clear();
+        app.load_sysex_from_path();
+        assert!(app.sysex_status.contains("Loaded single voice"));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn load_sysex_reports_read_error_for_missing_file() {
+        let mut app = make_app();
+        app.sysex_path = "/nonexistent/nope.syx".to_string();
+        app.load_sysex_from_path();
+        assert!(app.sysex_status.starts_with("Read error"));
+    }
+
+    #[test]
+    fn load_sysex_reports_parse_error_for_garbage_content() {
+        let mut app = make_app();
+        let path = temp_path("garbage.syx");
+        std::fs::write(&path, b"not a sysex message").expect("write");
+        app.sysex_path = path.to_string_lossy().into_owned();
+        app.load_sysex_from_path();
+        assert!(app.sysex_status.starts_with("Parse error"));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn load_sysex_handles_bulk_dump() {
+        let msg = crate::sysex::build_sysex_message(9, &vec![0u8; crate::sysex::VMEM_LEN]);
+        let path = temp_path("bulk.syx");
+        std::fs::write(&path, &msg).expect("write");
+        let mut app = make_app();
+        app.sysex_path = path.to_string_lossy().into_owned();
+        app.load_sysex_from_path();
+        assert!(app.sysex_status.contains("bulk dump"));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    // ---------------------------------------------------------------------
+    // Render path coverage — drives the full GUI for one frame per mode.
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn render_voice_mode_completes_without_panic() {
+        let mut app = make_app_with_presets(vec![
+            make_preset("ONE", 1, "edu"),
+            make_preset("TWO", 5, "mark"),
+        ]);
+        app.display_mode = DisplayMode::Voice;
+        run_one_frame(|ctx| app.render(ctx));
+    }
+
+    #[test]
+    fn render_operator_mode_completes_without_panic() {
+        let mut app = make_app();
+        app.display_mode = DisplayMode::Operator;
+        run_one_frame(|ctx| app.render(ctx));
+    }
+
+    #[test]
+    fn render_lfo_mode_completes_without_panic() {
+        let mut app = make_app();
+        app.display_mode = DisplayMode::LFO;
+        run_one_frame(|ctx| app.render(ctx));
+    }
+
+    #[test]
+    fn render_effects_mode_completes_without_panic() {
+        let mut app = make_app();
+        app.display_mode = DisplayMode::Effects;
+        run_one_frame(|ctx| app.render(ctx));
+    }
+
+    #[test]
+    fn render_midi_mode_completes_without_panic() {
+        let mut app = make_app();
+        app.display_mode = DisplayMode::Midi;
+        run_one_frame(|ctx| app.render(ctx));
+    }
+
+    #[test]
+    fn render_each_algorithm_in_operator_mode() {
+        // Cycles through all 32 algorithms so the diagram layout / drawing code
+        // is exercised on every routing.
+        let mut app = make_app();
+        app.display_mode = DisplayMode::Operator;
+        for alg in 1..=32u8 {
+            if let Ok(mut eng) = app.engine.lock() {
+                eng.set_algorithm(alg);
+                eng.update_snapshot();
+            }
+            run_one_frame(|ctx| app.render(ctx));
+        }
+    }
+
+    #[test]
+    fn render_with_collection_filter_active() {
+        let presets = vec![
+            make_preset("A1", 1, "edu"),
+            make_preset("A2", 1, "mark"),
+            make_preset("A3", 1, "edu"),
+        ];
+        let mut app = make_app_with_presets(presets);
+        app.selected_collection = Some("edu".to_string());
+        app.display_mode = DisplayMode::Voice;
+        run_one_frame(|ctx| app.render(ctx));
+    }
+
+    #[test]
+    fn render_with_search_filter_active() {
+        let presets = vec![
+            make_preset("PIANO 1", 1, "edu"),
+            make_preset("BRASS 1", 1, "edu"),
+            make_preset("PIANO 2", 1, "edu"),
+        ];
+        let mut app = make_app_with_presets(presets);
+        app.preset_search = "piano".to_string();
+        app.display_mode = DisplayMode::Voice;
+        run_one_frame(|ctx| app.render(ctx));
+    }
+
+    #[test]
+    fn render_with_active_voices_for_meter_path() {
+        let mut app = make_app();
+        if let Ok(mut ctrl) = app.controller.lock() {
+            ctrl.note_on(60, 100);
+        }
+        if let Ok(mut eng) = app.engine.lock() {
+            eng.process_commands();
+            eng.update_snapshot();
+        }
+        app.display_mode = DisplayMode::Operator;
+        run_one_frame(|ctx| app.render(ctx));
+    }
+
+    #[test]
+    fn render_with_effects_enabled_exercises_effect_drawers() {
+        let mut app = make_app();
+        if let Ok(mut eng) = app.engine.lock() {
+            eng.effects.chorus.enabled = true;
+            eng.effects.delay.enabled = true;
+            eng.effects.reverb.enabled = true;
+            eng.update_snapshot();
+        }
+        app.display_mode = DisplayMode::Effects;
+        run_one_frame(|ctx| app.render(ctx));
+    }
+
+    #[test]
+    fn render_each_voice_mode_for_global_controls() {
+        for mode in [
+            crate::state_snapshot::VoiceMode::Poly,
+            crate::state_snapshot::VoiceMode::Mono,
+            crate::state_snapshot::VoiceMode::MonoLegato,
+        ] {
+            let mut app = make_app();
+            if let Ok(mut ctrl) = app.controller.lock() {
+                ctrl.set_voice_mode(mode);
+            }
+            if let Ok(mut eng) = app.engine.lock() {
+                eng.process_commands();
+                eng.update_snapshot();
+            }
+            app.update_snapshot();
+            run_one_frame(|ctx| app.render(ctx));
+        }
+    }
+
+    #[test]
+    fn render_with_midi_channel_filter_set() {
+        let mut app = make_app();
+        app.display_mode = DisplayMode::Midi;
+        app.midi_channel_ui = Some(3);
+        run_one_frame(|ctx| app.render(ctx));
+        app.midi_channel_ui = None;
+        run_one_frame(|ctx| app.render(ctx));
+    }
+
+    #[test]
+    fn render_with_pitch_eg_active_in_lfo_panel() {
+        let mut app = make_app();
+        if let Ok(mut eng) = app.engine.lock() {
+            eng.pitch_eg.enabled = true;
+            eng.pitch_eg.level1 = 80.0;
+            eng.update_snapshot();
+        }
+        app.display_mode = DisplayMode::LFO;
+        run_one_frame(|ctx| app.render(ctx));
+    }
+
+    // ---------------------------------------------------------------------
+    // Constants are stable
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn activity_brighten_max_in_unit_range() {
+        assert!((0.0..=1.0).contains(&ACTIVITY_BRIGHTEN_MAX));
+    }
+}

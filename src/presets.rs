@@ -270,3 +270,220 @@ impl Dx7Preset {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::command_queue::create_command_queue;
+    use crate::fm_synth::SynthEngine;
+    use crate::state_snapshot::create_snapshot_channel;
+
+    fn make_engine() -> SynthEngine {
+        let (_tx, rx) = create_command_queue();
+        let (snap_tx, _snap_rx) = create_snapshot_channel();
+        SynthEngine::new(44_100.0, rx, snap_tx)
+    }
+
+    #[test]
+    fn preset_operator_default_has_sane_values() {
+        let op = PresetOperator::default();
+        assert_eq!(op.frequency_ratio, 1.0);
+        assert_eq!(op.output_level, 99.0);
+        assert!(op.oscillator_key_sync);
+        assert!(!op.fixed_frequency);
+    }
+
+    #[test]
+    fn preset_lfo_default_uses_triangle() {
+        let lfo = PresetLfo::default();
+        assert_eq!(lfo.waveform, crate::lfo::LFOWaveform::Triangle);
+    }
+
+    #[test]
+    fn preset_pitch_eg_default_is_inactive() {
+        let peg = PresetPitchEg::default();
+        assert!(!peg.is_active());
+    }
+
+    #[test]
+    fn preset_pitch_eg_is_active_when_any_level_offset() {
+        let peg = PresetPitchEg {
+            level1: 70.0,
+            ..PresetPitchEg::default()
+        };
+        assert!(peg.is_active());
+
+        let peg = PresetPitchEg {
+            level4: 30.0,
+            ..PresetPitchEg::default()
+        };
+        assert!(peg.is_active());
+    }
+
+    #[test]
+    fn preset_pitch_eg_treats_tiny_offsets_as_inactive() {
+        let peg = PresetPitchEg {
+            rate1: 99.0,
+            rate2: 99.0,
+            rate3: 99.0,
+            rate4: 99.0,
+            level1: 50.3, // within ±0.5 → inactive
+            level2: 50.0,
+            level3: 50.0,
+            level4: 50.0,
+        };
+        assert!(!peg.is_active());
+    }
+
+    #[test]
+    fn from_snapshot_round_trips_basic_fields() {
+        let snap = crate::state_snapshot::SynthSnapshot {
+            algorithm: 7,
+            preset_name: "FROM SNAPSHOT".to_string(),
+            transpose_semitones: 5,
+            pitch_mod_sensitivity: 4,
+            ..crate::state_snapshot::SynthSnapshot::default()
+        };
+        let preset = Dx7Preset::from_snapshot(&snap);
+        assert_eq!(preset.name, "FROM SNAPSHOT");
+        assert_eq!(preset.algorithm, 7);
+        assert_eq!(preset.transpose_semitones, 5);
+        assert_eq!(preset.pitch_mod_sensitivity, 4);
+        assert_eq!(preset.collection, "current");
+        assert!(preset.lfo.is_some());
+        assert!(preset.pitch_eg.is_some());
+    }
+
+    #[test]
+    fn apply_to_synth_sets_algorithm_and_name() {
+        let mut engine = make_engine();
+        let preset = Dx7Preset {
+            name: "APPLIED".to_string(),
+            collection: "test".to_string(),
+            algorithm: 11,
+            operators: std::array::from_fn(|_| PresetOperator::default()),
+            master_tune: None,
+            pitch_bend_range: Some(3.0),
+            portamento_enable: None,
+            portamento_time: None,
+            mono_mode: None,
+            transpose_semitones: -3,
+            pitch_mod_sensitivity: 5,
+            pitch_eg: None,
+            lfo: None,
+        };
+        preset.apply_to_synth(&mut engine);
+        assert_eq!(engine.preset_name, "APPLIED");
+        assert_eq!(engine.get_algorithm(), 11);
+    }
+
+    #[test]
+    fn apply_to_synth_handles_active_pitch_eg() {
+        let mut engine = make_engine();
+        let peg = PresetPitchEg {
+            level1: 80.0, // active
+            ..PresetPitchEg::default()
+        };
+        let preset = Dx7Preset {
+            name: "PEG".to_string(),
+            collection: "test".to_string(),
+            algorithm: 1,
+            operators: std::array::from_fn(|_| PresetOperator::default()),
+            master_tune: None,
+            pitch_bend_range: None,
+            portamento_enable: None,
+            portamento_time: None,
+            mono_mode: None,
+            transpose_semitones: 0,
+            pitch_mod_sensitivity: 0,
+            pitch_eg: Some(peg),
+            lfo: None,
+        };
+        preset.apply_to_synth(&mut engine);
+        assert!(engine.pitch_eg.enabled);
+        assert_eq!(engine.pitch_eg.level1, 80.0);
+    }
+
+    #[test]
+    fn apply_to_synth_disables_pitch_eg_when_none() {
+        let mut engine = make_engine();
+        engine.pitch_eg.enabled = true;
+        let preset = Dx7Preset {
+            name: "NONE".to_string(),
+            collection: "test".to_string(),
+            algorithm: 1,
+            operators: std::array::from_fn(|_| PresetOperator::default()),
+            master_tune: None,
+            pitch_bend_range: None,
+            portamento_enable: None,
+            portamento_time: None,
+            mono_mode: None,
+            transpose_semitones: 0,
+            pitch_mod_sensitivity: 0,
+            pitch_eg: None,
+            lfo: None,
+        };
+        preset.apply_to_synth(&mut engine);
+        assert!(!engine.pitch_eg.enabled);
+    }
+
+    #[test]
+    fn apply_to_synth_propagates_lfo_settings() {
+        let mut engine = make_engine();
+        let lfo = PresetLfo {
+            waveform: crate::lfo::LFOWaveform::Square,
+            rate: 70.0,
+            delay: 20.0,
+            pitch_mod_depth: 50.0,
+            amp_mod_depth: 30.0,
+            key_sync: true,
+        };
+        let preset = Dx7Preset {
+            name: "LFO".to_string(),
+            collection: "test".to_string(),
+            algorithm: 1,
+            operators: std::array::from_fn(|_| PresetOperator::default()),
+            master_tune: None,
+            pitch_bend_range: None,
+            portamento_enable: None,
+            portamento_time: None,
+            mono_mode: None,
+            transpose_semitones: 0,
+            pitch_mod_sensitivity: 0,
+            pitch_eg: None,
+            lfo: Some(lfo),
+        };
+        preset.apply_to_synth(&mut engine);
+        assert_eq!(engine.get_lfo_waveform(), crate::lfo::LFOWaveform::Square);
+        assert_eq!(engine.get_lfo_rate(), 70.0);
+    }
+
+    #[test]
+    fn apply_to_synth_writes_operators_into_voices() {
+        let mut engine = make_engine();
+        let mut ops: [PresetOperator; 6] = std::array::from_fn(|_| PresetOperator::default());
+        ops[0].frequency_ratio = 3.0;
+        ops[0].output_level = 80.0;
+        ops[5].feedback = 4.0;
+        let preset = Dx7Preset {
+            name: "OPS".to_string(),
+            collection: "test".to_string(),
+            algorithm: 5,
+            operators: ops,
+            master_tune: None,
+            pitch_bend_range: None,
+            portamento_enable: None,
+            portamento_time: None,
+            mono_mode: None,
+            transpose_semitones: 0,
+            pitch_mod_sensitivity: 0,
+            pitch_eg: None,
+            lfo: None,
+        };
+        preset.apply_to_synth(&mut engine);
+        let voice = &engine.voices()[0];
+        assert_eq!(voice.operators[0].frequency_ratio, 3.0);
+        assert_eq!(voice.operators[0].output_level, 80.0);
+        assert_eq!(voice.operators[5].feedback, 4.0);
+    }
+}
