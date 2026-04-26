@@ -30,12 +30,24 @@ use gui::Dx7App;
 use midi_handler::MidiHandler;
 
 fn play_startup_melody(controller: Arc<Mutex<SynthController>>) {
+    play_melody(
+        controller,
+        Duration::from_millis(500),
+        Duration::from_millis(300),
+        Duration::from_millis(50),
+    );
+}
+
+fn play_melody(
+    controller: Arc<Mutex<SynthController>>,
+    initial_delay: Duration,
+    note_duration: Duration,
+    note_gap: Duration,
+) {
     thread::spawn(move || {
-        thread::sleep(Duration::from_millis(500));
+        thread::sleep(initial_delay);
 
         let notes = [60, 64, 67]; // C4, E4, G4
-        let note_duration = Duration::from_millis(300);
-        let note_gap = Duration::from_millis(50);
 
         for &note in &notes {
             if let Ok(mut ctrl) = controller.lock() {
@@ -123,4 +135,42 @@ fn main() -> Result<(), eframe::Error> {
             )))
         }),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn play_startup_melody_returns_immediately() {
+        let (_engine, controller) = fm_synth::create_synth(44_100.0);
+        let controller = Arc::new(Mutex::new(controller));
+        let start = std::time::Instant::now();
+        play_startup_melody(controller);
+        assert!(start.elapsed() < Duration::from_millis(100));
+    }
+
+    #[test]
+    fn play_melody_eventually_pushes_notes() {
+        let (mut engine, controller) = fm_synth::create_synth(44_100.0);
+        let controller = Arc::new(Mutex::new(controller));
+        play_melody(
+            controller,
+            Duration::from_millis(0),
+            Duration::from_millis(5),
+            Duration::from_millis(1),
+        );
+
+        let deadline = std::time::Instant::now() + Duration::from_millis(200);
+        let mut active_seen = false;
+        while std::time::Instant::now() < deadline {
+            engine.process_commands();
+            if engine.voices().iter().any(|v| v.active) {
+                active_seen = true;
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        assert!(active_seen, "expected at least one note-on from the melody");
+    }
 }

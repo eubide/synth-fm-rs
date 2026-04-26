@@ -13,14 +13,17 @@ pub struct AudioProbe {
 
 impl AudioProbe {
     pub fn default_output() -> Self {
+        Self::try_default_output().expect("No output device available")
+    }
+
+    /// Fallible variant: returns `None` if the host has no default output device
+    /// or the device fails to report its config. Used by tests so they can run
+    /// in headless environments without panicking.
+    pub fn try_default_output() -> Option<Self> {
         let host = cpal::default_host();
-        let device = host
-            .default_output_device()
-            .expect("No output device available");
-        let config = device
-            .default_output_config()
-            .expect("Failed to get default output config");
-        Self { device, config }
+        let device = host.default_output_device()?;
+        let config = device.default_output_config().ok()?;
+        Some(Self { device, config })
     }
 
     pub fn sample_rate(&self) -> f32 {
@@ -131,5 +134,34 @@ impl AudioEngine {
                 None,
             )
             .expect("Failed to build output stream")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::fm_synth::create_synth;
+
+    #[test]
+    fn try_default_output_returns_a_valid_sample_rate_when_available() {
+        let Some(probe) = AudioProbe::try_default_output() else {
+            return; // headless host: no output device
+        };
+        let sr = probe.sample_rate();
+        assert!((8_000.0..=384_000.0).contains(&sr), "implausible sample rate: {sr}");
+    }
+
+    #[test]
+    fn audio_engine_new_runs_when_a_device_is_available() {
+        let Some(probe) = AudioProbe::try_default_output() else {
+            return;
+        };
+        let sr = probe.sample_rate();
+        let (engine, _ctrl) = create_synth(sr);
+        let engine = Arc::new(Mutex::new(engine));
+        let underrun = Arc::new(AtomicUsize::new(0));
+        let _audio = AudioEngine::new(probe, engine, underrun.clone());
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        assert_eq!(underrun.load(Ordering::Relaxed), 0);
     }
 }
