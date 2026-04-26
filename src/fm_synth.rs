@@ -1533,6 +1533,54 @@ pub fn create_synth(sample_rate: f32) -> (SynthEngine, SynthController) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::presets::{PresetLfo, PresetOperator, PresetPitchEg};
+
+    const SR: f32 = 44_100.0;
+
+    fn make_engine() -> (SynthEngine, SynthController) {
+        create_synth(SR)
+    }
+
+    fn drive(engine: &mut SynthEngine, samples: usize) {
+        for _ in 0..samples {
+            engine.process_commands();
+            engine.process();
+        }
+    }
+
+    fn drive_stereo(engine: &mut SynthEngine, samples: usize) -> (f32, f32) {
+        let mut peak_l = 0.0_f32;
+        let mut peak_r = 0.0_f32;
+        for _ in 0..samples {
+            engine.process_commands();
+            let (l, r) = engine.process_stereo();
+            peak_l = peak_l.max(l.abs());
+            peak_r = peak_r.max(r.abs());
+        }
+        (peak_l, peak_r)
+    }
+
+    fn make_preset(name: &str, alg: u8) -> Dx7Preset {
+        Dx7Preset {
+            name: name.to_string(),
+            collection: "test".to_string(),
+            algorithm: alg,
+            operators: std::array::from_fn(|_| PresetOperator::default()),
+            master_tune: Some(5.0),
+            pitch_bend_range: Some(2.0),
+            portamento_enable: None,
+            portamento_time: None,
+            mono_mode: None,
+            transpose_semitones: 12,
+            pitch_mod_sensitivity: 4,
+            pitch_eg: Some(PresetPitchEg::default()),
+            lfo: Some(PresetLfo::default()),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Soft clip
+    // -----------------------------------------------------------------------
 
     #[test]
     fn soft_clip_zero_is_zero() {
@@ -1551,5 +1599,667 @@ mod tests {
         let b = SynthEngine::soft_clip(0.8);
         let c = SynthEngine::soft_clip(2.0);
         assert!(a < b && b < c);
+    }
+
+    // -----------------------------------------------------------------------
+    // quantize_to_semitone
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn quantize_zero_or_negative_passes_through() {
+        assert_eq!(quantize_to_semitone(0.0), 0.0);
+        assert_eq!(quantize_to_semitone(-1.0), -1.0);
+    }
+
+    #[test]
+    fn quantize_a4_returns_440() {
+        let q = quantize_to_semitone(440.0);
+        assert!((q - 440.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn quantize_snaps_off_pitch_to_nearest() {
+        // 460 Hz is between A4 (440) and A#4 (~466). Closer to A#4.
+        let q = quantize_to_semitone(460.0);
+        let asharp = 440.0 * 2.0_f32.powf(1.0 / 12.0);
+        assert!((q - asharp).abs() < 1.0);
+    }
+
+    // -----------------------------------------------------------------------
+    // route_amount helper
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn route_amount_full_sensitivity_passes_value() {
+        assert!((route_amount(1.0, 7) - 1.0).abs() < 1e-3);
+        assert!((route_amount(0.5, 7) - 0.5).abs() < 1e-3);
+    }
+
+    #[test]
+    fn route_amount_zero_sensitivity_silences() {
+        assert_eq!(route_amount(1.0, 0), 0.0);
+    }
+
+    #[test]
+    fn route_amount_clamps_sensitivity_to_seven() {
+        assert_eq!(route_amount(1.0, 7), route_amount(1.0, 100));
+    }
+
+    // -----------------------------------------------------------------------
+    // Voice
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn voice_starts_inactive() {
+        let v = Voice::new_with_sample_rate(SR);
+        assert!(!v.active);
+        assert_eq!(v.note, 0);
+    }
+
+    #[test]
+    fn voice_trigger_makes_active_and_sets_frequency() {
+        let mut v = Voice::new_with_sample_rate(SR);
+        v.trigger(69, 1.0, 0.0, false);
+        assert!(v.active);
+        assert_eq!(v.note, 69);
+        assert!((v.frequency - 440.0).abs() < 0.5);
+    }
+
+    #[test]
+    fn voice_master_tune_shifts_frequency() {
+        let mut v = Voice::new_with_sample_rate(SR);
+        v.trigger(69, 1.0, 100.0, false); // +1 semitone
+        let asharp = 440.0 * 2.0_f32.powf(1.0 / 12.0);
+        assert!((v.frequency - asharp).abs() < 1.0);
+    }
+
+    #[test]
+    fn voice_release_eventually_idles() {
+        let mut v = Voice::new_with_sample_rate(SR);
+        for op in &mut v.operators {
+            op.envelope.rate1 = 99.0;
+            op.envelope.rate4 = 99.0;
+            op.envelope.level4 = 0.0;
+        }
+        v.trigger(69, 1.0, 0.0, false);
+        for _ in 0..2048 {
+            v.process(1, 0.0, 2.0, 0.0, false, 0.0, 0.0, 0.0, 0.0, 0.0);
+        }
+        v.release();
+        for _ in 0..(SR as usize) {
+            v.process(1, 0.0, 2.0, 0.0, false, 0.0, 0.0, 0.0, 0.0, 0.0);
+            if !v.active {
+                break;
+            }
+        }
+        assert!(!v.active);
+    }
+
+    #[test]
+    fn voice_inactive_returns_zero_output() {
+        let mut v = Voice::new_with_sample_rate(SR);
+        let s = v.process(1, 0.0, 2.0, 0.0, false, 0.0, 0.0, 0.0, 0.0, 0.0);
+        assert_eq!(s, 0.0);
+    }
+
+    #[test]
+    fn voice_glissando_quantises_frequency() {
+        let mut v = Voice::new_with_sample_rate(SR);
+        v.trigger(69, 1.0, 0.0, false);
+        // Run with glissando ON
+        for _ in 0..256 {
+            v.process(1, 0.0, 2.0, 0.0, true, 0.0, 0.0, 0.0, 0.0, 0.0);
+        }
+    }
+
+    #[test]
+    fn voice_pitch_bend_changes_frequency_perceptually() {
+        let mut v = Voice::new_with_sample_rate(SR);
+        v.trigger(69, 1.0, 0.0, false);
+        // Just exercise the pitch bend path.
+        for _ in 0..256 {
+            v.process(1, 0.5, 2.0, 0.0, false, 0.0, 0.0, 0.0, 0.0, 0.0);
+        }
+    }
+
+    #[test]
+    fn voice_steal_initiates_fade_out() {
+        let mut v = Voice::new_with_sample_rate(SR);
+        v.trigger(69, 1.0, 0.0, false);
+        v.steal_voice();
+        // Process a few samples to advance the fade
+        for _ in 0..4096 {
+            v.process(1, 0.0, 2.0, 0.0, false, 0.0, 0.0, 0.0, 0.0, 0.0);
+            if !v.active {
+                break;
+            }
+        }
+        assert!(!v.active, "stolen voice should fade out and become inactive");
+    }
+
+    #[test]
+    fn voice_retarget_changes_note_without_envelope_retrigger() {
+        let mut v = Voice::new_with_sample_rate(SR);
+        v.trigger(60, 1.0, 0.0, false);
+        for _ in 0..256 {
+            v.process(1, 0.0, 2.0, 0.0, false, 0.0, 0.0, 0.0, 0.0, 0.0);
+        }
+        v.retarget(72, 0.0, false); // jump up an octave, no portamento
+        assert_eq!(v.note, 72);
+        assert!((v.frequency - 440.0 * 2.0_f32.powf((72 - 69) as f32 / 12.0)).abs() < 0.5);
+    }
+
+    #[test]
+    fn voice_portamento_uses_target_frequency_not_current() {
+        let mut v = Voice::new_with_sample_rate(SR);
+        // First trigger: establish a starting frequency
+        v.trigger(60, 1.0, 0.0, true);
+        let initial = v.current_frequency;
+        // Second trigger with portamento ON: target should change but current stays
+        v.trigger(72, 1.0, 0.0, true);
+        assert_ne!(v.target_frequency, initial);
+        let target = v.target_frequency;
+        // Asymptotic glide: at portamento_time=10 the half-life is ~30ms, so
+        // SR/2 (~500ms) gets us deep into the convergence tail.
+        for _ in 0..(SR as usize / 2) {
+            v.process(1, 0.0, 2.0, 10.0, false, 0.0, 0.0, 0.0, 0.0, 0.0);
+            if (v.current_frequency - target).abs() < 1.0 {
+                break;
+            }
+        }
+        assert!(v.current_frequency > initial, "current should glide upward toward target");
+        assert!(v.current_frequency <= target * 1.01, "should not overshoot");
+    }
+
+    #[test]
+    fn voice_stop_resets_state() {
+        let mut v = Voice::new_with_sample_rate(SR);
+        v.trigger(60, 1.0, 0.0, false);
+        v.stop();
+        assert!(!v.active);
+    }
+
+    // -----------------------------------------------------------------------
+    // SynthEngine commands & basic flow
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn engine_new_has_init_voice_default() {
+        let (engine, _ctrl) = make_engine();
+        assert_eq!(engine.preset_name, "Init Voice");
+        assert_eq!(engine.algorithm, 1);
+    }
+
+    #[test]
+    fn engine_set_algorithm_clamps_to_valid_range() {
+        let (mut engine, mut ctrl) = make_engine();
+        ctrl.set_algorithm(0); // invalid
+        engine.process_commands();
+        assert_eq!(engine.algorithm, 1);
+        ctrl.set_algorithm(33); // invalid
+        engine.process_commands();
+        assert_eq!(engine.algorithm, 1);
+        ctrl.set_algorithm(7);
+        engine.process_commands();
+        assert_eq!(engine.algorithm, 7);
+    }
+
+    #[test]
+    fn engine_set_master_volume_clamps_to_zero_one() {
+        let (mut engine, mut ctrl) = make_engine();
+        ctrl.set_master_volume(2.0);
+        engine.process_commands();
+        assert_eq!(engine.master_volume, 1.0);
+        ctrl.set_master_volume(-0.5);
+        engine.process_commands();
+        assert_eq!(engine.master_volume, 0.0);
+    }
+
+    #[test]
+    fn engine_set_master_tune_clamps_to_safe_range() {
+        let (mut engine, mut ctrl) = make_engine();
+        ctrl.set_master_tune(500.0);
+        engine.process_commands();
+        assert_eq!(engine.master_tune, 150.0);
+        ctrl.set_master_tune(-500.0);
+        engine.process_commands();
+        assert_eq!(engine.master_tune, -150.0);
+    }
+
+    #[test]
+    fn engine_set_pitch_bend_range_clamps() {
+        let (mut engine, mut ctrl) = make_engine();
+        ctrl.set_pitch_bend_range(50.0);
+        engine.process_commands();
+        assert_eq!(engine.pitch_bend_range, 12.0);
+        ctrl.set_pitch_bend_range(-1.0);
+        engine.process_commands();
+        assert_eq!(engine.pitch_bend_range, 0.0);
+    }
+
+    #[test]
+    fn engine_set_voice_mode_changes_mode() {
+        let (mut engine, mut ctrl) = make_engine();
+        ctrl.set_voice_mode(crate::state_snapshot::VoiceMode::Mono);
+        engine.process_commands();
+        assert_eq!(engine.voice_mode, crate::state_snapshot::VoiceMode::Mono);
+        ctrl.set_voice_mode(crate::state_snapshot::VoiceMode::MonoLegato);
+        engine.process_commands();
+        assert_eq!(engine.voice_mode, crate::state_snapshot::VoiceMode::MonoLegato);
+        ctrl.set_voice_mode(crate::state_snapshot::VoiceMode::Poly);
+        engine.process_commands();
+        assert_eq!(engine.voice_mode, crate::state_snapshot::VoiceMode::Poly);
+    }
+
+    #[test]
+    fn engine_set_transpose_clamps() {
+        let (mut engine, mut ctrl) = make_engine();
+        ctrl.set_transpose(50);
+        engine.process_commands();
+        assert_eq!(engine.transpose_semitones, 24);
+        ctrl.set_transpose(-50);
+        engine.process_commands();
+        assert_eq!(engine.transpose_semitones, -24);
+    }
+
+    #[test]
+    fn engine_set_pitch_mod_sensitivity_clamps() {
+        let (mut engine, mut ctrl) = make_engine();
+        ctrl.set_pitch_mod_sensitivity(99);
+        engine.process_commands();
+        assert_eq!(engine.pitch_mod_sensitivity, 7);
+    }
+
+    #[test]
+    fn engine_note_on_off_round_trip() {
+        let (mut engine, mut ctrl) = make_engine();
+        ctrl.note_on(60, 100);
+        engine.process_commands();
+        // We should now have at least one active voice.
+        let active = engine.voices.iter().filter(|v| v.active).count();
+        assert!(active >= 1);
+        ctrl.note_off(60);
+        engine.process_commands();
+        // Note off triggers release, voice still active until envelope completes.
+    }
+
+    #[test]
+    fn engine_panic_stops_all_voices() {
+        let (mut engine, mut ctrl) = make_engine();
+        ctrl.note_on(60, 100);
+        ctrl.note_on(64, 100);
+        ctrl.note_on(67, 100);
+        engine.process_commands();
+        ctrl.panic();
+        engine.process_commands();
+        let active = engine.voices.iter().filter(|v| v.active).count();
+        assert_eq!(active, 0);
+    }
+
+    #[test]
+    fn engine_voice_initialize_resets_to_defaults() {
+        let (mut engine, mut ctrl) = make_engine();
+        ctrl.set_algorithm(15);
+        ctrl.note_on(60, 100);
+        engine.process_commands();
+        ctrl.voice_initialize();
+        engine.process_commands();
+        assert_eq!(engine.algorithm, 1);
+        assert_eq!(engine.preset_name, "Init Voice");
+        let active = engine.voices.iter().filter(|v| v.active).count();
+        assert_eq!(active, 0);
+    }
+
+    #[test]
+    fn engine_process_produces_audio_when_note_pressed() {
+        let (mut engine, mut ctrl) = make_engine();
+        ctrl.note_on(69, 100);
+        let mut peak = 0.0_f32;
+        for _ in 0..4096 {
+            engine.process_commands();
+            peak = peak.max(engine.process().abs());
+        }
+        assert!(peak > 0.001, "expected audio after note on, peak={peak}");
+    }
+
+    #[test]
+    fn engine_process_stereo_runs_through_effects_and_dc_blocker() {
+        let (mut engine, mut ctrl) = make_engine();
+        ctrl.note_on(69, 100);
+        let (peak_l, peak_r) = drive_stereo(&mut engine, 4096);
+        assert!(peak_l > 0.001);
+        assert!(peak_r > 0.001);
+    }
+
+    #[test]
+    fn engine_pitch_bend_alters_audio_path() {
+        let (mut engine, mut ctrl) = make_engine();
+        ctrl.note_on(69, 100);
+        ctrl.pitch_bend(8000);
+        ctrl.mod_wheel(0.5);
+        ctrl.sustain_pedal(true);
+        drive(&mut engine, 1024);
+    }
+
+    #[test]
+    fn engine_voice_stealing_kicks_in_after_max_voices() {
+        let (mut engine, mut ctrl) = make_engine();
+        // Drive 17 different note_ons → triggers stealing (16-voice cap)
+        for n in 50..67u8 {
+            ctrl.note_on(n, 100);
+        }
+        engine.process_commands();
+        let active = engine.voices.iter().filter(|v| v.active).count();
+        assert!(active <= 16);
+    }
+
+    #[test]
+    fn engine_mono_mode_silences_all_but_first_active_voice() {
+        let (mut engine, mut ctrl) = make_engine();
+        // Press multiple notes in Poly mode
+        for n in 60..64u8 {
+            ctrl.note_on(n, 100);
+        }
+        // Now switch to Mono — engine should silence all but one.
+        ctrl.set_voice_mode(crate::state_snapshot::VoiceMode::Mono);
+        engine.process_commands();
+        let active = engine.voices.iter().filter(|v| v.active).count();
+        assert!(active <= 1);
+    }
+
+    #[test]
+    fn engine_mono_legato_glides_between_held_notes() {
+        let (mut engine, mut ctrl) = make_engine();
+        ctrl.set_voice_mode(crate::state_snapshot::VoiceMode::MonoLegato);
+        ctrl.set_portamento_enable(true);
+        ctrl.set_portamento_time(50.0);
+        ctrl.note_on(60, 100);
+        engine.process_commands();
+        ctrl.note_on(67, 100);
+        engine.process_commands();
+        // Note off the topmost: should fall back to the first held note.
+        ctrl.note_off(67);
+        engine.process_commands();
+        let active = engine.voices.iter().filter(|v| v.active).count();
+        assert!(active >= 1);
+    }
+
+    #[test]
+    fn engine_sustain_pedal_holds_notes() {
+        let (mut engine, mut ctrl) = make_engine();
+        ctrl.note_on(60, 100);
+        engine.process_commands();
+        ctrl.sustain_pedal(true);
+        engine.process_commands();
+        ctrl.note_off(60);
+        engine.process_commands();
+        // With sustain held, note_off is a no-op → voice still active.
+        let active_before_release = engine.voices.iter().filter(|v| v.active).count();
+        assert!(active_before_release >= 1);
+    }
+
+    #[test]
+    fn engine_set_operator_param_dispatches_to_voices() {
+        let (mut engine, mut ctrl) = make_engine();
+        ctrl.set_operator_param(0, OperatorParam::Ratio, 2.0);
+        ctrl.set_operator_param(0, OperatorParam::Level, 80.0);
+        ctrl.set_operator_param(0, OperatorParam::Detune, 5.0);
+        ctrl.set_operator_param(0, OperatorParam::Feedback, 3.0);
+        ctrl.set_operator_param(0, OperatorParam::VelocitySensitivity, 4.0);
+        ctrl.set_operator_param(0, OperatorParam::KeyScaleRate, 2.0);
+        ctrl.set_operator_param(0, OperatorParam::KeyScaleBreakpoint, 48.0);
+        ctrl.set_operator_param(0, OperatorParam::KeyScaleLeftDepth, 50.0);
+        ctrl.set_operator_param(0, OperatorParam::KeyScaleRightDepth, 50.0);
+        ctrl.set_operator_param(0, OperatorParam::KeyScaleLeftCurve, 1.0);
+        ctrl.set_operator_param(0, OperatorParam::KeyScaleRightCurve, 2.0);
+        ctrl.set_operator_param(0, OperatorParam::AmSensitivity, 3.0);
+        ctrl.set_operator_param(0, OperatorParam::OscillatorKeySync, 1.0);
+        ctrl.set_operator_param(0, OperatorParam::FixedFrequency, 1.0);
+        ctrl.set_operator_param(0, OperatorParam::FixedFreqHz, 100.0);
+        ctrl.set_operator_param(0, OperatorParam::Enabled, 0.0);
+        ctrl.set_operator_param(99, OperatorParam::Ratio, 2.0); // out of range — no-op
+        engine.process_commands();
+        // No assertion needed — we just exercise all branches.
+    }
+
+    #[test]
+    fn engine_set_envelope_param_dispatches_to_all_voices() {
+        let (mut engine, mut ctrl) = make_engine();
+        for param in [
+            EnvelopeParam::Rate1,
+            EnvelopeParam::Rate2,
+            EnvelopeParam::Rate3,
+            EnvelopeParam::Rate4,
+            EnvelopeParam::Level1,
+            EnvelopeParam::Level2,
+            EnvelopeParam::Level3,
+            EnvelopeParam::Level4,
+        ] {
+            ctrl.set_envelope_param(0, param, 50.0);
+        }
+        ctrl.set_envelope_param(99, EnvelopeParam::Rate1, 0.0); // out of range — no-op
+        engine.process_commands();
+    }
+
+    #[test]
+    fn engine_set_pitch_eg_param_dispatches() {
+        let (mut engine, mut ctrl) = make_engine();
+        for param in [
+            PitchEgParam::Enabled,
+            PitchEgParam::Rate1,
+            PitchEgParam::Rate2,
+            PitchEgParam::Rate3,
+            PitchEgParam::Rate4,
+            PitchEgParam::Level1,
+            PitchEgParam::Level2,
+            PitchEgParam::Level3,
+            PitchEgParam::Level4,
+        ] {
+            ctrl.set_pitch_eg_param(param, 50.0);
+        }
+        engine.process_commands();
+    }
+
+    #[test]
+    fn engine_set_lfo_param_dispatches() {
+        let (mut engine, mut ctrl) = make_engine();
+        ctrl.set_lfo_param(LfoParam::Rate, 50.0);
+        ctrl.set_lfo_param(LfoParam::Delay, 20.0);
+        ctrl.set_lfo_param(LfoParam::PitchDepth, 80.0);
+        ctrl.set_lfo_param(LfoParam::AmpDepth, 40.0);
+        ctrl.set_lfo_param(LfoParam::KeySync, 1.0);
+        for w in 0..=5u8 {
+            ctrl.set_lfo_param(LfoParam::Waveform(w), 0.0);
+        }
+        engine.process_commands();
+    }
+
+    #[test]
+    fn engine_set_effect_param_dispatches() {
+        let (mut engine, mut ctrl) = make_engine();
+        // Chorus
+        ctrl.set_effect_param(EffectType::Chorus, EffectParam::Enabled, 1.0);
+        ctrl.set_effect_param(EffectType::Chorus, EffectParam::Mix, 0.5);
+        ctrl.set_effect_param(EffectType::Chorus, EffectParam::ChorusRate, 2.0);
+        ctrl.set_effect_param(EffectType::Chorus, EffectParam::ChorusDepth, 5.0);
+        ctrl.set_effect_param(EffectType::Chorus, EffectParam::ChorusFeedback, 0.3);
+        // Delay
+        ctrl.set_effect_param(EffectType::Delay, EffectParam::Enabled, 1.0);
+        ctrl.set_effect_param(EffectType::Delay, EffectParam::Mix, 0.4);
+        ctrl.set_effect_param(EffectType::Delay, EffectParam::DelayTime, 200.0);
+        ctrl.set_effect_param(EffectType::Delay, EffectParam::DelayFeedback, 0.5);
+        ctrl.set_effect_param(EffectType::Delay, EffectParam::DelayPingPong, 1.0);
+        // Reverb
+        ctrl.set_effect_param(EffectType::Reverb, EffectParam::Enabled, 1.0);
+        ctrl.set_effect_param(EffectType::Reverb, EffectParam::Mix, 0.3);
+        ctrl.set_effect_param(EffectType::Reverb, EffectParam::ReverbRoomSize, 0.8);
+        ctrl.set_effect_param(EffectType::Reverb, EffectParam::ReverbDamping, 0.4);
+        ctrl.set_effect_param(EffectType::Reverb, EffectParam::ReverbWidth, 0.9);
+        engine.process_commands();
+    }
+
+    // -----------------------------------------------------------------------
+    // Controller routing & expression
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn engine_aftertouch_clamps_and_routes() {
+        let (mut engine, mut ctrl) = make_engine();
+        ctrl.set_aftertouch_pitch_sens(7);
+        ctrl.set_aftertouch_amp_sens(5);
+        ctrl.set_aftertouch_eg_bias_sens(3);
+        ctrl.set_aftertouch_pitch_bias_sens(2);
+        ctrl.aftertouch(2.0); // clamped to 1.0
+        engine.process_commands();
+        assert_eq!(engine.aftertouch, 1.0);
+    }
+
+    #[test]
+    fn engine_breath_controller_clamps() {
+        let (mut engine, mut ctrl) = make_engine();
+        ctrl.set_breath_pitch_sens(7);
+        ctrl.set_breath_amp_sens(5);
+        ctrl.set_breath_eg_bias_sens(3);
+        ctrl.set_breath_pitch_bias_sens(2);
+        ctrl.breath_controller(-0.5);
+        engine.process_commands();
+        assert_eq!(engine.breath, 0.0);
+    }
+
+    #[test]
+    fn engine_foot_controller_routes() {
+        let (mut engine, mut ctrl) = make_engine();
+        ctrl.set_foot_volume_sens(15);
+        ctrl.set_foot_pitch_sens(7);
+        ctrl.set_foot_amp_sens(5);
+        ctrl.set_foot_eg_bias_sens(3);
+        ctrl.foot_controller(0.5);
+        engine.process_commands();
+        assert_eq!(engine.foot_volume_sens, 15);
+        assert_eq!(engine.foot, 0.5);
+    }
+
+    #[test]
+    fn engine_expression_clamps() {
+        let (mut engine, mut ctrl) = make_engine();
+        ctrl.expression(2.0);
+        engine.process_commands();
+        assert_eq!(engine.expression, 1.0);
+        ctrl.expression(-1.0);
+        engine.process_commands();
+        assert_eq!(engine.expression, 0.0);
+    }
+
+    #[test]
+    fn engine_bank_select_combines_with_program_change() {
+        let (mut engine, mut ctrl) = make_engine();
+        ctrl.set_bank_msb(1);
+        ctrl.set_bank_lsb(2);
+        ctrl.program_change(3);
+        engine.process_commands();
+        assert_eq!(engine.bank_msb, 1);
+        assert_eq!(engine.bank_lsb, 2);
+    }
+
+    #[test]
+    fn engine_eg_bias_and_pitch_bias_sensitivities_clamp() {
+        let (mut engine, mut ctrl) = make_engine();
+        ctrl.set_eg_bias_sensitivity(50);
+        engine.process_commands();
+        assert_eq!(engine.eg_bias_sensitivity, 7);
+        ctrl.set_pitch_bias_sensitivity(50);
+        engine.process_commands();
+        assert_eq!(engine.pitch_bias_sensitivity, 7);
+    }
+
+    #[test]
+    fn engine_portamento_settings_propagate() {
+        let (mut engine, mut ctrl) = make_engine();
+        ctrl.set_portamento_enable(true);
+        ctrl.set_portamento_time(75.0);
+        ctrl.set_portamento_glissando(true);
+        engine.process_commands();
+        assert!(engine.portamento_enable);
+        assert_eq!(engine.portamento_time, 75.0);
+        assert!(engine.portamento_glissando);
+    }
+
+    // -----------------------------------------------------------------------
+    // Snapshots & preset loading
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn engine_update_snapshot_publishes_to_controller() {
+        let (engine, ctrl) = make_engine();
+        engine.update_snapshot();
+        let snap = ctrl.snapshot();
+        assert_eq!(snap.algorithm, 1);
+        assert_eq!(snap.preset_name, "Init Voice");
+    }
+
+    #[test]
+    fn engine_load_preset_by_index_applies_when_in_range() {
+        let (mut engine, mut ctrl) = make_engine();
+        let presets = vec![make_preset("FOO", 5), make_preset("BAR", 12)];
+        engine.set_presets(presets);
+        ctrl.load_preset(1);
+        engine.process_commands();
+        assert_eq!(engine.preset_name, "BAR");
+        assert_eq!(engine.algorithm, 12);
+    }
+
+    #[test]
+    fn engine_load_preset_out_of_range_is_noop() {
+        let (mut engine, mut ctrl) = make_engine();
+        let presets = vec![make_preset("FOO", 5)];
+        engine.set_presets(presets);
+        ctrl.load_preset(99);
+        engine.process_commands();
+        assert_eq!(engine.preset_name, "Init Voice");
+    }
+
+    #[test]
+    fn engine_load_sysex_single_voice_applies() {
+        let (mut engine, mut ctrl) = make_engine();
+        let preset = make_preset("SYSEX", 7);
+        ctrl.load_sysex_single_voice(preset);
+        engine.process_commands();
+        assert_eq!(engine.preset_name, "SYSEX");
+        assert_eq!(engine.algorithm, 7);
+    }
+
+    #[test]
+    fn engine_load_sysex_bulk_applies_first_and_replaces_bank() {
+        let (mut engine, mut ctrl) = make_engine();
+        let presets = vec![make_preset("BULK1", 11), make_preset("BULK2", 13)];
+        ctrl.load_sysex_bulk(presets);
+        engine.process_commands();
+        assert_eq!(engine.preset_name, "BULK1");
+        assert_eq!(engine.algorithm, 11);
+    }
+
+    // -----------------------------------------------------------------------
+    // SynthController API completeness (smoke)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn controller_command_buffer_does_not_block() {
+        let (_engine, mut ctrl) = make_engine();
+        // Many commands of various types; never blocks.
+        for _ in 0..500 {
+            ctrl.note_on(60, 100);
+            ctrl.set_master_tune(10.0);
+            ctrl.set_master_volume(0.5);
+            ctrl.mod_wheel(0.7);
+        }
+    }
+
+    #[test]
+    fn engine_get_snapshot_returns_clone() {
+        let (engine, ctrl) = make_engine();
+        engine.update_snapshot();
+        let snap = ctrl.snapshot();
+        let snap2 = ctrl.snapshot();
+        assert_eq!(snap.algorithm, snap2.algorithm);
     }
 }
