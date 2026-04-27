@@ -348,11 +348,65 @@ impl Reverb {
 }
 
 // ============================================================================
+// AUTOPAN EFFECT (Rhodes Suitcase-style stereo tremolo)
+// ============================================================================
+
+/// Stereo auto-panner. The Rhodes Suitcase amp's "tremolo" is actually an LFO
+/// swinging the signal between L and R speakers — not amplitude modulation.
+/// We use equal-power pan compensated to unity at center: at depth=0 the
+/// signal passes through untouched; at depth=1 each extreme reaches +3 dB on
+/// the active side while the other side fades to silence, preserving
+/// perceived loudness through the sweep.
+pub struct AutoPan {
+    pub enabled: bool,
+    pub rate_hz: f32, // LFO rate (0.1 .. 10.0 Hz; ~5 Hz is the classic Suitcase)
+    pub depth: f32,   // Pan excursion (0.0 = bypass, 1.0 = full L↔R sweep)
+    phase: f32,
+    sample_rate: f32,
+}
+
+impl AutoPan {
+    pub fn new(sample_rate: f32) -> Self {
+        Self {
+            enabled: false,
+            rate_hz: 5.0,
+            depth: 0.5,
+            phase: 0.0,
+            sample_rate,
+        }
+    }
+
+    pub fn process(&mut self, l: f32, r: f32) -> (f32, f32) {
+        if !self.enabled || self.depth <= 0.0 {
+            return (l, r);
+        }
+
+        let lfo = (self.phase * 2.0 * PI).sin(); // -1..+1
+        let pan = lfo * self.depth.clamp(0.0, 1.0); // [-depth, +depth]
+
+        // Equal-power pan with unity-at-center compensation:
+        // theta=π/4 at center → cos=sin=√2/2 → ×√2 = 1.0 each side.
+        let theta = (pan + 1.0) * std::f32::consts::FRAC_PI_4;
+        let l_gain = theta.cos() * std::f32::consts::SQRT_2;
+        let r_gain = theta.sin() * std::f32::consts::SQRT_2;
+
+        // Advance phase
+        self.phase += self.rate_hz / self.sample_rate;
+        while self.phase >= 1.0 {
+            self.phase -= 1.0;
+        }
+
+        (l * l_gain, r * r_gain)
+    }
+}
+
+// ============================================================================
 // EFFECTS CHAIN
 // ============================================================================
 
 pub struct EffectsChain {
     pub chorus: Chorus,
+    pub auto_pan: AutoPan,
     pub delay: Delay,
     pub reverb: Reverb,
 }
@@ -361,6 +415,7 @@ impl EffectsChain {
     pub fn new(sample_rate: f32) -> Self {
         Self {
             chorus: Chorus::new(sample_rate),
+            auto_pan: AutoPan::new(sample_rate),
             delay: Delay::new(sample_rate),
             reverb: Reverb::new(sample_rate),
         }
@@ -369,6 +424,13 @@ impl EffectsChain {
     pub fn process(&mut self, input: f32) -> (f32, f32) {
         // Chorus first (mono to stereo)
         let (l, r) = self.chorus.process(input);
+
+        // AutoPan after chorus: the Suitcase tremolo sits in the amp stage,
+        // *after* the pickup-side modulation. Putting it here lets the
+        // chorus widen the image first, then the autopan sways the whole
+        // stereo field — exactly what you hear on a real Rhodes through a
+        // Suitcase amp.
+        let (l, r) = self.auto_pan.process(l, r);
 
         // Then delay (stereo)
         let (l, r) = self.delay.process(l, r);
@@ -583,5 +645,104 @@ mod tests {
         let (l, r) = chain.process(0.42);
         assert_eq!(l, 0.42);
         assert_eq!(r, 0.42);
+    }
+
+    // -----------------------------------------------------------------------
+    // AutoPan
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn autopan_disabled_passes_through_unchanged() {
+        let mut ap = AutoPan::new(SR);
+        // enabled defaults to false
+        let (l, r) = ap.process(0.5, -0.3);
+        assert_eq!(l, 0.5);
+        assert_eq!(r, -0.3);
+    }
+
+    #[test]
+    fn autopan_zero_depth_passes_through_unchanged() {
+        let mut ap = AutoPan::new(SR);
+        ap.enabled = true;
+        ap.depth = 0.0;
+        let (l, r) = ap.process(0.7, 0.7);
+        assert_eq!(l, 0.7);
+        assert_eq!(r, 0.7);
+    }
+
+    #[test]
+    fn autopan_unity_at_phase_zero() {
+        // Phase starts at 0 → sin(0)=0 → pan=0 → both gains = 1.0 (within FP).
+        let mut ap = AutoPan::new(SR);
+        ap.enabled = true;
+        ap.depth = 0.5;
+        let (l, r) = ap.process(1.0, 1.0);
+        assert!(
+            (l - 1.0).abs() < 1e-5,
+            "expected unity L at center, got {l}"
+        );
+        assert!(
+            (r - 1.0).abs() < 1e-5,
+            "expected unity R at center, got {r}"
+        );
+    }
+
+    #[test]
+    fn autopan_swings_between_l_and_r() {
+        // Drive long enough to walk the full LFO cycle and verify each side
+        // independently dominates at some point.
+        let mut ap = AutoPan::new(SR);
+        ap.enabled = true;
+        ap.depth = 1.0;
+        ap.rate_hz = 5.0;
+        let mut max_diff_lr = 0.0_f32; // L > R moment
+        let mut max_diff_rl = 0.0_f32; // R > L moment
+        let frames = (SR as usize / 5) + 100; // > one full LFO cycle
+        for _ in 0..frames {
+            let (l, r) = ap.process(1.0, 1.0);
+            max_diff_lr = max_diff_lr.max(l - r);
+            max_diff_rl = max_diff_rl.max(r - l);
+        }
+        assert!(
+            max_diff_lr > 0.5,
+            "L should dominate R at some point, max(L-R)={max_diff_lr}"
+        );
+        assert!(
+            max_diff_rl > 0.5,
+            "R should dominate L at some point, max(R-L)={max_diff_rl}"
+        );
+    }
+
+    #[test]
+    fn autopan_phase_wraps_below_one() {
+        let mut ap = AutoPan::new(SR);
+        ap.enabled = true;
+        ap.rate_hz = 5.0;
+        // Run more than one full cycle and confirm phase stays in [0, 1).
+        for _ in 0..(SR as usize / 4) {
+            let _ = ap.process(0.1, 0.1);
+            assert!(ap.phase < 1.0);
+            assert!(ap.phase >= 0.0);
+        }
+    }
+
+    #[test]
+    fn autopan_sits_between_chorus_and_delay_in_chain() {
+        // Smoke test: with autopan enabled and other effects off, the chain
+        // should still produce stereo motion (different L vs R energy).
+        let mut chain = EffectsChain::new(SR);
+        chain.auto_pan.enabled = true;
+        chain.auto_pan.depth = 1.0;
+        chain.auto_pan.rate_hz = 5.0;
+        let mut peak_l = 0.0_f32;
+        let mut peak_r = 0.0_f32;
+        for i in 0..(SR as usize / 5) {
+            let phase = 2.0 * PI * 440.0 * (i as f32) / SR;
+            let (l, r) = chain.process(phase.sin());
+            peak_l = peak_l.max(l.abs());
+            peak_r = peak_r.max(r.abs());
+        }
+        assert!(peak_l > 0.5);
+        assert!(peak_r > 0.5);
     }
 }

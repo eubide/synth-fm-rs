@@ -69,6 +69,7 @@ pub enum LfoParam {
 #[derive(Debug, Clone, Copy)]
 pub enum EffectType {
     Chorus,
+    AutoPan,
     Delay,
     Reverb,
 }
@@ -84,6 +85,11 @@ pub enum EffectParam {
     ChorusRate,
     ChorusDepth,
     ChorusFeedback,
+
+    // AutoPan (Rhodes Suitcase tremolo). `Mix` is unused here — the effect
+    // is a gain-multiplier, not a wet/dry blend. Use `Enabled` to bypass.
+    AutoPanRate,
+    AutoPanDepth,
 
     // Delay
     DelayTime,

@@ -11,8 +11,8 @@ use crate::optimization::{midi_to_hz, voice_scale};
 use crate::pitch_eg::PitchEg;
 use crate::presets::Dx7Preset;
 use crate::state_snapshot::{
-    create_snapshot_channel, ChorusSnapshot, DelaySnapshot, OperatorSnapshot, PitchEgSnapshot,
-    ReverbSnapshot, SnapshotReceiver, SnapshotSender, SynthSnapshot, VoiceMode,
+    create_snapshot_channel, AutoPanSnapshot, ChorusSnapshot, DelaySnapshot, OperatorSnapshot,
+    PitchEgSnapshot, ReverbSnapshot, SnapshotReceiver, SnapshotSender, SynthSnapshot, VoiceMode,
 };
 use std::collections::HashMap;
 
@@ -328,9 +328,18 @@ impl SynthEngine {
         // every record from 1983-89 came through external chorus + reverb. Boot
         // with both ON at modest mix levels so factory presets sound like the user
         // remembers them; users wanting the bone-dry signal can flip them off.
+        // AutoPan is also ON by default at moderate depth: countless DX7 patches
+        // (Rhodes, Clavinet, e-pianos, soft pads) were tracked through a Suitcase
+        // amp or Leslie-style pan, and patches like `mark/rhodes.json` that omit
+        // LFO amp modulation rely on this post-FM movement to sound alive.
+        // Delay stays OFF on purpose — it's a creative effect, not part of the
+        // canonical "DX7 → outboard" flavour.
         let mut effects = EffectsChain::new(sample_rate);
         effects.chorus.enabled = true;
         effects.chorus.mix = 0.15;
+        effects.auto_pan.enabled = true;
+        effects.auto_pan.rate_hz = 5.0;
+        effects.auto_pan.depth = 0.35;
         effects.reverb.enabled = true;
         effects.reverb.mix = 0.22;
 
@@ -803,6 +812,12 @@ impl SynthEngine {
                 EffectParam::ChorusFeedback => self.effects.chorus.feedback = value,
                 _ => {}
             },
+            EffectType::AutoPan => match param {
+                EffectParam::Enabled => self.effects.auto_pan.enabled = value > 0.5,
+                EffectParam::AutoPanRate => self.effects.auto_pan.rate_hz = value.clamp(0.05, 20.0),
+                EffectParam::AutoPanDepth => self.effects.auto_pan.depth = value.clamp(0.0, 1.0),
+                _ => {}
+            },
             EffectType::Delay => match param {
                 EffectParam::Enabled => self.effects.delay.enabled = value > 0.5,
                 EffectParam::Mix => self.effects.delay.mix = value,
@@ -907,7 +922,8 @@ impl SynthEngine {
         self.pitch_eg.reset();
     }
 
-    /// Process one sample of audio (mono)
+    /// Process one sample of audio (mono). Output is **unsaturated** — the
+    /// final `tanh` happens once, post-effects, in [`Self::process_stereo`].
     pub fn process(&mut self) -> f32 {
         let mut output = 0.0;
         let mut active_voice_count = 0;
@@ -995,17 +1011,22 @@ impl SynthEngine {
             1.0
         };
 
-        let scaled_output =
-            output * voice_scaling * self.master_volume * foot_volume_factor * self.expression;
-        Self::soft_clip(scaled_output)
+        output * voice_scaling * self.master_volume * foot_volume_factor * self.expression
     }
 
-    /// Process audio with effects, returns stereo pair (left, right)
+    /// Process audio with effects, returns stereo pair (left, right).
+    ///
+    /// Saturation lives only here, *after* the effects chain: feeding a
+    /// pre-saturated mono into Chorus/Reverb crushes transients (the Rhodes
+    /// "bell tone", marimba peaks) before the reverb sees them, and makes
+    /// the wet path sound dull. DC blockers run before the final `tanh`
+    /// so any feedback-induced offset (algorithms 4/6 cross-feedback,
+    /// asymmetric voice sums) is removed *before* it biases the saturator.
     pub fn process_stereo(&mut self) -> (f32, f32) {
         let mono = self.process();
         let (left, right) = self.effects.process(mono);
-        let l = self.dc_blocker_l.process(Self::soft_clip(left));
-        let r = self.dc_blocker_r.process(Self::soft_clip(right));
+        let l = Self::soft_clip(self.dc_blocker_l.process(left));
+        let r = Self::soft_clip(self.dc_blocker_r.process(right));
         (l, r)
     }
 
@@ -1077,6 +1098,11 @@ impl SynthEngine {
                 depth: self.effects.chorus.depth,
                 mix: self.effects.chorus.mix,
                 feedback: self.effects.chorus.feedback,
+            },
+            auto_pan: AutoPanSnapshot {
+                enabled: self.effects.auto_pan.enabled,
+                rate_hz: self.effects.auto_pan.rate_hz,
+                depth: self.effects.auto_pan.depth,
             },
             delay: DelaySnapshot {
                 enabled: self.effects.delay.enabled,
@@ -1946,14 +1972,18 @@ mod tests {
     }
 
     #[test]
-    fn engine_boots_with_chorus_and_reverb_on_at_modest_mix() {
+    fn engine_boots_with_chorus_autopan_and_reverb_on_at_modest_mix() {
         // Fresh SynthEngine should ship the typical "DX7-through-outboard" sound:
-        // Chorus and Reverb both ON, with mixes low enough that the dry signal
+        // Chorus + AutoPan + Reverb ON, with mixes low enough that the dry signal
         // still dominates. Regression guard for the UX default.
         let (engine, _ctrl) = make_engine();
         assert!(
             engine.effects.chorus.enabled,
             "chorus should be on by default"
+        );
+        assert!(
+            engine.effects.auto_pan.enabled,
+            "autopan should be on by default (Suitcase tremolo)"
         );
         assert!(
             engine.effects.reverb.enabled,
@@ -1963,6 +1993,11 @@ mod tests {
             (engine.effects.chorus.mix - 0.15).abs() < 1e-6,
             "chorus mix expected 0.15, got {}",
             engine.effects.chorus.mix
+        );
+        assert!(
+            (engine.effects.auto_pan.depth - 0.35).abs() < 1e-6,
+            "autopan depth expected 0.35, got {}",
+            engine.effects.auto_pan.depth
         );
         assert!(
             (engine.effects.reverb.mix - 0.22).abs() < 1e-6,
@@ -2137,6 +2172,10 @@ mod tests {
         ctrl.set_effect_param(EffectType::Chorus, EffectParam::ChorusRate, 2.0);
         ctrl.set_effect_param(EffectType::Chorus, EffectParam::ChorusDepth, 5.0);
         ctrl.set_effect_param(EffectType::Chorus, EffectParam::ChorusFeedback, 0.3);
+        // AutoPan
+        ctrl.set_effect_param(EffectType::AutoPan, EffectParam::Enabled, 1.0);
+        ctrl.set_effect_param(EffectType::AutoPan, EffectParam::AutoPanRate, 4.5);
+        ctrl.set_effect_param(EffectType::AutoPan, EffectParam::AutoPanDepth, 0.6);
         // Delay
         ctrl.set_effect_param(EffectType::Delay, EffectParam::Enabled, 1.0);
         ctrl.set_effect_param(EffectType::Delay, EffectParam::Mix, 0.4);

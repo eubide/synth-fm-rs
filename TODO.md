@@ -182,6 +182,13 @@ Loader JSON cubre todo el banco `mark/` (formato itsjoesullivan/dx7-patches).
 
 Cadena de salida: `tanh` soft clip → HPF 5 Hz por canal. Ver `CHANGELOG.md`.
 
+- [x] (genérico) **AutoPan estéreo (tremolo Suitcase)** — `effects.rs:AutoPan`
+      con LFO sine, equal-power pan unity-at-center, insertado en
+      `EffectsChain` entre Chorus y Delay. Activado por defecto
+      (rate=5 Hz, depth=0.35) en `fm_synth.rs:SynthEngine::new()`.
+      Comandos `EffectType::AutoPan` + `EffectParam::AutoPanRate /
+      AutoPanDepth`, snapshot `AutoPanSnapshot`, panel en EFFECTS GUI.
+
 ---
 
 ## Rendimiento
