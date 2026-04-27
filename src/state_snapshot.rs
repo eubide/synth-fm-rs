@@ -112,6 +112,24 @@ impl Default for DelaySnapshot {
     }
 }
 
+/// Snapshot of autopan effect state
+#[derive(Debug, Clone, Copy)]
+pub struct AutoPanSnapshot {
+    pub enabled: bool,
+    pub rate_hz: f32,
+    pub depth: f32,
+}
+
+impl Default for AutoPanSnapshot {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            rate_hz: 5.0,
+            depth: 0.5,
+        }
+    }
+}
+
 /// Snapshot of reverb effect state
 #[derive(Debug, Clone, Copy)]
 pub struct ReverbSnapshot {
@@ -240,6 +258,7 @@ pub struct SynthSnapshot {
 
     // Effects state (detailed for effects panel)
     pub chorus: ChorusSnapshot,
+    pub auto_pan: AutoPanSnapshot,
     pub delay: DelaySnapshot,
     pub reverb: ReverbSnapshot,
 
@@ -301,6 +320,7 @@ impl Default for SynthSnapshot {
             pitch_eg: PitchEgSnapshot::default(),
 
             chorus: ChorusSnapshot::default(),
+            auto_pan: AutoPanSnapshot::default(),
             delay: DelaySnapshot::default(),
             reverb: ReverbSnapshot::default(),
 

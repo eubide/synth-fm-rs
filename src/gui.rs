@@ -1175,14 +1175,15 @@ impl Dx7App {
                 ui.label("EFFECTS");
                 ui.separator();
 
-                ui.columns(3, |columns| {
+                ui.columns(4, |columns| {
                     self.draw_chorus_effect(&mut columns[0]);
-                    self.draw_delay_effect(&mut columns[1]);
-                    self.draw_reverb_effect(&mut columns[2]);
+                    self.draw_auto_pan_effect(&mut columns[1]);
+                    self.draw_delay_effect(&mut columns[2]);
+                    self.draw_reverb_effect(&mut columns[3]);
                 });
 
                 ui.separator();
-                ui.label("Signal: Input -> Chorus -> Delay -> Reverb -> Output");
+                ui.label("Signal: Input -> Chorus -> AutoPan -> Delay -> Reverb -> Output");
             });
         });
     }
@@ -1273,6 +1274,69 @@ impl Dx7App {
                                     EffectType::Chorus,
                                     EffectParam::ChorusFeedback,
                                     feedback,
+                                );
+                            }
+                        }
+                    });
+                });
+            });
+        });
+    }
+
+    fn draw_auto_pan_effect(&mut self, ui: &mut egui::Ui) {
+        ui.group(|ui| {
+            ui.vertical(|ui| {
+                ui.label(egui::RichText::new("AUTOPAN").strong());
+
+                let ap = &self.snapshot.auto_pan;
+                let mut enabled = ap.enabled;
+                let mut rate_hz = ap.rate_hz;
+                let mut depth = ap.depth;
+
+                ui.horizontal(|ui| {
+                    ui.label("Enable:");
+                    if ui.checkbox(&mut enabled, "").changed() {
+                        if let Ok(mut ctrl) = self.lock_controller() {
+                            ctrl.set_effect_param(
+                                EffectType::AutoPan,
+                                EffectParam::Enabled,
+                                if enabled { 1.0 } else { 0.0 },
+                            );
+                        }
+                    }
+                });
+
+                ui.add_enabled_ui(enabled, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("Rate:");
+                        if ui
+                            .add(
+                                egui::Slider::new(&mut rate_hz, 0.1..=10.0)
+                                    .suffix(" Hz")
+                                    .show_value(true),
+                            )
+                            .changed()
+                        {
+                            if let Ok(mut ctrl) = self.lock_controller() {
+                                ctrl.set_effect_param(
+                                    EffectType::AutoPan,
+                                    EffectParam::AutoPanRate,
+                                    rate_hz,
+                                );
+                            }
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Depth:");
+                        if ui
+                            .add(egui::Slider::new(&mut depth, 0.0..=1.0).show_value(true))
+                            .changed()
+                        {
+                            if let Ok(mut ctrl) = self.lock_controller() {
+                                ctrl.set_effect_param(
+                                    EffectType::AutoPan,
+                                    EffectParam::AutoPanDepth,
+                                    depth,
                                 );
                             }
                         }
