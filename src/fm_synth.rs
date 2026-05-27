@@ -924,7 +924,9 @@ impl SynthEngine {
 
     /// Process one sample of audio (mono). Output is **unsaturated** — the
     /// final `tanh` happens once, post-effects, in [`Self::process_stereo`].
-    pub fn process(&mut self) -> f32 {
+    /// Crate-private so external embedders can't accidentally pull the
+    /// pre-saturation signal expecting a bounded `[-1, 1]` range.
+    pub(crate) fn process(&mut self) -> f32 {
         let mut output = 0.0;
         let mut active_voice_count = 0;
 
