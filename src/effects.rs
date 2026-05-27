@@ -359,7 +359,7 @@ impl Reverb {
 /// perceived loudness through the sweep.
 pub struct AutoPan {
     pub enabled: bool,
-    pub rate_hz: f32, // LFO rate (0.1 .. 10.0 Hz; ~5 Hz is the classic Suitcase)
+    pub rate_hz: f32, // LFO rate (clamped 0.05..20.0 Hz by the setter; ~5 Hz is the classic Suitcase)
     pub depth: f32,   // Pan excursion (0.0 = bypass, 1.0 = full L↔R sweep)
     phase: f32,
     sample_rate: f32,
@@ -377,12 +377,32 @@ impl AutoPan {
     }
 
     pub fn process(&mut self, l: f32, r: f32) -> (f32, f32) {
-        if !self.enabled || self.depth <= 0.0 {
+        if !self.enabled {
             return (l, r);
         }
 
+        // Same defence the rest of the engine uses (`operator.rs`): a NaN/Inf
+        // slipping in via direct field assignment would poison `phase` for
+        // every subsequent sample, since `NaN.floor() == NaN`. Bail out to
+        // passthrough until the values are sane again.
+        if !self.rate_hz.is_finite() || !self.depth.is_finite() {
+            return (l, r);
+        }
+
+        let depth = self.depth.clamp(0.0, 1.0);
         let lfo = (self.phase * 2.0 * PI).sin(); // -1..+1
-        let pan = lfo * self.depth.clamp(0.0, 1.0); // [-depth, +depth]
+
+        // Advance phase unconditionally while enabled, so dropping depth to 0
+        // and ramping it back up doesn't snap the LFO to a stale position.
+        // `floor()` wrap is O(1) and survives a rogue large rate_hz.
+        self.phase += self.rate_hz / self.sample_rate;
+        self.phase -= self.phase.floor();
+
+        if depth <= 0.0 {
+            return (l, r);
+        }
+
+        let pan = lfo * depth; // [-depth, +depth]
 
         // Equal-power pan with unity-at-center compensation:
         // theta=π/4 at center → cos=sin=√2/2 → ×√2 = 1.0 each side.
@@ -390,13 +410,14 @@ impl AutoPan {
         let l_gain = theta.cos() * std::f32::consts::SQRT_2;
         let r_gain = theta.sin() * std::f32::consts::SQRT_2;
 
-        // Advance phase
-        self.phase += self.rate_hz / self.sample_rate;
-        while self.phase >= 1.0 {
-            self.phase -= 1.0;
-        }
+        // Mid/side panning: only the mid (L+R)/2 swings; the side (L-R)/2
+        // passes through. This preserves the stereo image produced upstream
+        // (Chorus widening) — otherwise a hard pan would zero one channel
+        // entirely and collapse the stereo content at the extremes.
+        let mid = (l + r) * 0.5;
+        let side = (l - r) * 0.5;
 
-        (l * l_gain, r * r_gain)
+        (mid * l_gain + side, mid * r_gain - side)
     }
 }
 
@@ -724,6 +745,82 @@ mod tests {
             assert!(ap.phase < 1.0);
             assert!(ap.phase >= 0.0);
         }
+    }
+
+    #[test]
+    fn autopan_passes_through_on_non_finite_params() {
+        // NaN/Inf in rate_hz or depth would poison `phase` for the rest of
+        // the session (NaN.floor() = NaN). The guard must bail out to
+        // passthrough so a transient bad value can't take the engine down.
+        for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            let mut ap = AutoPan::new(SR);
+            ap.enabled = true;
+            ap.depth = 0.5;
+            ap.rate_hz = bad;
+            let (l, r) = ap.process(0.3, -0.4);
+            assert_eq!(l, 0.3, "rate_hz={bad} must passthrough L");
+            assert_eq!(r, -0.4, "rate_hz={bad} must passthrough R");
+            assert!(ap.phase.is_finite(), "phase must stay finite");
+
+            let mut ap = AutoPan::new(SR);
+            ap.enabled = true;
+            ap.rate_hz = 5.0;
+            ap.depth = bad;
+            let (l, r) = ap.process(0.3, -0.4);
+            assert_eq!(l, 0.3, "depth={bad} must passthrough L");
+            assert_eq!(r, -0.4, "depth={bad} must passthrough R");
+            assert!(ap.phase.is_finite(), "phase must stay finite");
+        }
+    }
+
+    #[test]
+    fn autopan_advances_phase_while_depth_is_zero() {
+        // Regression: previously the LFO froze at depth=0 and snapped to a
+        // stale position when depth ramped back up. Now the phase must keep
+        // ticking so re-enabling depth resumes the LFO where it would have
+        // been, avoiding an audible jump.
+        let mut ap = AutoPan::new(SR);
+        ap.enabled = true;
+        ap.rate_hz = 5.0;
+        ap.depth = 0.0;
+        for _ in 0..(SR as usize / 10) {
+            let _ = ap.process(0.0, 0.0);
+        }
+        assert!(
+            ap.phase > 0.0,
+            "phase should advance even when depth=0, got {}",
+            ap.phase
+        );
+    }
+
+    #[test]
+    fn autopan_preserves_stereo_side_at_hard_pan() {
+        // With a pure side-only input (L = +1, R = -1) the mid is zero, so
+        // the mid/side panner must leave the side intact even at hard pan.
+        // The previous implementation multiplied each channel by an
+        // independent gain and zeroed one side at the extremes, collapsing
+        // the chorus's stereo width.
+        let mut ap = AutoPan::new(SR);
+        ap.enabled = true;
+        ap.depth = 1.0;
+        ap.rate_hz = 5.0;
+        // Walk a full LFO cycle; at every sample the side energy (|L-R|/2)
+        // must stay close to its input value of 1.0, regardless of pan.
+        let frames = (SR as usize / 5) + 100;
+        let mut min_side = f32::INFINITY;
+        for _ in 0..frames {
+            let (l, r) = ap.process(1.0, -1.0);
+            let side = (l - r) * 0.5;
+            min_side = min_side.min(side.abs());
+        }
+        // Mid is exactly 0 here, so the side path is untouched: the recovered
+        // side energy should be 1.0 to within float epsilon. Keep the bound
+        // tight so a regression that mixes the side into the mid path can't
+        // sneak through.
+        assert!(
+            (min_side - 1.0).abs() < 1e-5,
+            "side energy must survive hard pan exactly, min |side|={min_side}"
+        );
     }
 
     #[test]
