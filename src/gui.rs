@@ -1782,7 +1782,7 @@ impl Dx7App {
                         let to_pos = positions[(*to - 1) as usize];
                         painter.line_segment(
                             [from_pos, to_pos],
-                            egui::Stroke::new(1.5, connection_color),
+                            egui::Stroke::new(1.5_f32, connection_color),
                         );
                     }
 
@@ -1793,7 +1793,7 @@ impl Dx7App {
                         painter.circle_stroke(
                             loop_center,
                             6.0,
-                            egui::Stroke::new(1.5, feedback_color),
+                            egui::Stroke::new(1.5_f32, feedback_color),
                         );
                     }
 
@@ -1847,7 +1847,10 @@ impl Dx7App {
                             pos,
                             op_radius,
                             fill_color,
-                            egui::Stroke::new(if is_selected { 2.5 } else { 1.5 }, stroke_color),
+                            egui::Stroke::new(
+                                if is_selected { 2.5_f32 } else { 1.5 },
+                                stroke_color,
+                            ),
                         );
                         painter.text(
                             pos,
@@ -1872,7 +1875,7 @@ impl Dx7App {
                         let bar_right = carrier_xs.last().copied().unwrap() + 8.0;
                         painter.line_segment(
                             [egui::pos2(bar_left, bus_y), egui::pos2(bar_right, bus_y)],
-                            egui::Stroke::new(2.0, carrier_color),
+                            egui::Stroke::new(2.0_f32, carrier_color),
                         );
                         for &carrier in &alg_info.carriers {
                             let carrier_pos = positions[(carrier - 1) as usize];
@@ -1881,7 +1884,7 @@ impl Dx7App {
                                     egui::pos2(carrier_pos.x, carrier_pos.y + op_radius),
                                     egui::pos2(carrier_pos.x, bus_y),
                                 ],
-                                egui::Stroke::new(1.5, carrier_color),
+                                egui::Stroke::new(1.5_f32, carrier_color),
                             );
                         }
                         painter.text(
@@ -2083,7 +2086,7 @@ impl Dx7App {
                             egui::Color32::from_rgb(250, 250, 250)
                         })
                         .stroke(egui::Stroke::new(
-                            if is_selected { 2.5 } else { 1.0 },
+                            if is_selected { 2.5_f32 } else { 1.0 },
                             if is_selected {
                                 egui::Color32::from_rgb(255, 180, 0)
                             } else {
