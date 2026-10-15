@@ -1,3 +1,4 @@
+use crate::dx7_frequency::fixed_frequency_hz;
 use crate::lfo::LFOWaveform;
 use crate::operator::KeyScaleCurve;
 use crate::presets::{Dx7Preset, PresetLfo, PresetOperator, PresetPitchEg};
@@ -30,6 +31,7 @@ struct JsonKeyboardLevelScaling {
 #[derive(Deserialize, Serialize, Default)]
 #[serde(default, rename_all = "camelCase")]
 struct JsonOperator {
+    /// Ratio in "ratio" mode (0 = 0.5×); Hz in "fixed" mode.
     frequency: f32,
     output_level: f32,
     detune: f32,
@@ -40,10 +42,6 @@ struct JsonOperator {
     keyboard_level_scaling: Option<JsonKeyboardLevelScaling>,
     am_sensitivity: u8,
     oscillator_mode: String, // "ratio" | "fixed"
-    /// DX7 fixed-mode coarse multiplier (0-31). Only used when oscillator_mode == "fixed".
-    fixed_frequency_coarse: f32,
-    /// DX7 fixed-mode fine value (0-99). Only used when oscillator_mode == "fixed".
-    fixed_frequency_fine: f32,
 }
 
 #[derive(Deserialize, Serialize, Default)]
@@ -187,11 +185,21 @@ fn parse_lfo_wave(s: &str) -> LFOWaveform {
 }
 
 fn convert_operator(json_op: &JsonOperator, top_feedback: f32, is_op6: bool) -> PresetOperator {
+    let fixed_frequency = json_op.oscillator_mode.eq_ignore_ascii_case("fixed");
     // DX7 coarse=0 maps to a 0.5× ratio; everything else is the literal multiplier.
-    let frequency_ratio = if json_op.frequency == 0.0 {
+    let frequency_ratio = if fixed_frequency {
+        1.0
+    } else if json_op.frequency == 0.0 {
         0.5
     } else {
         json_op.frequency
+    };
+    let fixed_freq_hz = if fixed_frequency {
+        json_op
+            .frequency
+            .clamp(fixed_frequency_hz(0, 0), fixed_frequency_hz(3, 99))
+    } else {
+        440.0
     };
 
     // Per-operator feedback overrides the top-level value (which by DX7 convention
@@ -202,17 +210,6 @@ fn convert_operator(json_op: &JsonOperator, top_feedback: f32, is_op6: bool) -> 
         top_feedback
     } else {
         0.0
-    };
-
-    let fixed_frequency = json_op.oscillator_mode.eq_ignore_ascii_case("fixed");
-    // DX7 fixed-mode frequency: f = 10^coarse * (1 + fine/100). Coarse 0..3 maps to
-    // 1Hz/10Hz/100Hz/1000Hz, Fine adds up to ~99% on top.
-    let fixed_freq_hz = if fixed_frequency {
-        let coarse = json_op.fixed_frequency_coarse.clamp(0.0, 3.0);
-        let fine = json_op.fixed_frequency_fine.clamp(0.0, 99.0);
-        10f32.powf(coarse) * (1.0 + fine / 100.0)
-    } else {
-        440.0
     };
 
     let (left_curve, right_curve, left_depth, right_depth, breakpoint) =
@@ -351,11 +348,12 @@ fn on_off(flag: bool) -> String {
 
 fn to_json_operator(op: &PresetOperator) -> JsonOperator {
     let (rate1, rate2, rate3, rate4, level1, level2, level3, level4) = op.envelope;
-    // Inverse of the fixed-mode formula in `convert_operator`.
-    let coarse = op.fixed_freq_hz.max(1.0).log10().floor().clamp(0.0, 3.0);
-    let fine = ((op.fixed_freq_hz / 10f32.powf(coarse) - 1.0) * 100.0).clamp(0.0, 99.0);
     JsonOperator {
-        frequency: op.frequency_ratio,
+        frequency: if op.fixed_frequency {
+            op.fixed_freq_hz
+        } else {
+            op.frequency_ratio
+        },
         output_level: op.output_level,
         detune: op.detune,
         feedback: op.feedback,
@@ -380,8 +378,6 @@ fn to_json_operator(op: &PresetOperator) -> JsonOperator {
         }),
         am_sensitivity: op.am_sensitivity,
         oscillator_mode: if op.fixed_frequency { "fixed" } else { "ratio" }.to_string(),
-        fixed_frequency_coarse: coarse,
-        fixed_frequency_fine: fine,
     }
 }
 
@@ -529,6 +525,7 @@ mod tests {
             ..PresetOperator::default()
         });
         ops[0].frequency_ratio = 0.5;
+        ops[1].frequency_ratio = 1.0;
         ops[1].fixed_frequency = true;
         ops[1].fixed_freq_hz = 150.0;
         ops[3].feedback = 3.0;
@@ -679,17 +676,14 @@ mod tests {
     }
 
     #[test]
-    fn convert_operator_fixed_frequency_uses_coarse_fine() {
-        let json_op = JsonOperator {
-            oscillator_mode: "fixed".to_string(),
-            fixed_frequency_coarse: 2.0,
-            fixed_frequency_fine: 50.0,
-            ..Default::default()
-        };
+    fn convert_operator_reads_fixed_frequency_in_hz() {
+        // itsjoesullivan banks store the fixed-mode frequency in Hz in `frequency`.
+        let json_op: JsonOperator =
+            serde_json::from_str(r#"{"oscillatorMode": "fixed", "frequency": 4570}"#)
+                .expect("parse");
         let op = convert_operator(&json_op, 0.0, false);
         assert!(op.fixed_frequency);
-        // 10^2 * (1 + 50/100) = 150
-        assert!((op.fixed_freq_hz - 150.0).abs() < 0.1);
+        assert_eq!(op.fixed_freq_hz, 4570.0);
     }
 
     #[test]

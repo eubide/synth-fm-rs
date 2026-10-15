@@ -9,6 +9,7 @@
 //!
 //! References: DX7 Owner's Manual Vol. 4 (System Exclusive), DX7S manual chapter 7.
 
+use crate::dx7_frequency::{fixed_coarse_fine, fixed_frequency_hz};
 use crate::lfo::LFOWaveform;
 use crate::operator::KeyScaleCurve;
 use crate::presets::{Dx7Preset, PresetLfo, PresetOperator, PresetPitchEg};
@@ -295,8 +296,7 @@ fn parse_vced_operator(block: &[u8]) -> PresetOperator {
         (coarse as f32) * (1.0 + (fine as f32) / 100.0)
     };
     let fixed_freq_hz = if fixed_frequency {
-        let c = (coarse & 0x03) as f32;
-        10f32.powf(c) * (1.0 + (fine as f32) / 100.0)
+        fixed_frequency_hz(coarse, fine)
     } else {
         440.0
     };
@@ -451,8 +451,7 @@ fn parse_vmem_operator(block: &[u8]) -> PresetOperator {
         (coarse as f32) * (1.0 + (fine as f32) / 100.0)
     };
     let fixed_freq_hz = if fixed_frequency {
-        let c = (coarse & 0x03) as f32;
-        10f32.powf(c) * (1.0 + (fine as f32) / 100.0)
+        fixed_frequency_hz(coarse, fine)
     } else {
         440.0
     };
@@ -554,11 +553,7 @@ fn encode_vced_operator(op: &PresetOperator, out: &mut [u8]) {
     out[16] = clamp_99(op.output_level);
     out[17] = if op.fixed_frequency { 1 } else { 0 };
     if op.fixed_frequency {
-        // Map Hz back to coarse (1/10/100/1000) + fine (0..99).
-        let log10 = op.fixed_freq_hz.max(0.1).log10();
-        let coarse = log10.floor().clamp(0.0, 3.0) as u8;
-        let base = 10f32.powi(coarse as i32);
-        let fine = ((op.fixed_freq_hz / base - 1.0) * 100.0).clamp(0.0, 99.0) as u8;
+        let (coarse, fine) = fixed_coarse_fine(op.fixed_freq_hz);
         out[18] = coarse;
         out[19] = fine;
     } else {
@@ -856,6 +851,21 @@ mod tests {
         match parsed {
             SysexResult::SingleVoice(boxed) => {
                 assert!(boxed.operators[0].fixed_frequency);
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn fixed_frequency_round_trips_through_coarse_and_fine() {
+        let mut preset = make_test_preset();
+        preset.operators[0].fixed_frequency = true;
+        preset.operators[0].fixed_freq_hz = 4570.88; // coarse 3, fine 66
+        let bytes = encode_single_voice(&preset, 0);
+        match parse_message(&bytes).expect("parse") {
+            SysexResult::SingleVoice(boxed) => {
+                let hz = boxed.operators[0].fixed_freq_hz;
+                assert!((hz - 4570.88).abs() < 0.05, "decoded {hz} Hz");
             }
             _ => panic!(),
         }

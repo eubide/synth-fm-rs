@@ -2349,9 +2349,14 @@ impl Dx7App {
                                     ui.label("Fixed Hz:");
                                     if ui
                                         .add(
-                                            egui::Slider::new(&mut fixed_hz, 1.0..=4000.0)
-                                                .logarithmic(true)
-                                                .suffix(" Hz"),
+                                            egui::Slider::new(
+                                                &mut fixed_hz,
+                                                1.0..=crate::dx7_frequency::fixed_frequency_hz(
+                                                    3, 99,
+                                                ),
+                                            )
+                                            .logarithmic(true)
+                                            .suffix(" Hz"),
                                         )
                                         .changed()
                                     {
