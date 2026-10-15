@@ -1,10 +1,10 @@
 use crate::lfo::LFOWaveform;
 use crate::operator::KeyScaleCurve;
 use crate::presets::{Dx7Preset, PresetLfo, PresetOperator, PresetPitchEg};
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::path::Path;
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Serialize, Default)]
 #[serde(default)]
 struct JsonEg {
     rate1: f32,
@@ -17,7 +17,7 @@ struct JsonEg {
     level4: f32,
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Serialize, Default)]
 #[serde(default, rename_all = "camelCase")]
 struct JsonKeyboardLevelScaling {
     breakpoint: serde_json::Value,
@@ -27,7 +27,7 @@ struct JsonKeyboardLevelScaling {
     right_depth: f32,
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Serialize, Default)]
 #[serde(default, rename_all = "camelCase")]
 struct JsonOperator {
     frequency: f32,
@@ -46,7 +46,7 @@ struct JsonOperator {
     fixed_frequency_fine: f32,
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Serialize, Default)]
 #[serde(default, rename_all = "camelCase")]
 struct JsonPitchEg {
     rate1: f32,
@@ -59,7 +59,7 @@ struct JsonPitchEg {
     level4: f32,
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Serialize, Default)]
 #[serde(default, rename_all = "camelCase")]
 struct JsonLfo {
     wave: String,
@@ -73,7 +73,7 @@ struct JsonLfo {
     pitch_mod_sensitivity: u8,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct JsonPatch {
     name: String,
@@ -325,6 +325,127 @@ fn load_json_file(path: &Path, collection: &str) -> Option<Dx7Preset> {
     })
 }
 
+fn lfo_wave_json_name(wave: LFOWaveform) -> &'static str {
+    match wave {
+        LFOWaveform::Triangle => "triangle",
+        LFOWaveform::SawDown => "sawDown",
+        LFOWaveform::SawUp => "sawUp",
+        LFOWaveform::Square => "square",
+        LFOWaveform::Sine => "sine",
+        LFOWaveform::SampleHold => "sampleHold",
+    }
+}
+
+fn curve_json_name(curve: KeyScaleCurve) -> &'static str {
+    match curve {
+        KeyScaleCurve::NegLin => "-LIN",
+        KeyScaleCurve::NegExp => "-EXP",
+        KeyScaleCurve::PosExp => "+EXP",
+        KeyScaleCurve::PosLin => "+LIN",
+    }
+}
+
+fn on_off(flag: bool) -> String {
+    if flag { "on" } else { "off" }.to_string()
+}
+
+fn to_json_operator(op: &PresetOperator) -> JsonOperator {
+    let (rate1, rate2, rate3, rate4, level1, level2, level3, level4) = op.envelope;
+    // Inverse of the fixed-mode formula in `convert_operator`.
+    let coarse = op.fixed_freq_hz.max(1.0).log10().floor().clamp(0.0, 3.0);
+    let fine = ((op.fixed_freq_hz / 10f32.powf(coarse) - 1.0) * 100.0).clamp(0.0, 99.0);
+    JsonOperator {
+        frequency: op.frequency_ratio,
+        output_level: op.output_level,
+        detune: op.detune,
+        feedback: op.feedback,
+        eg: JsonEg {
+            rate1,
+            rate2,
+            rate3,
+            rate4,
+            level1,
+            level2,
+            level3,
+            level4,
+        },
+        key_velocity_sensitivity: op.velocity_sensitivity.round() as u8,
+        keyboard_rate_scaling: op.key_scale_rate.round() as u8,
+        keyboard_level_scaling: Some(JsonKeyboardLevelScaling {
+            breakpoint: op.key_scale_breakpoint.into(),
+            left_curve: curve_json_name(op.key_scale_left_curve).to_string(),
+            right_curve: curve_json_name(op.key_scale_right_curve).to_string(),
+            left_depth: op.key_scale_left_depth,
+            right_depth: op.key_scale_right_depth,
+        }),
+        am_sensitivity: op.am_sensitivity,
+        oscillator_mode: if op.fixed_frequency { "fixed" } else { "ratio" }.to_string(),
+        fixed_frequency_coarse: coarse,
+        fixed_frequency_fine: fine,
+    }
+}
+
+fn to_json_patch(preset: &Dx7Preset) -> JsonPatch {
+    let lfo = preset.lfo.clone().unwrap_or_default();
+    let peg = preset.pitch_eg.clone().unwrap_or_default();
+    JsonPatch {
+        name: preset.name.clone(),
+        algorithm: preset.algorithm,
+        // Top-level feedback is what other itsjoesullivan readers apply to op 6.
+        feedback: preset.operators[5].feedback,
+        operators: preset.operators.iter().map(to_json_operator).collect(),
+        lfo: Some(JsonLfo {
+            wave: lfo_wave_json_name(lfo.waveform).to_string(),
+            speed: lfo.rate,
+            delay: lfo.delay,
+            pitch_mod_depth: lfo.pitch_mod_depth,
+            am_depth: lfo.amp_mod_depth,
+            sync: on_off(lfo.key_sync),
+            pitch_mod_sensitivity: preset.pitch_mod_sensitivity,
+        }),
+        pitch_eg: Some(JsonPitchEg {
+            rate1: peg.rate1,
+            rate2: peg.rate2,
+            rate3: peg.rate3,
+            rate4: peg.rate4,
+            level1: peg.level1,
+            level2: peg.level2,
+            level3: peg.level3,
+            level4: peg.level4,
+        }),
+        transpose: preset.transpose_semitones.into(),
+        oscillator_key_sync: on_off(preset.operators[0].oscillator_key_sync),
+    }
+}
+
+/// Lowercase, dash-separated file stem for a voice name ("E.PIANO 1" → "e-piano-1").
+pub fn file_stem_for(name: &str) -> String {
+    let stem = name
+        .to_lowercase()
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+    if stem.is_empty() {
+        "voice".to_string()
+    } else {
+        stem
+    }
+}
+
+/// Write `preset` as `<dir>/<file_stem_for(name)>.json` in the format
+/// `scan_patches_dir` reads, overwriting a voice saved under the same name.
+pub fn save_json_file(preset: &Dx7Preset, dir: &Path) -> std::io::Result<std::path::PathBuf> {
+    std::fs::create_dir_all(dir)?;
+    let path = dir.join(format!("{}.json", file_stem_for(&preset.name)));
+    let json = serde_json::to_string_pretty(&to_json_patch(preset))?;
+    std::fs::write(&path, json)?;
+    Ok(path)
+}
+
+/// Root folder scanned at startup; each subdirectory is one collection.
+pub const PATCHES_DIR: &str = "patches";
+
 /// Scan `base_dir` for collection subdirectories and load every `.json` file inside.
 /// Collections are loaded in alphabetical order; files within each collection are also sorted.
 pub fn scan_patches_dir(base_dir: &Path) -> Vec<Dx7Preset> {
@@ -387,6 +508,74 @@ mod tests {
         assert_eq!(parse_transpose(&serde_json::json!("C4")), 12);
         assert_eq!(parse_transpose(&serde_json::json!(-7)), -7);
         assert_eq!(parse_transpose(&serde_json::json!(50)), 24); // clamped
+    }
+
+    #[test]
+    fn save_json_file_round_trips_through_the_loader() {
+        let mut ops: [PresetOperator; 6] = std::array::from_fn(|i| PresetOperator {
+            frequency_ratio: 1.0 + i as f32,
+            output_level: 90.0 - i as f32,
+            detune: i as f32 - 3.0,
+            velocity_sensitivity: 2.0,
+            key_scale_rate: 3.0,
+            key_scale_breakpoint: 48 + i as u8,
+            key_scale_left_curve: KeyScaleCurve::NegExp,
+            key_scale_right_curve: KeyScaleCurve::PosLin,
+            key_scale_left_depth: 10.0,
+            key_scale_right_depth: 20.0,
+            am_sensitivity: 2,
+            oscillator_key_sync: false,
+            envelope: (90.0, 80.0, 70.0, 60.0, 99.0, 88.0, 77.0, 1.0),
+            ..PresetOperator::default()
+        });
+        ops[0].frequency_ratio = 0.5;
+        ops[1].fixed_frequency = true;
+        ops[1].fixed_freq_hz = 150.0;
+        ops[3].feedback = 3.0;
+        ops[5].feedback = 5.0;
+        let preset = Dx7Preset {
+            name: "MY VOICE".to_string(),
+            collection: "user".to_string(),
+            algorithm: 4,
+            operators: ops,
+            master_tune: None,
+            pitch_bend_range: None,
+            portamento_enable: None,
+            portamento_time: None,
+            mono_mode: None,
+            transpose_semitones: -5,
+            pitch_mod_sensitivity: 3,
+            pitch_eg: Some(PresetPitchEg {
+                rate1: 10.0,
+                level1: 60.0,
+                ..PresetPitchEg::default()
+            }),
+            lfo: Some(PresetLfo {
+                waveform: LFOWaveform::SawDown,
+                rate: 40.0,
+                delay: 12.0,
+                pitch_mod_depth: 7.0,
+                amp_mod_depth: 8.0,
+                key_sync: true,
+            }),
+        };
+        let base = std::env::temp_dir().join(format!("synth-fm-rs-save-{}", std::process::id()));
+        let dir = base.join("user");
+
+        let path = save_json_file(&preset, &dir).expect("save");
+        let loaded = scan_patches_dir(&base);
+        let _ = std::fs::remove_dir_all(&base);
+
+        assert_eq!(path.file_name().unwrap(), "my-voice.json");
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(format!("{:?}", loaded[0]), format!("{:?}", preset));
+    }
+
+    #[test]
+    fn file_stem_for_voice_name_is_filesystem_safe() {
+        assert_eq!(file_stem_for("Nu Island\\"), "nu-island");
+        assert_eq!(file_stem_for("E.PIANO 1"), "e-piano-1");
+        assert_eq!(file_stem_for("  /// "), "voice");
     }
 
     fn write_temp_patch(dir: &std::path::Path, name: &str, content: &str) {
