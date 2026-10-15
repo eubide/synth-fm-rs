@@ -265,20 +265,29 @@ impl Operator {
         self.envelope.release();
     }
 
+    /// DX7 detune in octaves, as measured on hardware for Dexed `osc_freq`:
+    /// a step is ~1 cent at A4, wider in the bass and narrower in the treble.
+    /// Fixed mode only honours detune above centre.
+    fn detune_octaves(&self) -> f32 {
+        if self.fixed_frequency {
+            return self.detune.max(0.0) * 13457.0 / (1 << 24) as f32;
+        }
+        let octaves = self.base_frequency.max(1.0).log2();
+        0.0209 * (-0.396 * octaves).exp() / 7.0 * octaves * self.detune
+    }
+
     pub fn update_frequency(&mut self) {
         // FIXED mode bypasses the note-tracked base frequency and uses an absolute Hz value.
-        // Detune still applies as a fine cents offset, matching DX7 behaviour.
         let actual_freq = if self.fixed_frequency {
             self.fixed_freq_hz
         } else {
             self.base_frequency * self.frequency_ratio
         };
-        // DX7 detune: parameter range -7..+7 is a *fine* offset of roughly ±7 cents
-        // at the extremes (Hexter / Synthmania reference). The previous formula
-        // `1 + detune/100` treated the value as a percentage, producing ±7%
-        // (≈±117 cents — almost a semitone and a half) and made detuned patches
-        // sound like multiple instruments out of tune.
-        let detuned_freq = actual_freq * 2.0_f32.powf(self.detune / 1200.0);
+        let detuned_freq = if self.detune == 0.0 {
+            actual_freq
+        } else {
+            actual_freq * self.detune_octaves().exp2()
+        };
 
         // Validate frequency range
         if detuned_freq.is_finite()
@@ -681,6 +690,30 @@ mod tests {
                                     // Operator should produce a 1kHz wave; just ensure it's audible
         let peak = warmup(&mut op, 4096);
         assert!(peak > 0.05);
+    }
+
+    fn detune_cents(base_hz: f32, detune: f32, fixed: bool) -> f32 {
+        let mut op = Operator::new(SR);
+        op.fixed_frequency = fixed;
+        op.fixed_freq_hz = base_hz;
+        op.detune = detune;
+        op.trigger(base_hz, 1.0, 60);
+        cents_offset(frequency_from_phase_increment(&op), base_hz)
+    }
+
+    #[test]
+    fn detune_step_narrows_with_pitch_like_dexed() {
+        // 0.0209 * e^(-0.396 * log2 f) / 7 * log2 f octaves per step.
+        assert!((detune_cents(110.0, 7.0, false) - 11.60).abs() < 0.05);
+        assert!((detune_cents(440.0, 7.0, false) - 6.80).abs() < 0.05);
+        assert!((detune_cents(440.0, -7.0, false) + 6.80).abs() < 0.05);
+    }
+
+    #[test]
+    fn fixed_mode_only_detunes_upward() {
+        // Dexed `osc_freq` mode 1: 13457 / 2^24 octaves per step above centre.
+        assert!(detune_cents(1000.0, -7.0, true).abs() < 1e-3);
+        assert!((detune_cents(1000.0, 7.0, true) - 6.74).abs() < 0.05);
     }
 
     #[test]

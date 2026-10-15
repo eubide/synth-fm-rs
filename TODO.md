@@ -30,12 +30,8 @@ el cambio sea verificable.
       tabla `statics`. Output level, key level scaling y velocity entran
       como `outlevel` dentro del envelope.
 
-- [ ] (DX7) **LFO delay con fade-in** — el delay del DX7 son **dos fases**:
-      espera plana + rampa lineal hasta full-depth. Nosotros sólo tenemos la
-      espera plana: `lfo.rs:171-178` devuelve `(0, 0)` durante el delay y
-      luego salta a depth completo. La modulación entra de golpe en vez del
-      swell característico. Ref: `lfo.cc:105-117` (dos pendientes
-      `delayinc_` y `delayinc2_`).
+- [x] (DX7) **LFO delay con fade-in** — `lfo.rs:delay_depth` porta
+      `Lfo::getdelay`: espera + rampa lineal con `delayinc_` / `delayinc2_`.
 
 - [x] (DX7) **LFO range Hz** — portado en `lfo.rs:LFO_FREQ_TABLE` con la
       ROM `lfoSource[100]` (rate 99 ≈ 49 Hz como hardware real).
