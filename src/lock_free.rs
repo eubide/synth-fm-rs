@@ -75,7 +75,6 @@ impl<T: Clone + Send> TripleBuffer<T> {
 
     /// Read current data (Audio thread only).
     /// Swaps in the latest write if there is one, then returns the read buffer.
-    #[allow(dead_code)]
     pub fn read(&self) -> &T {
         // Atomically swap read and back buffers using CAS loop
         loop {
@@ -104,15 +103,6 @@ impl<T: Clone + Send> TripleBuffer<T> {
             // Retry if indices changed
         }
     }
-
-    /// Peek at current read buffer without swapping.
-    /// Use this when you just need to check the current value.
-    #[allow(dead_code)]
-    pub fn peek(&self) -> &T {
-        let current = self.indices.load(Ordering::Acquire);
-        let read_idx = (current & Self::READ_MASK) >> Self::READ_SHIFT;
-        unsafe { &*self.buffers[read_idx as usize].get() }
-    }
 }
 
 // Safety: T is Send, and we use proper atomic synchronization
@@ -128,7 +118,7 @@ mod tests {
     #[test]
     fn test_triple_buffer_basic() {
         let buffer = TripleBuffer::new(0u32);
-        assert_eq!(*buffer.peek(), 0);
+        assert_eq!(*buffer.read(), 0);
 
         buffer.write(42);
         assert_eq!(*buffer.read(), 42);

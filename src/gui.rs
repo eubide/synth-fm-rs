@@ -3063,7 +3063,6 @@ mod tests {
             pitch_bend_range: None,
             portamento_enable: None,
             portamento_time: None,
-            mono_mode: None,
             transpose_semitones: 0,
             pitch_mod_sensitivity: 0,
             pitch_eg: Some(PresetPitchEg::default()),

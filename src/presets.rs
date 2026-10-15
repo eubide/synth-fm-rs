@@ -112,7 +112,6 @@ impl Default for PresetLfo {
 }
 
 #[derive(Clone, Debug)]
-#[allow(dead_code)]
 pub struct Dx7Preset {
     pub name: String,
     pub collection: String,
@@ -122,8 +121,6 @@ pub struct Dx7Preset {
     pub pitch_bend_range: Option<f32>,
     pub portamento_enable: Option<bool>,
     pub portamento_time: Option<f32>,
-    /// Voice mode: None = leave synth as-is. Some = override.
-    pub mono_mode: Option<bool>,
     /// Transpose in semitones from the DX7 reference (0 = C3 / no shift).
     pub transpose_semitones: i8,
     pub pitch_mod_sensitivity: u8,
@@ -189,7 +186,6 @@ impl Dx7Preset {
             pitch_bend_range: Some(snapshot.pitch_bend_range),
             portamento_enable: Some(snapshot.portamento_enable),
             portamento_time: Some(snapshot.portamento_time),
-            mono_mode: None,
             transpose_semitones: snapshot.transpose_semitones,
             pitch_mod_sensitivity: snapshot.pitch_mod_sensitivity,
             pitch_eg: Some(pitch_eg),
@@ -369,7 +365,6 @@ mod tests {
             pitch_bend_range: None,
             portamento_enable: None,
             portamento_time: None,
-            mono_mode: None,
             transpose_semitones: 0,
             pitch_mod_sensitivity: 0,
             pitch_eg: None,
@@ -392,7 +387,6 @@ mod tests {
             pitch_bend_range: Some(3.0),
             portamento_enable: None,
             portamento_time: None,
-            mono_mode: None,
             transpose_semitones: -3,
             pitch_mod_sensitivity: 5,
             pitch_eg: None,
@@ -419,7 +413,6 @@ mod tests {
             pitch_bend_range: None,
             portamento_enable: None,
             portamento_time: None,
-            mono_mode: None,
             transpose_semitones: 0,
             pitch_mod_sensitivity: 0,
             pitch_eg: Some(peg),
@@ -443,7 +436,6 @@ mod tests {
             pitch_bend_range: None,
             portamento_enable: None,
             portamento_time: None,
-            mono_mode: None,
             transpose_semitones: 0,
             pitch_mod_sensitivity: 0,
             pitch_eg: None,
@@ -473,7 +465,6 @@ mod tests {
             pitch_bend_range: None,
             portamento_enable: None,
             portamento_time: None,
-            mono_mode: None,
             transpose_semitones: 0,
             pitch_mod_sensitivity: 0,
             pitch_eg: None,
@@ -500,7 +491,6 @@ mod tests {
             pitch_bend_range: None,
             portamento_enable: None,
             portamento_time: None,
-            mono_mode: None,
             transpose_semitones: 0,
             pitch_mod_sensitivity: 0,
             pitch_eg: None,

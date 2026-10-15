@@ -6,7 +6,6 @@ use rtrb::{Consumer, Producer, RingBuffer};
 const COMMAND_BUFFER_SIZE: usize = 1024;
 
 /// Parameters that can be set on an operator
-#[allow(dead_code)] // some variants are surfaced via JSON loader / future GUI panels
 #[derive(Debug, Clone, Copy)]
 pub enum OperatorParam {
     Ratio,
@@ -103,7 +102,6 @@ pub enum EffectParam {
 }
 
 /// Commands sent from GUI/MIDI thread to audio thread
-#[allow(dead_code)] // some variants are issued only by JSON preset loading / MIDI / future panels
 #[derive(Debug, Clone)]
 pub enum SynthCommand {
     // Note events
@@ -125,7 +123,6 @@ pub enum SynthCommand {
     SetPortamentoEnable(bool),
     SetPortamentoTime(f32),
     SetPortamentoGlissando(bool), // step (semitone) glide instead of continuous
-    SetTranspose(i8),             // -24..+24 semitones around C3
     SetPitchModSensitivity(u8),   // 0-7 PMS for the LFO pitch depth
     SetEgBiasSensitivity(u8),     // 0-7 mod-wheel routing depth for EG Bias (amp-side)
     SetPitchBiasSensitivity(u8),  // 0-7 mod-wheel routing depth for Pitch Bias (semitone offset)
@@ -199,9 +196,6 @@ pub enum SynthCommand {
         value: f32,
     },
 
-    // Preset loading (for MIDI program change)
-    LoadPreset(usize),
-
     /// Apply a voice (browser selection or SysEx single-voice dump) as the live
     /// edit buffer. The bank stays untouched.
     LoadVoice(Box<Dx7Preset>),
@@ -230,18 +224,6 @@ impl CommandSender {
     pub fn send(&mut self, command: SynthCommand) -> bool {
         self.producer.push(command).is_ok()
     }
-
-    /// Check how many slots are available in the buffer
-    #[allow(dead_code)]
-    pub fn available(&self) -> usize {
-        self.producer.slots()
-    }
-
-    /// Check if the buffer is full
-    #[allow(dead_code)]
-    pub fn is_full(&self) -> bool {
-        self.producer.is_full()
-    }
 }
 
 /// Receiver side of the command queue (audio thread)
@@ -254,30 +236,6 @@ impl CommandReceiver {
     /// Returns None if no command is available.
     pub fn try_recv(&mut self) -> Option<SynthCommand> {
         self.consumer.pop().ok()
-    }
-
-    /// Process all pending commands with a callback.
-    /// This is the recommended way to process commands in the audio callback.
-    #[allow(dead_code)]
-    pub fn process_all<F>(&mut self, mut callback: F)
-    where
-        F: FnMut(SynthCommand),
-    {
-        while let Some(cmd) = self.try_recv() {
-            callback(cmd);
-        }
-    }
-
-    /// Check how many commands are waiting
-    #[allow(dead_code)]
-    pub fn pending(&self) -> usize {
-        self.consumer.slots()
-    }
-
-    /// Check if there are any pending commands
-    #[allow(dead_code)]
-    pub fn is_empty(&self) -> bool {
-        self.consumer.is_empty()
     }
 }
 
@@ -323,23 +281,6 @@ mod tests {
     }
 
     #[test]
-    fn test_process_all() {
-        let (mut sender, mut receiver) = create_command_queue();
-
-        sender.send(SynthCommand::SetAlgorithm(5));
-        sender.send(SynthCommand::SetMasterVolume(0.8));
-        sender.send(SynthCommand::Panic);
-
-        let mut count = 0;
-        receiver.process_all(|_cmd| {
-            count += 1;
-        });
-
-        assert_eq!(count, 3);
-        assert!(receiver.is_empty());
-    }
-
-    #[test]
     fn test_buffer_capacity() {
         let (mut sender, mut receiver) = create_command_queue();
 
@@ -356,12 +297,13 @@ mod tests {
         }
 
         // Buffer should be full now
-        assert!(sender.is_full());
         assert!(!sender.send(SynthCommand::Panic));
 
         // Drain the buffer
         let mut count = 0;
-        receiver.process_all(|_| count += 1);
+        while receiver.try_recv().is_some() {
+            count += 1;
+        }
         assert_eq!(count, COMMAND_BUFFER_SIZE);
     }
 

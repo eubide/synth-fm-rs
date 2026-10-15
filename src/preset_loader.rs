@@ -314,7 +314,6 @@ fn load_json_file(path: &Path, collection: &str) -> Option<Dx7Preset> {
         pitch_bend_range: None,
         portamento_enable: None,
         portamento_time: None,
-        mono_mode: None,
         transpose_semitones: parse_transpose(&patch.transpose),
         pitch_mod_sensitivity: pms,
         pitch_eg,
@@ -539,7 +538,6 @@ mod tests {
             pitch_bend_range: None,
             portamento_enable: None,
             portamento_time: None,
-            mono_mode: None,
             transpose_semitones: -5,
             pitch_mod_sensitivity: 3,
             pitch_eg: Some(PresetPitchEg {

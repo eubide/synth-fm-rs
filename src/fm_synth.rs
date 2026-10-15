@@ -310,7 +310,6 @@ pub struct SynthEngine {
     /// MIDI Bank Select LSB (CC32) — low 7 bits of the bank index.
     bank_lsb: u8,
     sustain_pedal: bool,
-    #[allow(dead_code)]
     sample_rate: f32,
     dc_blocker_l: DcBlocker,
     dc_blocker_r: DcBlocker,
@@ -409,7 +408,6 @@ impl SynthEngine {
         if matches!(
             cmd,
             SynthCommand::SetAlgorithm(_)
-                | SynthCommand::SetTranspose(_)
                 | SynthCommand::SetPitchModSensitivity(_)
                 | SynthCommand::SetOperatorParam { .. }
                 | SynthCommand::SetEnvelopeParam { .. }
@@ -466,9 +464,6 @@ impl SynthEngine {
             }
             SynthCommand::SetPortamentoGlissando(on) => {
                 self.portamento_glissando = on;
-            }
-            SynthCommand::SetTranspose(st) => {
-                self.transpose_semitones = st.clamp(-24, 24);
             }
             SynthCommand::SetPitchModSensitivity(pms) => {
                 self.pitch_mod_sensitivity = pms.min(7);
@@ -574,9 +569,6 @@ impl SynthEngine {
                 value,
             } => {
                 self.set_effect_param(effect, param, value);
-            }
-            SynthCommand::LoadPreset(preset_idx) => {
-                self.load_preset(preset_idx);
             }
             SynthCommand::LoadVoice(preset) => {
                 preset.apply_to_synth(self);
@@ -1058,18 +1050,10 @@ impl SynthEngine {
 
     /// Update and send snapshot to GUI
     pub fn update_snapshot(&self) {
-        let mut active_voices = 0u8;
-        for voice in &self.voices {
-            if voice.active {
-                active_voices += 1;
-            }
-        }
-
         let snapshot = SynthSnapshot {
             preset_name: self.preset_name.clone(),
             voice_edited: self.voice_edited,
             algorithm: self.algorithm,
-            active_voices,
             master_volume: self.master_volume,
             master_tune: self.master_tune,
             voice_mode: self.voice_mode,
@@ -1081,13 +1065,10 @@ impl SynthEngine {
             pitch_mod_sensitivity: self.pitch_mod_sensitivity,
             eg_bias_sensitivity: self.eg_bias_sensitivity,
             pitch_bias_sensitivity: self.pitch_bias_sensitivity,
-            pitch_bend: self.pitch_bend,
             mod_wheel: self.mod_wheel,
-            sustain_pedal: self.sustain_pedal,
             aftertouch: self.aftertouch,
             breath: self.breath,
             foot: self.foot,
-            expression: self.expression,
             aftertouch_pitch_sens: self.aftertouch_pitch_sens,
             aftertouch_amp_sens: self.aftertouch_amp_sens,
             aftertouch_eg_bias_sens: self.aftertouch_eg_bias_sens,
@@ -1244,103 +1225,37 @@ impl SynthEngine {
         self.presets = presets;
     }
 
-    #[allow(dead_code)]
     pub fn lfo_mut(&mut self) -> &mut LFO {
         &mut self.lfo
     }
 
-    // Public read-only getters (kept for API completeness, GUI now uses snapshots)
-    #[allow(dead_code)]
+    // Read access for tests in other modules; the GUI reads snapshots.
+    #[cfg(test)]
     pub fn get_algorithm(&self) -> u8 {
         self.algorithm
     }
 
-    #[allow(dead_code)]
-    pub fn get_master_volume(&self) -> f32 {
-        self.master_volume
-    }
-
-    #[allow(dead_code)]
-    pub fn get_master_tune(&self) -> f32 {
-        self.master_tune
-    }
-
-    #[allow(dead_code)]
-    pub fn get_voice_mode(&self) -> VoiceMode {
-        self.voice_mode
-    }
-
-    #[allow(dead_code)]
-    pub fn get_portamento_enable(&self) -> bool {
-        self.portamento_enable
-    }
-
-    #[allow(dead_code)]
-    pub fn get_portamento_time(&self) -> f32 {
-        self.portamento_time
-    }
-
-    #[allow(dead_code)]
-    pub fn get_pitch_bend_range(&self) -> f32 {
-        self.pitch_bend_range
-    }
-
-    #[allow(dead_code)]
-    pub fn get_mod_wheel(&self) -> f32 {
-        self.mod_wheel
-    }
-
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn get_lfo_rate(&self) -> f32 {
         self.lfo.rate
     }
 
-    #[allow(dead_code)]
-    pub fn get_lfo_delay(&self) -> f32 {
-        self.lfo.delay
-    }
-
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn get_lfo_pitch_depth(&self) -> f32 {
         self.lfo.pitch_depth
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn get_lfo_amp_depth(&self) -> f32 {
         self.lfo.amp_depth
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn get_lfo_waveform(&self) -> LFOWaveform {
         self.lfo.waveform
     }
 
-    #[allow(dead_code)]
-    pub fn get_lfo_key_sync(&self) -> bool {
-        self.lfo.key_sync
-    }
-
-    #[allow(dead_code)]
-    pub fn get_lfo_frequency_hz(&self) -> f32 {
-        self.lfo.get_frequency_hz()
-    }
-
-    #[allow(dead_code)]
-    pub fn get_lfo_delay_seconds(&self) -> f32 {
-        self.lfo.get_delay_seconds()
-    }
-
-    #[allow(dead_code)]
-    pub fn get_operator_enabled(&self, op_idx: usize) -> bool {
-        if let Some(voice) = self.voices.first() {
-            if op_idx < 6 {
-                return voice.operators[op_idx].enabled;
-            }
-        }
-        true
-    }
-
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn voices(&self) -> &Vec<Voice> {
         &self.voices
     }
@@ -1358,12 +1273,6 @@ impl SynthController {
             command_tx,
             snapshot_rx,
         }
-    }
-
-    /// Get the latest snapshot from the audio thread (reference)
-    #[allow(dead_code)]
-    pub fn get_snapshot(&self) -> &SynthSnapshot {
-        self.snapshot_rx.get()
     }
 
     /// Get a copy of the latest snapshot (for GUI use)
@@ -1410,12 +1319,6 @@ impl SynthController {
         self.send(SynthCommand::SetPortamentoGlissando(on));
     }
 
-    #[allow(dead_code)]
-    pub fn set_transpose(&mut self, semitones: i8) {
-        self.send(SynthCommand::SetTranspose(semitones));
-    }
-
-    #[allow(dead_code)]
     pub fn set_pitch_mod_sensitivity(&mut self, pms: u8) {
         self.send(SynthCommand::SetPitchModSensitivity(pms));
     }
@@ -1568,13 +1471,6 @@ impl SynthController {
         self.send(SynthCommand::Panic);
     }
 
-    /// Load a preset by index (for MIDI program change 0xC0).
-    /// MIDI now goes through `program_change`; this remains for the GUI / direct callers.
-    #[allow(dead_code)]
-    pub fn load_preset(&mut self, index: usize) {
-        self.send(SynthCommand::LoadPreset(index));
-    }
-
     /// Apply a voice as the live edit buffer.
     pub fn load_voice(&mut self, preset: Dx7Preset) {
         self.send(SynthCommand::LoadVoice(Box::new(preset)));
@@ -1641,7 +1537,6 @@ mod tests {
             pitch_bend_range: Some(2.0),
             portamento_enable: None,
             portamento_time: None,
-            mono_mode: None,
             transpose_semitones: 12,
             pitch_mod_sensitivity: 4,
             pitch_eg: Some(PresetPitchEg::default()),
@@ -1929,17 +1824,6 @@ mod tests {
         ctrl.set_voice_mode(crate::state_snapshot::VoiceMode::Poly);
         engine.process_commands();
         assert_eq!(engine.voice_mode, crate::state_snapshot::VoiceMode::Poly);
-    }
-
-    #[test]
-    fn engine_set_transpose_clamps() {
-        let (mut engine, mut ctrl) = make_engine();
-        ctrl.set_transpose(50);
-        engine.process_commands();
-        assert_eq!(engine.transpose_semitones, 24);
-        ctrl.set_transpose(-50);
-        engine.process_commands();
-        assert_eq!(engine.transpose_semitones, -24);
     }
 
     #[test]
@@ -2330,27 +2214,6 @@ mod tests {
         let snap = ctrl.snapshot();
         assert_eq!(snap.algorithm, 1);
         assert_eq!(snap.preset_name, "Init Voice");
-    }
-
-    #[test]
-    fn engine_load_preset_by_index_applies_when_in_range() {
-        let (mut engine, mut ctrl) = make_engine();
-        let presets = vec![make_preset("FOO", 5), make_preset("BAR", 12)];
-        engine.set_presets(presets);
-        ctrl.load_preset(1);
-        engine.process_commands();
-        assert_eq!(engine.preset_name, "BAR");
-        assert_eq!(engine.algorithm, 12);
-    }
-
-    #[test]
-    fn engine_load_preset_out_of_range_is_noop() {
-        let (mut engine, mut ctrl) = make_engine();
-        let presets = vec![make_preset("FOO", 5)];
-        engine.set_presets(presets);
-        ctrl.load_preset(99);
-        engine.process_commands();
-        assert_eq!(engine.preset_name, "Init Voice");
     }
 
     #[test]

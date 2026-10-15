@@ -125,7 +125,7 @@ impl MidiHandler {
     }
 
     /// Returns the current channel filter. `None` means OMNI.
-    #[allow(dead_code)] // public API; GUI surfaces it via the channel selector
+    #[cfg(test)]
     pub fn channel(&self) -> Option<u8> {
         let raw = self.channel_filter.load(Ordering::Relaxed);
         if raw == MIDI_OMNI {
@@ -651,7 +651,6 @@ mod tests {
             pitch_bend_range: None,
             portamento_enable: None,
             portamento_time: None,
-            mono_mode: None,
             transpose_semitones: 0,
             pitch_mod_sensitivity: 2,
             pitch_eg: Some(PresetPitchEg::default()),

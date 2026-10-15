@@ -4,7 +4,6 @@ use crate::operator::KeyScaleCurve;
 use std::sync::Arc;
 
 /// Snapshot of a single operator's state for GUI display.
-#[allow(dead_code)] // some fields are populated for future panels not yet wired up
 #[derive(Debug, Clone, Copy)]
 pub struct OperatorSnapshot {
     pub enabled: bool,
@@ -195,7 +194,6 @@ impl Default for PitchEgSnapshot {
 
 /// Read-only snapshot of synthesizer state for GUI display.
 /// Updated by audio thread, read by GUI thread without blocking.
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct SynthSnapshot {
     // Voice info
@@ -203,7 +201,6 @@ pub struct SynthSnapshot {
     /// The voice differs from what was last loaded (DX7 "EDIT" state).
     pub voice_edited: bool,
     pub algorithm: u8,
-    pub active_voices: u8,
 
     // Global parameters
     pub master_volume: f32,
@@ -219,13 +216,10 @@ pub struct SynthSnapshot {
     pub pitch_bias_sensitivity: u8, // 0-7 Pitch Bias routing from Mod Wheel
 
     // Real-time controllers
-    pub pitch_bend: f32,
     pub mod_wheel: f32,
-    pub sustain_pedal: bool,
     pub aftertouch: f32,
     pub breath: f32,
     pub foot: f32,
-    pub expression: f32,
 
     // Aftertouch routing sensitivities (0-7 each)
     pub aftertouch_pitch_sens: u8,
@@ -274,7 +268,6 @@ impl Default for SynthSnapshot {
             preset_name: "Init Voice".to_string(),
             voice_edited: false,
             algorithm: 1,
-            active_voices: 0,
 
             master_volume: 0.7,
             master_tune: 0.0,
@@ -288,13 +281,10 @@ impl Default for SynthSnapshot {
             eg_bias_sensitivity: 0,
             pitch_bias_sensitivity: 0,
 
-            pitch_bend: 0.0,
             mod_wheel: 0.0,
-            sustain_pedal: false,
             aftertouch: 0.0,
             breath: 0.0,
             foot: 0.0,
-            expression: 1.0,
 
             aftertouch_pitch_sens: 0,
             aftertouch_amp_sens: 0,
@@ -345,7 +335,6 @@ impl SnapshotSender {
 }
 
 /// Receiver side of snapshot channel (GUI thread)
-#[allow(dead_code)]
 pub struct SnapshotReceiver {
     buffer: Arc<TripleBuffer<SynthSnapshot>>,
 }
@@ -355,12 +344,6 @@ impl SnapshotReceiver {
     /// This swaps in the latest data from the audio thread
     pub fn get(&self) -> &SynthSnapshot {
         self.buffer.read()
-    }
-
-    /// Peek at current snapshot without swapping
-    #[allow(dead_code)]
-    pub fn peek(&self) -> &SynthSnapshot {
-        self.buffer.peek()
     }
 }
 
@@ -400,7 +383,6 @@ mod tests {
         let new_snapshot = SynthSnapshot {
             algorithm: 5,
             preset_name: "E.PIANO 1".to_string(),
-            active_voices: 3,
             ..SynthSnapshot::default()
         };
         sender.send(new_snapshot);
@@ -409,7 +391,6 @@ mod tests {
         let snapshot = receiver.get();
         assert_eq!(snapshot.algorithm, 5);
         assert_eq!(snapshot.preset_name, "E.PIANO 1");
-        assert_eq!(snapshot.active_voices, 3);
     }
 
     #[test]
@@ -425,7 +406,7 @@ mod tests {
         let writer = thread::spawn(move || {
             for i in 0..1000 {
                 let snapshot = SynthSnapshot {
-                    active_voices: (i % 16) as u8,
+                    algorithm: (i % 16) as u8,
                     ..SynthSnapshot::default()
                 };
                 s.send(snapshot);
@@ -436,8 +417,8 @@ mod tests {
         let reader = thread::spawn(move || {
             for _ in 0..1000 {
                 let snapshot = r.get();
-                // Verify no corruption (active_voices should always be 0-15)
-                assert!(snapshot.active_voices < 16);
+                // Verify no corruption (algorithm should always be 0-15)
+                assert!(snapshot.algorithm < 16);
             }
         });
 
