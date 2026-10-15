@@ -48,51 +48,6 @@ pub fn voice_scale(n: usize) -> f32 {
     }
 }
 
-/// DX7 operator level (0..99) → linear amplitude.
-///
-/// Each level step is ~0.75 dB and level 99 = 0 dB (unity), per the DX7
-/// service manual. Level 0 is hard silence.
-pub fn dx7_level_to_amplitude(level: u8) -> f32 {
-    let l = level.min(99);
-    if l == 0 {
-        return 0.0;
-    }
-    10.0_f32.powf((l as f32 - 99.0) * (0.75 / 20.0))
-}
-
-/// DX7 envelope rate (0..99) → seconds for one full envelope segment.
-///
-/// Calibrated piecewise log-interpolation between published reference points;
-/// not a bit-exact ROM dump but well within ±15% of the DX7 service manual
-/// curve. The 8 ms floor matches the hardware lower bound.
-pub fn dx7_rate_to_time(rate: u8) -> f32 {
-    const REFS: &[(u8, f32)] = &[
-        (0, 38.0),
-        (25, 3.8),
-        (50, 0.60),
-        (75, 0.105),
-        (90, 0.037),
-        (99, 0.012),
-    ];
-    let r = rate.min(99);
-    for pair in REFS.windows(2) {
-        let (r_lo, t_lo) = pair[0];
-        let (r_hi, t_hi) = pair[1];
-        if r >= r_lo && r <= r_hi {
-            let frac = (r - r_lo) as f32 / (r_hi - r_lo) as f32;
-            let log_lo = t_lo.log2();
-            let log_hi = t_hi.log2();
-            return 2.0_f32.powf(log_lo + (log_hi - log_lo) * frac).max(0.008);
-        }
-    }
-    REFS.last().unwrap().1
-}
-
-/// DX7 envelope rate (0..99) → per-second multiplier (`1 / time`).
-pub fn dx7_rate_to_multiplier(rate: u8) -> f32 {
-    1.0 / dx7_rate_to_time(rate)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -155,68 +110,5 @@ mod tests {
     fn voice_scale_decreases_with_more_voices() {
         assert!(voice_scale(4) > voice_scale(16));
         assert!(voice_scale(2) > voice_scale(4));
-    }
-
-    // -----------------------------------------------------------------------
-    // DX7 level
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn dx7_level_99_is_unity_amplitude() {
-        assert!((dx7_level_to_amplitude(99) - 1.0).abs() < 0.01);
-    }
-
-    #[test]
-    fn dx7_level_zero_is_silent() {
-        assert_eq!(dx7_level_to_amplitude(0), 0.0);
-    }
-
-    #[test]
-    fn dx7_level_is_monotonic_and_clamps() {
-        let mut prev = 0.0;
-        for level in 1..=99u8 {
-            let a = dx7_level_to_amplitude(level);
-            assert!(a > prev, "level {level} not monotonic: {a} <= {prev}");
-            prev = a;
-        }
-        assert_eq!(dx7_level_to_amplitude(99), dx7_level_to_amplitude(200));
-    }
-
-    // -----------------------------------------------------------------------
-    // DX7 rate
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn dx7_rate_zero_is_about_38_seconds() {
-        assert!((35.0..=42.0).contains(&dx7_rate_to_time(0)));
-    }
-
-    #[test]
-    fn dx7_rate_99_is_about_12_ms() {
-        assert!(dx7_rate_to_time(99) <= 0.020);
-    }
-
-    #[test]
-    fn dx7_rate_table_within_15_percent_of_reference() {
-        for (rate, expected) in [(0u8, 38.0), (25, 3.8), (50, 0.60), (75, 0.105), (99, 0.012)] {
-            let actual = dx7_rate_to_time(rate);
-            let ratio = actual / expected;
-            assert!(
-                (0.85..=1.15).contains(&ratio),
-                "rate {rate}: expected ~{expected}s, got {actual:.4}s (ratio {ratio:.3})"
-            );
-        }
-    }
-
-    #[test]
-    fn dx7_rate_to_multiplier_inverts_time() {
-        let time = dx7_rate_to_time(50);
-        let mult = dx7_rate_to_multiplier(50);
-        assert!((mult * time - 1.0).abs() < 1e-3);
-    }
-
-    #[test]
-    fn dx7_rate_clamps_above_99() {
-        assert_eq!(dx7_rate_to_time(99), dx7_rate_to_time(200));
     }
 }

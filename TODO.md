@@ -24,14 +24,11 @@ el cambio sea verificable.
 - [x] (DX7) **Tabla AMS ROM** — portado en `operator.rs:AMS_SCALE_TABLE`
       con valores ROM `{0, 66, 109, 255}/255`.
 
-- [ ] (DX7) **Curva de envelope dB-lineal** — nuestro envelope avanza en
-      dominio de amplitud (`envelope.rs:108-111`,
-      `current_level += distance * approach_factor`). El DX7 / Dexed avanza
-      en dominio dB y exponencializa al final vía `Exp2::lookup`
-      (`env.cc:84-96`). El attack además salta a un punto ~40 dB sobre el
-      suelo (jumptarget=1716). Diferencia perceptible: decays largos en
-      escala lineal "se quedan colgados" más tiempo que en escala dB.
-      Refactor grande — solo si la fidelidad lo justifica.
+- [x] (DX7) **Envelope en dominio dB** — `envelope.rs` porta `env.cc`:
+      niveles de etapa a 0,75 dB/paso, decays lineales en dB, ataque con
+      salto a 1716 y curva hacia 17 duplicaciones, etapas planas con la
+      tabla `statics`. Output level, key level scaling y velocity entran
+      como `outlevel` dentro del envelope.
 
 - [ ] (DX7) **LFO delay con fade-in** — el delay del DX7 son **dos fases**:
       espera plana + rampa lineal hasta full-depth. Nosotros sólo tenemos la
@@ -50,6 +47,8 @@ el cambio sea verificable.
 - [x] (DX7) **Key scaling con `exp_scale_data[33]`** — portado en
       `operator.rs:EXP_SCALE_DATA` + nueva fórmula `ScaleLevel` /
       `ScaleCurve` con offset `breakpoint - 17` y agrupación de 3 semitonos.
+      El breakpoint se convierte a byte DX7 (MIDI − 21) antes del offset y
+      la profundidad suma en pasos de output level, no en substeps.
 
 ### Diferencias menores — auditar antes de tocar
 

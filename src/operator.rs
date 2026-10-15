@@ -1,5 +1,5 @@
-use crate::envelope::Envelope;
-use crate::optimization::{dx7_level_to_amplitude, fast_sin};
+use crate::envelope::{scale_out_level, Envelope};
+use crate::optimization::fast_sin;
 use std::f32::consts::PI;
 
 /// DX7 AMS (amplitude mod sensitivity) ROM lookup, indexed 0..3.
@@ -33,12 +33,6 @@ const VELOCITY_DATA: [u8; 64] = [
     222, 224, 225, 227, 229, 230, 232, 233, 235, 237, 238, 240, 241, 242, 243, 244, 246, 246, 248,
     249, 250, 251, 252, 253, 254,
 ];
-
-/// One DX7 output-level substep in dB. The hardware encodes operator level in
-/// `<<5` (32 substeps per logical level) where each *level* step is ~0.75 dB,
-/// so each *substep* ≈ 0.0234 dB. Same factor governs key-level scaling and
-/// velocity scaling because both add into the same outlevel domain.
-const DX7_OUTLEVEL_DB_PER_SUBSTEP: f32 = 0.75 / 32.0;
 
 /// DX7 keyboard level scaling curve type. Applied independently to the
 /// left and right of the breakpoint note.
@@ -86,30 +80,13 @@ impl KeyScaleCurve {
 
 #[derive(Debug, Clone)]
 struct CachedValues {
-    level_amplitude: f32,
-    velocity_factor: f32,
-    key_scale_level_factor: f32,
     params_dirty: bool,
 }
 
 impl CachedValues {
     fn new() -> Self {
-        CachedValues {
-            level_amplitude: 1.0,
-            velocity_factor: 1.0,
-            key_scale_level_factor: 1.0,
-            params_dirty: true,
-        }
+        CachedValues { params_dirty: true }
     }
-}
-
-/// Convert outlevel substeps to a linear amplitude factor. The DX7 encodes
-/// every per-operator gain (output level, velocity scaling, key-level
-/// scaling) in the same dB-per-substep domain (~0.0234 dB), so anything that
-/// produces "substeps" goes through this exponential at the end.
-fn outlevel_substeps_to_amplitude(substeps: i32) -> f32 {
-    let db = substeps as f32 * DX7_OUTLEVEL_DB_PER_SUBSTEP;
-    10.0_f32.powf(db / 20.0)
 }
 
 #[derive(Debug, Clone)]
@@ -202,10 +179,8 @@ impl Operator {
         self.current_note = note;
         self.update_frequency();
 
-        // Apply key scale rate to envelope
-        let key_scale_factor = self.calculate_key_scale_factor(note);
         self.envelope
-            .trigger_with_key_scale(velocity, key_scale_factor);
+            .trigger(self.outlevel(), self.rate_scaling(note));
 
         // OSC KEY SYNC: when ON the phase resets so every note starts identically;
         // when OFF the oscillator free-runs to mimic the analog/DX1 behaviour.
@@ -214,39 +189,44 @@ impl Operator {
         }
         self.last_output = 0.0;
         self.prev_output = 0.0;
-        self.cached_values.params_dirty = true;
+        self.cached_values.params_dirty = false;
     }
 
     fn update_cached_values(&mut self) {
         if !self.cached_values.params_dirty {
             return;
         }
-
-        self.cached_values.level_amplitude = dx7_level_to_amplitude(self.output_level as u8);
-
-        // DX7 ROM `ScaleVelocity`: vel_value = velocity_data[v>>1] - 239,
-        // scaled = ((sens * vel_value + 7) >> 3) << 4 (outlevel substeps).
-        // At sens = 0 collapses to factor = 1.0 (velocity has no effect).
-        let midi_velocity = (self.current_velocity * 127.0).round().clamp(0.0, 127.0) as i32;
-        let vel_idx = ((midi_velocity >> 1).max(0) as usize).min(63);
-        let vel_value = VELOCITY_DATA[vel_idx] as i32 - 239;
-        let sens = self.velocity_sensitivity.round().clamp(0.0, 7.0) as i32;
-        let scaled = ((sens * vel_value + 7) >> 3) << 4;
-        self.cached_values.velocity_factor = outlevel_substeps_to_amplitude(scaled);
-
-        self.cached_values.key_scale_level_factor = self.calculate_key_level_factor();
-
+        self.envelope.set_outlevel(self.outlevel());
         self.cached_values.params_dirty = false;
     }
 
-    /// DX7 keyboard level scaling. Port of `ScaleLevel` / `ScaleCurve` in
-    /// MSFA `dx7note.cc`. The breakpoint defines a hinge: notes below use
-    /// `left_curve`/`left_depth`, above use `right_curve`/`right_depth`. The
-    /// hardware groups notes in 3-semitone blocks counted from
-    /// `breakpoint + 17`, so a breakpoint at MIDI 60 keeps the response flat
-    /// across roughly the next octave.
-    fn calculate_key_level_factor(&self) -> f32 {
-        let offset = self.current_note as i32 - self.key_scale_breakpoint as i32 - 17;
+    /// Output level, keyboard level scaling and velocity combined in
+    /// microsteps (32 per output-level step), as in Dexed `Dx7Note::init`.
+    fn outlevel(&self) -> i32 {
+        let level = self.output_level.round().clamp(0.0, 99.0) as i32;
+        let scaled = (scale_out_level(level) + self.key_level_scaling()).min(127);
+        ((scaled << 5) + self.velocity_scaling()).max(0)
+    }
+
+    /// DX7 ROM `ScaleVelocity`, in microsteps: `velocity_data[v >> 1] - 239`
+    /// puts the neutral point near MIDI velocity 100; sensitivity 0 ignores
+    /// velocity entirely.
+    fn velocity_scaling(&self) -> i32 {
+        let midi_velocity = (self.current_velocity * 127.0).round().clamp(0.0, 127.0) as i32;
+        let vel_value = VELOCITY_DATA[(midi_velocity >> 1) as usize] as i32 - 239;
+        let sens = self.velocity_sensitivity.round().clamp(0.0, 7.0) as i32;
+        ((sens * vel_value + 7) >> 3) << 4
+    }
+
+    /// DX7 keyboard level scaling in output-level steps (0.75 dB each). Port
+    /// of `ScaleLevel` / `ScaleCurve` in MSFA `dx7note.cc`. The breakpoint
+    /// defines a hinge: notes below use `left_curve`/`left_depth`, above use
+    /// `right_curve`/`right_depth`. The hardware groups notes in 3-semitone
+    /// blocks around four semitones below the breakpoint note.
+    fn key_level_scaling(&self) -> i32 {
+        // Dexed takes the breakpoint as the DX7 parameter byte (0 = A-1 = MIDI 21).
+        let breakpoint_byte = self.key_scale_breakpoint as i32 - 21;
+        let offset = self.current_note as i32 - breakpoint_byte - 17;
         let (group, depth, curve) = if offset >= 0 {
             (
                 (offset + 1) / 3,
@@ -255,14 +235,14 @@ impl Operator {
             )
         } else {
             (
-                (-(offset + 1)) / 3,
+                (1 - offset) / 3,
                 self.key_scale_left_depth,
                 self.key_scale_left_curve,
             )
         };
 
         if depth <= 0.0 {
-            return 1.0;
+            return 0;
         }
         let depth_int = depth.round().clamp(0.0, 99.0) as i32;
         let group = group.max(0);
@@ -275,12 +255,10 @@ impl Operator {
             }
         };
 
-        let signed = match curve {
+        match curve {
             KeyScaleCurve::NegLin | KeyScaleCurve::NegExp => -magnitude,
             KeyScaleCurve::PosLin | KeyScaleCurve::PosExp => magnitude,
-        };
-
-        outlevel_substeps_to_amplitude(signed).clamp(0.0, 4.0)
+        }
     }
 
     pub fn release(&mut self) {
@@ -460,13 +438,7 @@ impl Operator {
         // Gated by AMS (per DX7 manual): AMS=0 unaffected, AMS=3 fully attenuated up to ~70%.
         let eg_bias_factor = 1.0 - (self.current_eg_bias * ams_scale * 0.7);
 
-        let output = sin_result
-            * env_value
-            * self.cached_values.level_amplitude
-            * self.cached_values.velocity_factor
-            * self.cached_values.key_scale_level_factor
-            * amp_mod_factor
-            * eg_bias_factor;
+        let output = sin_result * env_value * amp_mod_factor * eg_bias_factor;
 
         // Update phase with bounds checking
         if self.phase_increment.is_finite() && self.phase_increment.abs() < 100.0 {
@@ -514,14 +486,12 @@ impl Operator {
     ///     qratedelta = (sensitivity * x) >> 3
     /// `qratedelta` is in quarter-rate-step units; 4 quarter-steps double the
     /// envelope speed, so the multiplicative factor is `2^(qratedelta / 4)`.
-    fn calculate_key_scale_factor(&self, note: u8) -> f32 {
-        if self.key_scale_rate == 0.0 {
-            return 1.0;
-        }
+    /// DX7 keyboard rate scaling (`ScaleRate`), in qrate units: every 4
+    /// doubles the envelope speed.
+    fn rate_scaling(&self, note: u8) -> i32 {
         let x = ((note as i32) / 3 - 7).clamp(0, 31);
         let sens = self.key_scale_rate.round().clamp(0.0, 7.0) as i32;
-        let qratedelta = (sens * x) >> 3;
-        2.0_f32.powf(qratedelta as f32 / 4.0)
+        (sens * x) >> 3
     }
 }
 
@@ -935,9 +905,73 @@ mod tests {
         );
     }
 
+    #[test]
+    fn velocity_is_ignored_at_sensitivity_zero() {
+        let peak = |velocity: f32| {
+            let mut op = Operator::new(SR);
+            op.trigger(440.0, velocity, 60);
+            warmup(&mut op, 2048)
+        };
+        assert!((peak(1.0) - peak(0.3)).abs() < 1e-3);
+    }
+
+    #[test]
+    fn key_level_scaling_attenuates_in_output_level_steps() {
+        // Note 86 is ten 3-semitone groups above a C3 breakpoint at depth 99,
+        // -LIN: (10 * 99 * 329) >> 12 = 79 output-level steps = 79 * 32 microsteps.
+        let peak = |depth: f32| {
+            let mut op = Operator::new(SR);
+            op.key_scale_breakpoint = 60;
+            op.key_scale_right_curve = KeyScaleCurve::NegLin;
+            op.key_scale_right_depth = depth;
+            op.trigger(440.0, 1.0, 86);
+            warmup(&mut op, 2048)
+        };
+        let expected = 2.0_f32.powf(-(79.0 * 32.0) / 256.0);
+        let ratio = peak(99.0) / peak(0.0);
+        assert!(
+            (ratio / expected - 1.0).abs() < 0.03,
+            "ratio {ratio}, expected {expected}"
+        );
+    }
+
     // -----------------------------------------------------------------------
     // Key scaling
     // -----------------------------------------------------------------------
+
+    #[test]
+    fn key_level_scaling_matches_dexed_scale_level() {
+        // Dexed `ScaleLevel(note, 39, 99, 99, -LIN, -EXP)`; DX7 breakpoint
+        // byte 39 is C3 = MIDI 60.
+        let expected = [
+            (21, -95),
+            (36, -55),
+            (48, -23),
+            (50, -15),
+            (53, -7),
+            (54, -7),
+            (55, 0),
+            (56, 0),
+            (57, 0),
+            (58, 0),
+            (59, 0),
+            (60, 0),
+            (72, -4),
+            (84, -8),
+            (96, -18),
+            (108, -38),
+        ];
+        for (note, steps) in expected {
+            let mut op = Operator::new(SR);
+            op.key_scale_breakpoint = 60;
+            op.key_scale_left_curve = KeyScaleCurve::NegLin;
+            op.key_scale_right_curve = KeyScaleCurve::NegExp;
+            op.key_scale_left_depth = 99.0;
+            op.key_scale_right_depth = 99.0;
+            op.trigger(440.0, 1.0, note);
+            assert_eq!(op.key_level_scaling(), steps, "note {note}");
+        }
+    }
 
     #[test]
     fn key_level_scaling_negative_attenuates() {
@@ -1121,35 +1155,22 @@ mod tests {
         op_high_bp.key_scale_rate = 7.0;
         op_low_bp.key_scale_breakpoint = 24; // C0
         op_high_bp.key_scale_breakpoint = 96; // C6
-        let f_low_bp = op_low_bp.calculate_key_scale_factor(60);
-        let f_high_bp = op_high_bp.calculate_key_scale_factor(60);
-        assert!(
-            (f_low_bp - f_high_bp).abs() < 1e-6,
-            "KRS factor should be breakpoint-independent: low_bp={f_low_bp}, high_bp={f_high_bp}"
-        );
+        assert_eq!(op_low_bp.rate_scaling(60), op_high_bp.rate_scaling(60));
     }
 
     #[test]
-    fn key_rate_scaling_at_a_minus_1_is_unity() {
-        // ROM formula: x = clamp(midinote/3 - 7, 0, 31) → at midinote=21, x=0,
-        // qratedelta=0, factor=2^0=1.0 (no scaling at the reference note).
+    fn key_rate_scaling_at_a_minus_1_is_zero() {
+        // ROM formula: x = clamp(midinote/3 - 7, 0, 31) → at midinote=21, x=0.
         let mut op = Operator::new(SR);
         op.key_scale_rate = 7.0;
-        let f = op.calculate_key_scale_factor(21);
-        assert!((f - 1.0).abs() < 1e-6, "KRS at A-1 should be 1.0, got {f}");
+        assert_eq!(op.rate_scaling(21), 0);
     }
 
     #[test]
     fn key_rate_scaling_matches_dexed_rom_formula() {
-        // At C3 (midinote=60) with sens=7: x=13, qratedelta=(7*13)>>3=11,
-        // factor = 2^(11/4) ≈ 6.727.
+        // At C3 (midinote=60) with sens=7: x=13, qratedelta=(7*13)>>3=11.
         let mut op = Operator::new(SR);
         op.key_scale_rate = 7.0;
-        let f = op.calculate_key_scale_factor(60);
-        let expected = 2.0_f32.powf(11.0 / 4.0);
-        assert!(
-            (f - expected).abs() < 1e-3,
-            "KRS at C3 should be 2^(11/4) ≈ {expected}, got {f}"
-        );
+        assert_eq!(op.rate_scaling(60), 11);
     }
 }
