@@ -3,7 +3,7 @@ use crate::audio_engine::AudioEngine;
 use crate::command_queue::{
     EffectParam, EffectType, EnvelopeParam, LfoParam, OperatorParam, PitchEgParam,
 };
-use crate::fm_synth::{SynthController, SynthEngine};
+use crate::fm_synth::SynthController;
 use crate::midi_handler::MidiHandler;
 use crate::operator::KeyScaleCurve;
 use crate::presets::Dx7Preset;
@@ -12,12 +12,21 @@ use eframe::egui;
 use std::sync::{Arc, Mutex};
 
 pub struct Dx7App {
-    engine: Arc<Mutex<SynthEngine>>,
+    /// Tests drive `process_commands` by hand; the app itself only talks to
+    /// the engine through the controller's command queue.
+    #[cfg(test)]
+    engine: Option<Arc<Mutex<crate::fm_synth::SynthEngine>>>,
     controller: Arc<Mutex<SynthController>>,
-    /// Owned to keep the audio stream alive. Optional so unit tests can
-    /// construct a `Dx7App` without a real audio device.
-    _audio_engine: Option<AudioEngine>,
-    _midi_handler: Option<MidiHandler>,
+    /// Optional so unit tests can construct a `Dx7App` without a real audio
+    /// or MIDI device.
+    audio_engine: Option<AudioEngine>,
+    midi_handler: Option<MidiHandler>,
+    /// `None` forces a device poll on the next frame.
+    last_device_poll: Option<std::time::Instant>,
+    midi_ports: Vec<String>,
+    audio_devices: Vec<String>,
+    /// Last device change or failure shown in the MIDI panel.
+    device_status: String,
     selected_operator: usize,
     display_mode: DisplayMode,
     display_text: String,
@@ -30,13 +39,25 @@ pub struct Dx7App {
     preset_search: String,
     /// Cached snapshot from audio thread (updated each frame)
     snapshot: SynthSnapshot,
-    /// Path edited in the MIDI panel for SysEx load/save.
+    /// Last SysEx file loaded or saved; the file dialogs open in its folder.
     sysex_path: String,
     /// Last status line shown in the MIDI panel (load/save feedback).
     sysex_status: String,
     /// Cached MIDI channel selection: None = OMNI, Some(0..15) = specific channel.
     midi_channel_ui: Option<u8>,
+    /// Name the next save will use; reset whenever a different voice loads.
+    voice_name: String,
+    /// Last status line shown under the voice name (save feedback).
+    voice_status: String,
+    user_patches_dir: std::path::PathBuf,
+    /// Edit buffer parked while COMPARE plays the stored original.
+    compare_edit: Option<Dx7Preset>,
 }
+
+const USER_COLLECTION: &str = "user";
+
+/// How often MIDI ports are rescanned and a lost audio device is retried.
+const DEVICE_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 
 #[derive(PartialEq)]
 #[allow(clippy::upper_case_acronyms)]
@@ -50,33 +71,32 @@ enum DisplayMode {
 
 impl Dx7App {
     pub fn new(
-        engine: Arc<Mutex<SynthEngine>>,
         controller: Arc<Mutex<SynthController>>,
         audio_engine: AudioEngine,
         midi_handler: Option<MidiHandler>,
         presets: Vec<Dx7Preset>,
     ) -> Self {
-        Self::build(
-            engine,
-            controller,
-            Some(audio_engine),
-            midi_handler,
-            presets,
-        )
+        Self::build(controller, Some(audio_engine), midi_handler, presets)
     }
 
     /// Test-only constructor: builds a `Dx7App` without a real audio engine.
     #[cfg(test)]
     pub fn new_for_test(
-        engine: Arc<Mutex<SynthEngine>>,
+        engine: Arc<Mutex<crate::fm_synth::SynthEngine>>,
         controller: Arc<Mutex<SynthController>>,
         presets: Vec<Dx7Preset>,
     ) -> Self {
-        Self::build(engine, controller, None, None, presets)
+        let mut app = Self::build(controller, None, None, presets);
+        app.engine = Some(engine);
+        app
+    }
+
+    #[cfg(test)]
+    fn test_engine(&self) -> &Arc<Mutex<crate::fm_synth::SynthEngine>> {
+        self.engine.as_ref().expect("built with new_for_test")
     }
 
     fn build(
-        engine: Arc<Mutex<SynthEngine>>,
         controller: Arc<Mutex<SynthController>>,
         audio_engine: Option<AudioEngine>,
         midi_handler: Option<MidiHandler>,
@@ -84,10 +104,15 @@ impl Dx7App {
     ) -> Self {
         let snapshot = controller.lock().map(|c| c.snapshot()).unwrap_or_default();
         Self {
-            engine,
+            #[cfg(test)]
+            engine: None,
             controller,
-            _audio_engine: audio_engine,
-            _midi_handler: midi_handler,
+            audio_engine,
+            midi_handler,
+            last_device_poll: None,
+            midi_ports: Vec::new(),
+            audio_devices: Vec::new(),
+            device_status: String::new(),
             selected_operator: 0,
             display_mode: DisplayMode::Voice,
             display_text: "DX7 FM SYNTH".to_string(),
@@ -97,17 +122,26 @@ impl Dx7App {
             selected_preset: 0,
             selected_collection: None,
             preset_search: String::new(),
-            snapshot,
             sysex_path: String::from("voice.syx"),
             sysex_status: String::new(),
             midi_channel_ui: None,
+            voice_name: snapshot.preset_name.clone(),
+            voice_status: String::new(),
+            user_patches_dir: std::path::Path::new(crate::preset_loader::PATCHES_DIR)
+                .join(USER_COLLECTION),
+            compare_edit: None,
+            snapshot,
         }
     }
 
     /// Update the cached snapshot from the audio thread (call once per frame)
     fn update_snapshot(&mut self) {
         if let Ok(ctrl) = self.controller.lock() {
-            self.snapshot = ctrl.snapshot();
+            let snapshot = ctrl.snapshot();
+            if snapshot.preset_name != self.snapshot.preset_name {
+                self.voice_name = snapshot.preset_name.clone();
+            }
+            self.snapshot = snapshot;
         }
     }
 
@@ -116,6 +150,7 @@ impl Dx7App {
     /// without constructing an `eframe::Frame`.
     pub(crate) fn render(&mut self, ctx: &egui::Context) {
         self.update_snapshot();
+        self.poll_devices();
         self.handle_keyboard_input(ctx);
         ctx.set_visuals(egui::Visuals::light());
 
@@ -161,16 +196,39 @@ impl Dx7App {
 
         if ctx.input(|i| !i.events.is_empty()) {
             ctx.request_repaint_after(std::time::Duration::from_millis(16)); // ~60 FPS
+        } else {
+            ctx.request_repaint_after(DEVICE_POLL_INTERVAL);
         }
     }
 
-    fn lock_engine(
-        &self,
-    ) -> Result<
-        std::sync::MutexGuard<'_, SynthEngine>,
-        std::sync::PoisonError<std::sync::MutexGuard<'_, SynthEngine>>,
-    > {
-        self.engine.lock()
+    fn poll_devices(&mut self) {
+        if self
+            .last_device_poll
+            .is_some_and(|t| t.elapsed() < DEVICE_POLL_INTERVAL)
+        {
+            return;
+        }
+        self.last_device_poll = Some(std::time::Instant::now());
+        let panel_open = self.display_mode == DisplayMode::Midi;
+
+        if let Some(midi) = self.midi_handler.as_mut() {
+            midi.refresh();
+            if panel_open {
+                self.midi_ports = midi.port_names();
+            }
+        }
+        if let Some(audio) = self.audio_engine.as_mut() {
+            match audio.recover_if_failed() {
+                Some(Ok(name)) => {
+                    self.device_status = format!("Audio device lost; now playing on {}", name)
+                }
+                Some(Err(e)) => self.device_status = format!("Audio device lost: {}", e),
+                None => {}
+            }
+            if panel_open {
+                self.audio_devices = AudioEngine::output_device_names();
+            }
+        }
     }
 
     fn lock_controller(
@@ -277,12 +335,13 @@ impl Dx7App {
                     crate::state_snapshot::VoiceMode::Mono => "MONO",
                     crate::state_snapshot::VoiceMode::MonoLegato => "M-LEG",
                 };
-                let midi_text = if self._midi_handler.is_some() {
-                    "MIDI OK"
-                } else {
-                    "NO MIDI"
-                };
+                let midi_connected = self
+                    .midi_handler
+                    .as_ref()
+                    .is_some_and(|m| m.connected_port().is_some());
+                let midi_text = if midi_connected { "MIDI OK" } else { "NO MIDI" };
 
+                let edited_mark = if self.snapshot.voice_edited { "*" } else { "" };
                 let is_mono = self.snapshot.voice_mode != crate::state_snapshot::VoiceMode::Poly;
                 let status_line = if is_mono {
                     // Show portamento only in MONO modes
@@ -292,8 +351,9 @@ impl Dx7App {
                         "OFF"
                     };
                     format!(
-                        "VOICE: {} | ALG: {:02} | MODE: {} | PORTA: {} | {}",
+                        "VOICE: {}{} | ALG: {:02} | MODE: {} | PORTA: {} | {}",
                         self.snapshot.preset_name,
+                        edited_mark,
                         self.snapshot.algorithm,
                         mode_text,
                         porta_text,
@@ -302,8 +362,12 @@ impl Dx7App {
                 } else {
                     // In POLY mode, don't show portamento
                     format!(
-                        "VOICE: {} | ALG: {:02} | MODE: {} | {}",
-                        self.snapshot.preset_name, self.snapshot.algorithm, mode_text, midi_text
+                        "VOICE: {}{} | ALG: {:02} | MODE: {} | {}",
+                        self.snapshot.preset_name,
+                        edited_mark,
+                        self.snapshot.algorithm,
+                        mode_text,
+                        midi_text
                     )
                 };
 
@@ -535,6 +599,7 @@ impl Dx7App {
                                 }
 
                                 if ui.small_button("INIT").clicked() {
+                                    self.compare_edit = None;
                                     if let Ok(mut ctrl) = self.lock_controller() {
                                         ctrl.voice_initialize();
                                     }
@@ -661,6 +726,7 @@ impl Dx7App {
             }
 
             if ui.small_button("INIT").clicked() {
+                self.compare_edit = None;
                 if let Ok(mut ctrl) = self.lock_controller() {
                     ctrl.voice_initialize();
                 }
@@ -739,6 +805,26 @@ impl Dx7App {
                 if ui.add(midi_button).clicked() {
                     self.display_mode = DisplayMode::Midi;
                     self.display_text = "MIDI / CONTROLLERS".to_string();
+                    self.last_device_poll = None;
+                }
+
+                let comparing = self.compare_edit.is_some();
+                let compare_button = if comparing {
+                    egui::Button::new("COMPARE")
+                        .fill(egui::Color32::from_rgb(230, 180, 90))
+                        .min_size(button_size)
+                } else {
+                    egui::Button::new("COMPARE").min_size(button_size)
+                };
+                let can_compare =
+                    comparing || (self.snapshot.voice_edited && self.compare_original().is_some());
+                if ui
+                    .add_enabled(can_compare, compare_button)
+                    .on_hover_text("Hear the stored voice; press again to return to your edit")
+                    .on_disabled_hover_text("Available after editing a voice from the browser")
+                    .clicked()
+                {
+                    self.toggle_compare();
                 }
             });
         });
@@ -751,17 +837,40 @@ impl Dx7App {
             // --- Current voice header ---
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new("current:").size(11.0).strong());
+                // DX7 voice names are 10 characters (SysEx VCED name field).
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.voice_name)
+                        .char_limit(10)
+                        .desired_width(100.0),
+                );
+                if self.snapshot.voice_edited {
+                    ui.colored_label(egui::Color32::from_rgb(220, 140, 40), "* edited");
+                }
                 if let Some(p) = self.presets.get(self.selected_preset) {
-                    ui.colored_label(egui::Color32::from_rgb(100, 220, 100), p.name.as_str());
                     ui.label(
                         egui::RichText::new(format!("[{}]", p.collection))
                             .size(10.0)
                             .color(egui::Color32::from_gray(140)),
                     );
-                } else {
-                    ui.colored_label(egui::Color32::GRAY, "(none)");
+                }
+                if ui
+                    .button("SAVE")
+                    .on_hover_text(format!(
+                        "Save to {}",
+                        self.user_patches_dir.to_string_lossy()
+                    ))
+                    .clicked()
+                {
+                    self.save_voice();
                 }
             });
+            if !self.voice_status.is_empty() {
+                ui.label(
+                    egui::RichText::new(&self.voice_status)
+                        .size(11.0)
+                        .color(egui::Color32::from_rgb(120, 120, 120)),
+                );
+            }
             ui.separator();
 
             // --- Search + collection filter ---
@@ -860,16 +969,102 @@ impl Dx7App {
                         };
 
                         if ui.add_sized([ui.available_width(), 18.0], button).clicked() {
-                            let preset = self.presets[global_idx].clone();
-                            self.selected_preset = global_idx;
-                            if let Ok(mut synth) = self.lock_engine() {
-                                preset.apply_to_synth(&mut synth);
-                            }
-                            self.display_text = format!("LOADED: {}", name);
+                            self.select_preset(global_idx);
                         }
                     }
                 });
         });
+    }
+
+    /// The current voice minus global settings (tune, bend range, portamento),
+    /// which are not part of a stored voice.
+    fn edit_buffer(&self) -> Dx7Preset {
+        let mut preset = Dx7Preset::from_snapshot(&self.snapshot);
+        preset.master_tune = None;
+        preset.pitch_bend_range = None;
+        preset.portamento_enable = None;
+        preset.portamento_time = None;
+        preset
+    }
+
+    /// The browser entry the current voice was loaded from, if it still is.
+    fn compare_original(&self) -> Option<&Dx7Preset> {
+        self.presets
+            .get(self.selected_preset)
+            .filter(|p| p.name == self.snapshot.preset_name)
+    }
+
+    fn toggle_compare(&mut self) {
+        if let Some(edit) = self.compare_edit.take() {
+            if let Ok(mut ctrl) = self.lock_controller() {
+                ctrl.restore_edit_buffer(edit);
+            }
+            self.display_text = "EDIT".to_string();
+            return;
+        }
+        if !self.snapshot.voice_edited {
+            return;
+        }
+        let Some(original) = self.compare_original().cloned() else {
+            return;
+        };
+        self.compare_edit = Some(self.edit_buffer());
+        if let Ok(mut ctrl) = self.lock_controller() {
+            ctrl.load_voice(original);
+        }
+        self.display_text = "COMPARE".to_string();
+    }
+
+    fn select_preset(&mut self, index: usize) {
+        self.compare_edit = None;
+        let preset = self.presets[index].clone();
+        self.selected_preset = index;
+        self.display_text = format!("LOADED: {}", preset.name);
+        if let Ok(mut ctrl) = self.lock_controller() {
+            ctrl.load_voice(preset);
+        }
+    }
+
+    fn save_voice(&mut self) {
+        let mut preset = self
+            .compare_edit
+            .take()
+            .unwrap_or_else(|| self.edit_buffer());
+        preset.name = self.voice_name.trim().to_string();
+        preset.collection = USER_COLLECTION.to_string();
+
+        let path = match crate::preset_loader::save_json_file(&preset, &self.user_patches_dir) {
+            Ok(path) => path,
+            Err(e) => {
+                self.voice_status = format!("Save failed: {}", e);
+                return;
+            }
+        };
+
+        let stem = crate::preset_loader::file_stem_for(&preset.name);
+        let same_voice = |p: &Dx7Preset| {
+            p.collection == USER_COLLECTION && crate::preset_loader::file_stem_for(&p.name) == stem
+        };
+        let index = match self.presets.iter().position(same_voice) {
+            Some(i) => {
+                self.presets[i] = preset.clone();
+                i
+            }
+            None => {
+                let after_last_user = self
+                    .presets
+                    .iter()
+                    .rposition(|p| p.collection == USER_COLLECTION)
+                    .map_or(self.presets.len(), |i| i + 1);
+                self.presets.insert(after_last_user, preset.clone());
+                after_last_user
+            }
+        };
+        self.selected_preset = index;
+        if let Ok(mut ctrl) = self.lock_controller() {
+            ctrl.load_voice(preset);
+        }
+        self.voice_status = format!("Saved to {}", path.to_string_lossy());
     }
 
     fn handle_keyboard_input(&mut self, ctx: &egui::Context) {
@@ -2444,6 +2639,8 @@ impl Dx7App {
                 );
                 ui.separator();
 
+                self.draw_device_section(ui);
+                ui.add_space(6.0);
                 self.draw_midi_channel_section(ui);
                 ui.add_space(6.0);
                 ui.separator();
@@ -2476,7 +2673,7 @@ impl Dx7App {
                         .clicked()
                     {
                         self.midi_channel_ui = None;
-                        if let Some(handler) = self._midi_handler.as_ref() {
+                        if let Some(handler) = self.midi_handler.as_ref() {
                             handler.set_channel(None);
                         }
                     }
@@ -2487,18 +2684,83 @@ impl Dx7App {
                             .clicked()
                         {
                             self.midi_channel_ui = Some(ch);
-                            if let Some(handler) = self._midi_handler.as_ref() {
+                            if let Some(handler) = self.midi_handler.as_ref() {
                                 handler.set_channel(Some(ch));
                             }
                         }
                     }
                 });
-            ui.label(if self._midi_handler.is_some() {
-                "MIDI device connected"
-            } else {
-                "(no MIDI device)"
-            });
         });
+    }
+
+    fn draw_device_section(&mut self, ui: &mut egui::Ui) {
+        let mut chosen_port = None;
+        let mut chosen_output = None;
+        egui::Grid::new("device_grid")
+            .num_columns(2)
+            .show(ui, |ui| {
+                ui.label(egui::RichText::new("INPUT PORT").strong());
+                let connected = self
+                    .midi_handler
+                    .as_ref()
+                    .and_then(|m| m.connected_port())
+                    .unwrap_or("(none)")
+                    .to_string();
+                egui::ComboBox::from_id_source("midi_port_combo")
+                    .selected_text(&connected)
+                    .width(280.0)
+                    .show_ui(ui, |ui| {
+                        if self.midi_ports.is_empty() {
+                            ui.label("no MIDI inputs found");
+                        }
+                        for port in &self.midi_ports {
+                            if ui.selectable_label(*port == connected, port).clicked() {
+                                chosen_port = Some(port.clone());
+                            }
+                        }
+                    });
+                ui.end_row();
+
+                ui.label(egui::RichText::new("AUDIO OUTPUT").strong());
+                let current = self
+                    .audio_engine
+                    .as_ref()
+                    .map_or("(none)", |a| a.device_name())
+                    .to_string();
+                egui::ComboBox::from_id_source("audio_output_combo")
+                    .selected_text(&current)
+                    .width(280.0)
+                    .show_ui(ui, |ui| {
+                        for device in &self.audio_devices {
+                            if ui.selectable_label(*device == current, device).clicked() {
+                                chosen_output = Some(device.clone());
+                            }
+                        }
+                    });
+                ui.end_row();
+            });
+
+        if let (Some(port), Some(midi)) = (chosen_port, self.midi_handler.as_mut()) {
+            midi.select_port(&port);
+            self.device_status = if midi.connected_port() == Some(port.as_str()) {
+                format!("MIDI input: {}", port)
+            } else {
+                format!("Could not open {}; will retry while it is listed", port)
+            };
+        }
+        if let (Some(device), Some(audio)) = (chosen_output, self.audio_engine.as_mut()) {
+            self.device_status = match audio.switch_to(&device) {
+                Ok(()) => format!("Audio output: {}", device),
+                Err(e) => format!("Audio output unchanged: {}", e),
+            };
+        }
+        if !self.device_status.is_empty() {
+            ui.label(
+                egui::RichText::new(&self.device_status)
+                    .size(11.0)
+                    .color(egui::Color32::from_rgb(120, 120, 120)),
+            );
+        }
     }
 
     fn draw_aftertouch_routing(&mut self, ui: &mut egui::Ui) {
@@ -2636,15 +2898,21 @@ impl Dx7App {
     fn draw_sysex_section(&mut self, ui: &mut egui::Ui) {
         ui.label(egui::RichText::new("SYSEX (DX7 voice exchange)").strong());
         ui.horizontal(|ui| {
-            ui.label("file:");
-            ui.add(egui::TextEdit::singleline(&mut self.sysex_path).desired_width(280.0));
-        });
-        ui.horizontal(|ui| {
-            if ui.button("Load .syx").clicked() {
-                self.load_sysex_from_path();
+            if ui.button("Load .syx…").clicked() {
+                if let Some(path) = self.sysex_dialog().pick_file() {
+                    self.sysex_path = path.to_string_lossy().into_owned();
+                    self.load_sysex_from_path();
+                }
             }
-            if ui.button("Save current voice").clicked() {
-                self.save_sysex_to_path();
+            if ui.button("Save voice as .syx…").clicked() {
+                let file_name = format!(
+                    "{}.syx",
+                    crate::preset_loader::file_stem_for(&self.voice_name)
+                );
+                if let Some(path) = self.sysex_dialog().set_file_name(file_name).save_file() {
+                    self.sysex_path = path.to_string_lossy().into_owned();
+                    self.save_sysex_to_path();
+                }
             }
         });
         if !self.sysex_status.is_empty() {
@@ -2656,19 +2924,37 @@ impl Dx7App {
         }
     }
 
+    fn sysex_dialog(&self) -> rfd::FileDialog {
+        let dialog = rfd::FileDialog::new().add_filter("DX7 SysEx", &["syx", "SYX"]);
+        match std::path::Path::new(&self.sysex_path).parent() {
+            Some(dir) if dir.is_dir() => dialog.set_directory(dir),
+            _ => dialog,
+        }
+    }
+
     fn load_sysex_from_path(&mut self) {
         let path = self.sysex_path.trim().to_string();
+        let collection = std::path::Path::new(&path)
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "SysEx".to_string());
         match std::fs::read(&path) {
             Ok(bytes) => match crate::sysex::parse_message(&bytes) {
-                Ok(crate::sysex::SysexResult::SingleVoice(preset)) => {
+                Ok(crate::sysex::SysexResult::SingleVoice(mut preset)) => {
                     let name = preset.name.clone();
+                    preset.collection = collection.clone();
+                    self.replace_collection(&collection, vec![(*preset).clone()]);
                     if let Ok(mut ctrl) = self.lock_controller() {
-                        ctrl.load_sysex_single_voice(*preset);
+                        ctrl.load_voice(*preset);
                     }
                     self.sysex_status = format!("Loaded single voice '{}' from {}", name, path);
                 }
-                Ok(crate::sysex::SysexResult::Bulk(presets)) => {
+                Ok(crate::sysex::SysexResult::Bulk(mut presets)) => {
                     let count = presets.len();
+                    for p in &mut presets {
+                        p.collection = collection.clone();
+                    }
+                    self.replace_collection(&collection, presets.clone());
                     if let Ok(mut ctrl) = self.lock_controller() {
                         ctrl.load_sysex_bulk(presets);
                     }
@@ -2685,9 +2971,20 @@ impl Dx7App {
         }
     }
 
+    /// Swaps in `presets` as the browser's `collection` (dropping any earlier
+    /// load of the same name) and selects its first voice.
+    fn replace_collection(&mut self, collection: &str, presets: Vec<Dx7Preset>) {
+        self.compare_edit = None;
+        self.presets.retain(|p| p.collection != collection);
+        self.selected_preset = self.presets.len();
+        self.presets.extend(presets);
+        self.selected_collection = Some(collection.to_string());
+    }
+
     fn save_sysex_to_path(&mut self) {
         let path = self.sysex_path.trim().to_string();
-        let preset = Dx7Preset::from_snapshot(&self.snapshot);
+        let mut preset = Dx7Preset::from_snapshot(&self.snapshot);
+        preset.name = self.voice_name.trim().to_string();
         let channel = self.midi_channel_ui.unwrap_or(0);
         let bytes = crate::sysex::encode_single_voice(&preset, channel);
         match std::fs::write(&path, &bytes) {
@@ -2782,8 +3079,8 @@ mod tests {
         assert_eq!(app.selected_operator, 0);
         assert_eq!(app.current_octave, 4);
         assert_eq!(app.display_text, "DX7 FM SYNTH");
-        assert!(app._audio_engine.is_none());
-        assert!(app._midi_handler.is_none());
+        assert!(app.audio_engine.is_none());
+        assert!(app.midi_handler.is_none());
         assert!(app.presets.is_empty());
         assert!(app.midi_channel_ui.is_none());
     }
@@ -2797,16 +3094,41 @@ mod tests {
     }
 
     #[test]
-    fn lock_engine_and_controller_succeed() {
+    fn lock_controller_succeeds() {
         let app = make_app();
-        assert!(app.lock_engine().is_ok());
         assert!(app.lock_controller().is_ok());
+    }
+
+    #[test]
+    fn select_preset_reaches_the_engine_through_the_command_queue() {
+        let mut app = make_app_with_presets(vec![make_preset("SEVEN", 7, "edu")]);
+        app.select_preset(0);
+
+        let algorithm_seen = |app: &mut Dx7App| {
+            if let Ok(eng) = app.test_engine().lock() {
+                eng.update_snapshot();
+            }
+            app.update_snapshot();
+            app.snapshot.algorithm
+        };
+        assert_ne!(
+            algorithm_seen(&mut app),
+            7,
+            "GUI wrote to the engine directly"
+        );
+
+        if let Ok(mut eng) = app.test_engine().lock() {
+            eng.process_commands();
+        }
+        assert_eq!(algorithm_seen(&mut app), 7);
+        assert_eq!(app.selected_preset, 0);
+        assert_eq!(app.display_text, "LOADED: SEVEN");
     }
 
     #[test]
     fn update_snapshot_refreshes_field_from_controller() {
         let mut app = make_app();
-        if let Ok(mut eng) = app.engine.lock() {
+        if let Ok(mut eng) = app.test_engine().lock() {
             eng.set_algorithm(11);
             eng.update_snapshot();
         }
@@ -2954,9 +3276,194 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
+    #[test]
+    fn load_sysex_bulk_shows_the_bank_as_a_browser_collection() {
+        let msg = crate::sysex::build_sysex_message(9, &vec![0u8; crate::sysex::VMEM_LEN]);
+        let path = temp_path("MyBank.syx");
+        std::fs::write(&path, &msg).expect("write");
+        let mut app = make_app_with_presets(vec![make_preset("JSON", 1, "edu")]);
+        app.sysex_path = path.to_string_lossy().into_owned();
+
+        app.load_sysex_from_path();
+        app.load_sysex_from_path();
+
+        let bank: Vec<_> = app
+            .presets
+            .iter()
+            .filter(|p| p.collection == "MyBank")
+            .collect();
+        assert_eq!(bank.len(), 32, "reloading must not duplicate the bank");
+        assert_eq!(app.presets.len(), 33);
+        assert_eq!(app.presets[app.selected_preset].collection, "MyBank");
+        assert_eq!(app.selected_collection.as_deref(), Some("MyBank"));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn load_sysex_single_voice_is_selectable_in_the_browser() {
+        let mut app = make_app();
+        let path = temp_path("OneVoice.syx");
+        app.sysex_path = path.to_string_lossy().into_owned();
+        app.save_sysex_to_path();
+
+        app.load_sysex_from_path();
+
+        assert_eq!(app.presets.len(), 1);
+        assert_eq!(app.presets[app.selected_preset].collection, "OneVoice");
+        let _ = std::fs::remove_file(&path);
+    }
+
     // ---------------------------------------------------------------------
     // Render path coverage — drives the full GUI for one frame per mode.
     // ---------------------------------------------------------------------
+
+    fn user_dir_for_test(app: &mut Dx7App, name: &str) -> std::path::PathBuf {
+        let dir = temp_path(name).join("user");
+        let _ = std::fs::remove_dir_all(&dir);
+        app.user_patches_dir = dir.clone();
+        dir
+    }
+
+    #[test]
+    fn save_voice_writes_json_and_selects_it_in_the_user_collection() {
+        let mut app = make_app_with_presets(vec![make_preset("JSON", 1, "edu")]);
+        let dir = user_dir_for_test(&mut app, "save-voice");
+        app.voice_name = "MY PAD".to_string();
+
+        app.save_voice();
+        app.save_voice();
+
+        assert!(dir.join("my-pad.json").exists());
+        let user: Vec<_> = app
+            .presets
+            .iter()
+            .filter(|p| p.collection == "user")
+            .collect();
+        assert_eq!(user.len(), 1, "saving the same name twice must overwrite");
+        assert_eq!(app.presets[app.selected_preset].name, "MY PAD");
+        assert!(app.voice_status.contains("my-pad.json"));
+
+        let mut eng = app.test_engine().lock().unwrap();
+        eng.process_commands();
+        assert_eq!(eng.preset_name, "MY PAD");
+        assert!(!eng.voice_edited);
+        drop(eng);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn voice_name_follows_the_loaded_voice() {
+        let mut app = make_app_with_presets(vec![make_preset("FIRST", 1, "edu")]);
+        app.select_preset(0);
+        if let Ok(mut eng) = app.test_engine().lock() {
+            eng.process_commands();
+            eng.update_snapshot();
+        }
+        app.update_snapshot();
+        assert_eq!(app.voice_name, "FIRST");
+
+        app.voice_name = "TYPED".to_string();
+        app.update_snapshot();
+        assert_eq!(app.voice_name, "TYPED", "typing must survive repaints");
+    }
+
+    /// Lets the engine consume queued commands and the GUI see the result.
+    fn sync(app: &mut Dx7App) {
+        if let Ok(mut eng) = app.test_engine().lock() {
+            eng.process_commands();
+            eng.update_snapshot();
+        }
+        app.update_snapshot();
+    }
+
+    fn app_with_edited_voice() -> Dx7App {
+        let mut app = make_app_with_presets(vec![
+            make_preset("ORIG", 3, "edu"),
+            make_preset("OTHER", 5, "edu"),
+        ]);
+        app.select_preset(0);
+        sync(&mut app);
+        app.lock_controller().unwrap().set_algorithm(9);
+        sync(&mut app);
+        app
+    }
+
+    #[test]
+    fn compare_toggles_between_the_original_and_the_edit_buffer() {
+        let mut app = app_with_edited_voice();
+
+        app.toggle_compare();
+        sync(&mut app);
+        assert!(app.compare_edit.is_some());
+        assert_eq!(app.snapshot.algorithm, 3);
+        assert!(!app.snapshot.voice_edited);
+
+        app.toggle_compare();
+        sync(&mut app);
+        assert!(app.compare_edit.is_none());
+        assert_eq!(app.snapshot.algorithm, 9);
+        assert!(app.snapshot.voice_edited);
+    }
+
+    #[test]
+    fn compare_needs_an_edited_voice() {
+        let mut app = make_app_with_presets(vec![make_preset("ORIG", 3, "edu")]);
+        app.select_preset(0);
+        sync(&mut app);
+        app.toggle_compare();
+        assert!(app.compare_edit.is_none());
+    }
+
+    #[test]
+    fn loading_another_voice_leaves_compare() {
+        let mut app = app_with_edited_voice();
+        app.toggle_compare();
+        sync(&mut app);
+
+        app.select_preset(1);
+        sync(&mut app);
+
+        assert!(app.compare_edit.is_none());
+        assert_eq!(app.snapshot.algorithm, 5);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn opening_the_midi_panel_lists_a_newly_plugged_port() {
+        use midir::os::unix::VirtualOutput;
+        let name = format!("synth-fm-rs gui test {}", std::process::id());
+        let mut app = make_app();
+        app.midi_handler = Some(MidiHandler::new(app.controller.clone()));
+        app.poll_devices();
+
+        let _keyboard = midir::MidiOutput::new("synth-fm-rs gui test")
+            .expect("midi out")
+            .create_virtual(&name)
+            .expect("virtual port");
+        app.display_mode = DisplayMode::Midi;
+        app.last_device_poll = None;
+        app.poll_devices();
+
+        assert!(app.midi_ports.contains(&name));
+    }
+
+    #[test]
+    fn idle_frames_do_not_mark_the_voice_edited() {
+        let mut app = make_app();
+        for mode in [
+            DisplayMode::Voice,
+            DisplayMode::Operator,
+            DisplayMode::LFO,
+            DisplayMode::Effects,
+            DisplayMode::Midi,
+        ] {
+            app.display_mode = mode;
+            run_one_frame(|ctx| app.render(ctx));
+        }
+        let mut eng = app.test_engine().lock().unwrap();
+        eng.process_commands();
+        assert!(!eng.voice_edited);
+    }
 
     #[test]
     fn render_voice_mode_completes_without_panic() {
@@ -3003,7 +3510,7 @@ mod tests {
         let mut app = make_app();
         app.display_mode = DisplayMode::Operator;
         for alg in 1..=32u8 {
-            if let Ok(mut eng) = app.engine.lock() {
+            if let Ok(mut eng) = app.test_engine().lock() {
                 eng.set_algorithm(alg);
                 eng.update_snapshot();
             }
@@ -3043,7 +3550,7 @@ mod tests {
         if let Ok(mut ctrl) = app.controller.lock() {
             ctrl.note_on(60, 100);
         }
-        if let Ok(mut eng) = app.engine.lock() {
+        if let Ok(mut eng) = app.test_engine().lock() {
             eng.process_commands();
             eng.update_snapshot();
         }
@@ -3054,7 +3561,7 @@ mod tests {
     #[test]
     fn render_with_effects_enabled_exercises_effect_drawers() {
         let mut app = make_app();
-        if let Ok(mut eng) = app.engine.lock() {
+        if let Ok(mut eng) = app.test_engine().lock() {
             eng.effects.chorus.enabled = true;
             eng.effects.delay.enabled = true;
             eng.effects.reverb.enabled = true;
@@ -3075,7 +3582,7 @@ mod tests {
             if let Ok(mut ctrl) = app.controller.lock() {
                 ctrl.set_voice_mode(mode);
             }
-            if let Ok(mut eng) = app.engine.lock() {
+            if let Ok(mut eng) = app.test_engine().lock() {
                 eng.process_commands();
                 eng.update_snapshot();
             }
@@ -3097,7 +3604,7 @@ mod tests {
     #[test]
     fn render_with_pitch_eg_active_in_lfo_panel() {
         let mut app = make_app();
-        if let Ok(mut eng) = app.engine.lock() {
+        if let Ok(mut eng) = app.test_engine().lock() {
             eng.pitch_eg.enabled = true;
             eng.pitch_eg.level1 = 80.0;
             eng.update_snapshot();

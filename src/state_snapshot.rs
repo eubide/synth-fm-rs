@@ -200,6 +200,8 @@ impl Default for PitchEgSnapshot {
 pub struct SynthSnapshot {
     // Voice info
     pub preset_name: String,
+    /// The voice differs from what was last loaded (DX7 "EDIT" state).
+    pub voice_edited: bool,
     pub algorithm: u8,
     pub active_voices: u8,
 
@@ -270,6 +272,7 @@ impl Default for SynthSnapshot {
     fn default() -> Self {
         Self {
             preset_name: "Init Voice".to_string(),
+            voice_edited: false,
             algorithm: 1,
             active_voices: 0,
 

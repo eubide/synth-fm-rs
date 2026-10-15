@@ -85,7 +85,7 @@ fn main() -> Result<(), eframe::Error> {
     let engine = Arc::new(Mutex::new(engine));
     let controller = Arc::new(Mutex::new(controller));
 
-    let patches_dir = std::path::Path::new("patches");
+    let patches_dir = std::path::Path::new(preset_loader::PATCHES_DIR);
     let presets = preset_loader::scan_patches_dir(patches_dir);
     if presets.is_empty() {
         log::warn!(
@@ -106,18 +106,7 @@ fn main() -> Result<(), eframe::Error> {
     let underrun_counter = Arc::new(AtomicUsize::new(0));
     let audio_engine = AudioEngine::new(probe, engine.clone(), underrun_counter);
 
-    // Create MIDI handler
-    let _midi_handler = match MidiHandler::new(controller.clone()) {
-        Ok(handler) => {
-            log::info!("MIDI input initialized successfully");
-            Some(handler)
-        }
-        Err(e) => {
-            log::warn!("Failed to initialize MIDI input: {}", e);
-            log::info!("Continuing without MIDI support...");
-            None
-        }
-    };
+    let midi_handler = MidiHandler::new(controller.clone());
 
     // Play startup melody
     play_startup_melody(controller.clone());
@@ -127,10 +116,9 @@ fn main() -> Result<(), eframe::Error> {
         options,
         Box::new(move |_cc| {
             Ok(Box::new(Dx7App::new(
-                engine,
                 controller,
                 audio_engine,
-                _midi_handler,
+                Some(midi_handler),
                 presets,
             )))
         }),

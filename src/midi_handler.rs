@@ -6,48 +6,112 @@ use std::sync::{Arc, Mutex};
 /// Sentinel for OMNI mode — accept any channel.
 const MIDI_OMNI: u8 = 0xFF;
 
+/// Port `MidiHandler::refresh` should open: the chosen one, or the first
+/// available when none was chosen. `None` while connected to a present port.
+fn port_to_open(ports: &[String], connected: Option<&str>, wanted: Option<&str>) -> Option<String> {
+    if connected.is_some_and(|c| ports.iter().any(|p| p == c)) {
+        return None;
+    }
+    match wanted {
+        Some(w) => ports.iter().find(|p| *p == w).cloned(),
+        None => ports.first().cloned(),
+    }
+}
+
 pub struct MidiHandler {
-    _connection: Option<MidiInputConnection<()>>,
+    controller: Arc<Mutex<SynthController>>,
+    /// Lists ports; `MidiInput::connect` consumes the client it is called on.
+    scanner: Option<MidiInput>,
+    connection: Option<MidiInputConnection<()>>,
+    connected_port: Option<String>,
+    /// Port picked in the GUI; `None` follows the first available port.
+    wanted_port: Option<String>,
     /// 0..15 = specific MIDI channel (1..16 to the user); MIDI_OMNI = listen on all.
     /// Shared with the midir callback so the GUI can change it without locking.
     channel_filter: Arc<AtomicU8>,
 }
 
 impl MidiHandler {
-    pub fn new(
-        controller: Arc<Mutex<SynthController>>,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn new(controller: Arc<Mutex<SynthController>>) -> Self {
+        let scanner = MidiInput::new("DX7 MIDI Scanner")
+            .map_err(|e| log::warn!("MIDI unavailable: {}", e))
+            .ok();
+        let mut handler = Self {
+            controller,
+            scanner,
+            connection: None,
+            connected_port: None,
+            wanted_port: None,
+            channel_filter: Arc::new(AtomicU8::new(MIDI_OMNI)),
+        };
+        handler.refresh();
+        handler
+    }
+
+    pub fn port_names(&self) -> Vec<String> {
+        let Some(scanner) = &self.scanner else {
+            return Vec::new();
+        };
+        scanner
+            .ports()
+            .iter()
+            .filter_map(|p| scanner.port_name(p).ok())
+            .collect()
+    }
+
+    pub fn connected_port(&self) -> Option<&str> {
+        self.connected_port.as_deref()
+    }
+
+    /// Switch to `name` and keep following it across disconnects.
+    pub fn select_port(&mut self, name: &str) {
+        self.wanted_port = Some(name.to_string());
+        self.close();
+        self.refresh();
+    }
+
+    /// Drops a connection whose device went away and opens the wanted port
+    /// once it is present. Call periodically.
+    pub fn refresh(&mut self) {
+        let ports = self.port_names();
+        if let Some(gone) = self.connected_port.as_ref().filter(|c| !ports.contains(c)) {
+            log::info!("MIDI input disconnected: {}", gone);
+            self.close();
+        }
+        let wanted = self.wanted_port.as_deref();
+        if let Some(name) = port_to_open(&ports, self.connected_port.as_deref(), wanted) {
+            match self.open(&name) {
+                Ok(()) => log::info!("Using MIDI input: {}", name),
+                Err(e) => log::warn!("Failed to open MIDI input {}: {}", name, e),
+            }
+        }
+    }
+
+    fn open(&mut self, name: &str) -> Result<(), Box<dyn std::error::Error>> {
         let midi_in = MidiInput::new("DX7 MIDI Input")?;
-
-        let ports = midi_in.ports();
-        if ports.is_empty() {
-            return Err("No MIDI input devices found".into());
-        }
-
-        log::info!("Available MIDI inputs:");
-        for (i, port) in ports.iter().enumerate() {
-            log::info!("  {}: {}", i, midi_in.port_name(port)?);
-        }
-
-        let port = &ports[0];
-        log::info!("Using MIDI input: {}", midi_in.port_name(port)?);
-
-        let channel_filter = Arc::new(AtomicU8::new(MIDI_OMNI));
-        let filter_for_callback = channel_filter.clone();
-
+        let port = midi_in
+            .ports()
+            .into_iter()
+            .find(|p| midi_in.port_name(p).is_ok_and(|n| n == name))
+            .ok_or("port no longer present")?;
+        let controller = self.controller.clone();
+        let filter = self.channel_filter.clone();
         let connection = midi_in.connect(
-            port,
+            &port,
             "DX7 MIDI",
             move |_timestamp, message, _| {
-                Self::handle_midi_message(&controller, message, &filter_for_callback);
+                Self::handle_midi_message(&controller, message, &filter);
             },
             (),
         )?;
+        self.connection = Some(connection);
+        self.connected_port = Some(name.to_string());
+        Ok(())
+    }
 
-        Ok(Self {
-            _connection: Some(connection),
-            channel_filter,
-        })
+    fn close(&mut self) {
+        self.connection = None;
+        self.connected_port = None;
     }
 
     /// Configure which MIDI channel to listen on. `None` selects OMNI mode (default).
@@ -256,7 +320,7 @@ impl MidiHandler {
             Ok(SysexResult::SingleVoice(preset)) => {
                 log::info!("SysEx: single voice '{}' received", preset.name);
                 if let Ok(mut ctrl) = controller.lock() {
-                    ctrl.load_sysex_single_voice(*preset);
+                    ctrl.load_voice(*preset);
                 }
             }
             Ok(SysexResult::Bulk(presets)) => {
@@ -297,7 +361,7 @@ impl MidiHandler {
 
 impl Drop for MidiHandler {
     fn drop(&mut self) {
-        if self._connection.is_some() {
+        if self.connection.is_some() {
             log::info!("MIDI connection closed");
         }
     }
@@ -314,6 +378,81 @@ mod tests {
             Arc::new(Mutex::new(controller)),
             Arc::new(AtomicU8::new(MidiHandler::omni_sentinel())),
         )
+    }
+
+    fn ports(names: &[&str]) -> Vec<String> {
+        names.iter().map(|n| n.to_string()).collect()
+    }
+
+    #[test]
+    fn port_to_open_picks_the_first_port_when_none_was_chosen() {
+        assert_eq!(
+            port_to_open(&ports(&["A", "B"]), None, None),
+            Some("A".into())
+        );
+        assert_eq!(port_to_open(&ports(&[]), None, None), None);
+    }
+
+    #[test]
+    fn port_to_open_keeps_a_live_connection() {
+        assert_eq!(port_to_open(&ports(&["A", "B"]), Some("B"), None), None);
+    }
+
+    #[test]
+    fn port_to_open_waits_for_the_chosen_port_to_come_back() {
+        assert_eq!(port_to_open(&ports(&["A"]), None, Some("B")), None);
+        assert_eq!(
+            port_to_open(&ports(&["A", "B"]), None, Some("B")),
+            Some("B".into())
+        );
+    }
+
+    #[test]
+    fn port_to_open_reopens_after_the_connected_port_vanished() {
+        assert_eq!(
+            port_to_open(&ports(&["A"]), Some("B"), None),
+            Some("A".into())
+        );
+    }
+
+    /// A virtual source stands in for a keyboard being plugged, played,
+    /// unplugged and plugged back.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn follows_a_port_across_disconnects() {
+        use midir::os::unix::VirtualOutput;
+        let name = format!("synth-fm-rs test {}", std::process::id());
+        let plug = || {
+            midir::MidiOutput::new("synth-fm-rs test")
+                .expect("midi out")
+                .create_virtual(&name)
+                .expect("virtual port")
+        };
+        let (mut engine, controller) = create_synth(44_100.0);
+        let mut handler = MidiHandler::new(Arc::new(Mutex::new(controller)));
+
+        let mut keyboard = plug();
+        handler.select_port(&name);
+        assert_eq!(handler.connected_port(), Some(name.as_str()));
+
+        keyboard.send(&[0x90, 60, 100]).expect("send");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while !engine.voices().iter().any(|v| v.active) && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            engine.process_commands();
+        }
+        assert!(
+            engine.voices().iter().any(|v| v.active),
+            "note never arrived"
+        );
+
+        drop(keyboard);
+        handler.refresh();
+        assert_eq!(handler.connected_port(), None);
+
+        let _keyboard = plug();
+        handler.refresh();
+        assert_eq!(handler.connected_port(), Some(name.as_str()));
     }
 
     #[test]
@@ -453,7 +592,11 @@ mod tests {
     /// covered without needing an actual MIDI device.
     fn stub_handler() -> MidiHandler {
         MidiHandler {
-            _connection: None,
+            controller: make_controller().0,
+            scanner: None,
+            connection: None,
+            connected_port: None,
+            wanted_port: None,
             channel_filter: Arc::new(AtomicU8::new(MidiHandler::omni_sentinel())),
         }
     }

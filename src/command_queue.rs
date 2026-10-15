@@ -202,9 +202,12 @@ pub enum SynthCommand {
     // Preset loading (for MIDI program change)
     LoadPreset(usize),
 
-    /// Apply a preset parsed from a DX7 SysEx single-voice dump as the live edit
-    /// buffer. The bank stays untouched.
-    LoadSysExSingleVoice(Box<Dx7Preset>),
+    /// Apply a voice (browser selection or SysEx single-voice dump) as the live
+    /// edit buffer. The bank stays untouched.
+    LoadVoice(Box<Dx7Preset>),
+
+    /// Apply an edit buffer parked by COMPARE; the voice stays marked edited.
+    RestoreEditBuffer(Box<Dx7Preset>),
 
     /// Replace the entire 32-voice bank with a SysEx bulk dump.
     LoadSysExBulk(Vec<Dx7Preset>),

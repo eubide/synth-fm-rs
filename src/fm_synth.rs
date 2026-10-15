@@ -262,6 +262,8 @@ pub struct SynthEngine {
     /// Used by mono modes to fall back to the previous held note when the active one is released.
     mono_held_order: Vec<u8>,
     pub preset_name: String,
+    /// True once a voice parameter changes after the last voice load.
+    pub voice_edited: bool,
     lfo: LFO,
     pub pitch_eg: PitchEg,
     pub effects: EffectsChain,
@@ -348,6 +350,7 @@ impl SynthEngine {
             held_notes: HashMap::new(),
             mono_held_order: Vec::with_capacity(8),
             preset_name: "Init Voice".to_string(),
+            voice_edited: false,
             lfo: LFO::new(sample_rate),
             pitch_eg: PitchEg::new(sample_rate),
             effects,
@@ -403,6 +406,18 @@ impl SynthEngine {
     }
 
     fn handle_command(&mut self, cmd: SynthCommand) {
+        if matches!(
+            cmd,
+            SynthCommand::SetAlgorithm(_)
+                | SynthCommand::SetTranspose(_)
+                | SynthCommand::SetPitchModSensitivity(_)
+                | SynthCommand::SetOperatorParam { .. }
+                | SynthCommand::SetEnvelopeParam { .. }
+                | SynthCommand::SetPitchEgParam { .. }
+                | SynthCommand::SetLfoParam { .. }
+        ) {
+            self.voice_edited = true;
+        }
         match cmd {
             SynthCommand::NoteOn { note, velocity } => self.note_on(note, velocity),
             SynthCommand::NoteOff { note } => self.note_off(note),
@@ -563,17 +578,24 @@ impl SynthEngine {
             SynthCommand::LoadPreset(preset_idx) => {
                 self.load_preset(preset_idx);
             }
-            SynthCommand::LoadSysExSingleVoice(preset) => {
+            SynthCommand::LoadVoice(preset) => {
                 preset.apply_to_synth(self);
+                self.voice_edited = false;
+            }
+            SynthCommand::RestoreEditBuffer(preset) => {
+                preset.apply_to_synth(self);
+                self.voice_edited = true;
             }
             SynthCommand::LoadSysExBulk(presets) => {
                 if let Some(first) = presets.first().cloned() {
                     first.apply_to_synth(self);
+                    self.voice_edited = false;
                 }
                 self.set_presets(presets);
             }
             SynthCommand::VoiceInitialize => {
                 self.voice_initialize();
+                self.voice_edited = false;
             }
             SynthCommand::Panic => {
                 self.panic();
@@ -906,6 +928,7 @@ impl SynthEngine {
         // Avoid double-borrow by cloning the preset (cheap: ~6 ops + 6 envs + Option fields).
         let preset = self.presets[index].clone();
         preset.apply_to_synth(self);
+        self.voice_edited = false;
         self.current_preset_index = index;
         log::debug!("Loaded preset {}: {}", index, preset.name);
     }
@@ -1043,6 +1066,7 @@ impl SynthEngine {
 
         let snapshot = SynthSnapshot {
             preset_name: self.preset_name.clone(),
+            voice_edited: self.voice_edited,
             algorithm: self.algorithm,
             active_voices,
             master_volume: self.master_volume,
@@ -1550,9 +1574,13 @@ impl SynthController {
         self.send(SynthCommand::LoadPreset(index));
     }
 
-    /// Apply a SysEx-parsed single voice as the live edit buffer.
-    pub fn load_sysex_single_voice(&mut self, preset: Dx7Preset) {
-        self.send(SynthCommand::LoadSysExSingleVoice(Box::new(preset)));
+    /// Apply a voice as the live edit buffer.
+    pub fn load_voice(&mut self, preset: Dx7Preset) {
+        self.send(SynthCommand::LoadVoice(Box::new(preset)));
+    }
+
+    pub fn restore_edit_buffer(&mut self, preset: Dx7Preset) {
+        self.send(SynthCommand::RestoreEditBuffer(Box::new(preset)));
     }
 
     /// Replace the entire bank with the given list of presets.
@@ -2314,13 +2342,47 @@ mod tests {
     }
 
     #[test]
-    fn engine_load_sysex_single_voice_applies() {
+    fn engine_load_voice_applies() {
         let (mut engine, mut ctrl) = make_engine();
         let preset = make_preset("SYSEX", 7);
-        ctrl.load_sysex_single_voice(preset);
+        ctrl.load_voice(preset);
         engine.process_commands();
         assert_eq!(engine.preset_name, "SYSEX");
         assert_eq!(engine.algorithm, 7);
+    }
+
+    #[test]
+    fn voice_edits_mark_the_voice_edited_until_the_next_load() {
+        let (mut engine, mut ctrl) = make_engine();
+        ctrl.load_voice(make_preset("CLEAN", 3));
+        engine.process_commands();
+        assert!(!engine.voice_edited);
+
+        ctrl.set_master_volume(0.5);
+        engine.process_commands();
+        assert!(
+            !engine.voice_edited,
+            "global params are not part of the voice"
+        );
+
+        ctrl.set_algorithm(9);
+        engine.process_commands();
+        assert!(engine.voice_edited);
+        engine.update_snapshot();
+        assert!(ctrl.snapshot().voice_edited);
+
+        ctrl.load_voice(make_preset("CLEAN", 3));
+        engine.process_commands();
+        assert!(!engine.voice_edited);
+    }
+
+    #[test]
+    fn restore_edit_buffer_applies_the_voice_and_keeps_it_marked_edited() {
+        let (mut engine, mut ctrl) = make_engine();
+        ctrl.restore_edit_buffer(make_preset("EDITED", 12));
+        engine.process_commands();
+        assert_eq!(engine.algorithm, 12);
+        assert!(engine.voice_edited);
     }
 
     #[test]
