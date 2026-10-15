@@ -65,7 +65,7 @@ This is a DX7-style FM synthesizer emulator built with Rust, using a **lock-free
 - Comprehensive validation system for algorithm integrity
 - Feedback loop detection and handling
 
-**GUI System** (`gui.rs`) - egui-based DX7 interface emulation:
+**GUI System** (`gui/`) - egui-based DX7 interface emulation; `mod.rs` holds `Dx7App` and the frame loop, one module per panel (`header`, `voice`, `operator`, `algorithm`, `lfo`, `effects`, `midi`):
 - Four operation modes: VOICE, OPERATOR, LFO, EFFECTS
 - Real-time parameter control via command queue (lock-free)
 - Reads state from snapshots (never blocks audio thread)

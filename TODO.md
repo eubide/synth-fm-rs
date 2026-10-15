@@ -165,7 +165,7 @@ Loader JSON cubre todo el banco `mark/` (formato itsjoesullivan/dx7-patches).
 
 **Otros:**
 
-- [ ] (implementación) Modularizar `gui.rs` (2300+ líneas)
+- [x] (implementación) Modularizar `gui.rs` — `src/gui/`, un módulo por panel
 - [ ] (genérico) Undo / Redo
 
 ---
@@ -229,7 +229,7 @@ MSRV: Rust 1.95 (lo exige `eframe`). `cargo audit` sin vulnerabilidades;
 (RUSTSEC-2026-0192).
 
 - [x] (implementación) **`eframe`/`egui` 0.28 → 0.36** — los sliders se crean
-      con `gui.rs:edit_slider` (`SliderClamping::Edits`): con el clamping por
+      con `gui/mod.rs:edit_slider` (`SliderClamping::Edits`): con el clamping por
       defecto egui reescribe el valor en cada frame y lo reporta como cambio.
 
 > **Validación auditiva pendiente** del upgrade reciente: probar con
