@@ -170,13 +170,13 @@ impl AudioEngine {
         let config = config.into();
         let stream = match format {
             cpal::SampleFormat::F32 => {
-                Self::build_stream::<f32>(device, &config, engine, underrun_counter, stream_failed)
+                Self::build_stream::<f32>(device, config, engine, underrun_counter, stream_failed)
             }
             cpal::SampleFormat::I16 => {
-                Self::build_stream::<i16>(device, &config, engine, underrun_counter, stream_failed)
+                Self::build_stream::<i16>(device, config, engine, underrun_counter, stream_failed)
             }
             cpal::SampleFormat::U16 => {
-                Self::build_stream::<u16>(device, &config, engine, underrun_counter, stream_failed)
+                Self::build_stream::<u16>(device, config, engine, underrun_counter, stream_failed)
             }
             format => return Err(format!("Unsupported sample format: {:?}", format)),
         }
@@ -187,11 +187,11 @@ impl AudioEngine {
 
     fn build_stream<T>(
         device: &cpal::Device,
-        config: &cpal::StreamConfig,
+        config: cpal::StreamConfig,
         engine: Arc<Mutex<SynthEngine>>,
         underrun_counter: Arc<AtomicUsize>,
         stream_failed: Arc<AtomicBool>,
-    ) -> Result<cpal::Stream, cpal::BuildStreamError>
+    ) -> Result<cpal::Stream, cpal::Error>
     where
         T: cpal::Sample + cpal::SizedSample + cpal::FromSample<f32>,
     {
@@ -247,8 +247,8 @@ impl AudioEngine {
             move |err| {
                 log::error!("Audio stream error: {}", err);
                 if matches!(
-                    err,
-                    cpal::StreamError::DeviceNotAvailable | cpal::StreamError::StreamInvalidated
+                    err.kind(),
+                    cpal::ErrorKind::DeviceNotAvailable | cpal::ErrorKind::StreamInvalidated
                 ) {
                     stream_failed.store(true, Ordering::Relaxed);
                 }

@@ -8,16 +8,16 @@ license = "MIT"
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }
 
 [dependencies]
-eframe = "0.28"
-egui = "0.28"
-cpal = "0.17"
+eframe = "0.36"
+egui = "0.36"
+cpal = "0.18"
 rand = "0.10"
 midir = "0.11"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 log = "0.4"
 env_logger = "0.11"
-rtrb = "0.3"
+rtrb = "0.4"
 rfd = "0.17"
 
 [dev-dependencies]

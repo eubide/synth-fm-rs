@@ -145,16 +145,17 @@ impl Dx7App {
         }
     }
 
-    /// Frame-independent rendering: drives one full GUI frame against the given
-    /// `egui::Context`. Split out from `App::update` so tests can call it
-    /// without constructing an `eframe::Frame`.
-    pub(crate) fn render(&mut self, ctx: &egui::Context) {
+    /// Frame-independent rendering: drives one full GUI frame into the root
+    /// `Ui`. Split out from `App::ui` so tests can call it without
+    /// constructing an `eframe::Frame`.
+    pub(crate) fn render(&mut self, ui: &mut egui::Ui) {
+        let ctx = ui.ctx().clone();
         self.update_snapshot();
         self.poll_devices();
-        self.handle_keyboard_input(ctx);
+        self.handle_keyboard_input(&ctx);
         ctx.set_visuals(egui::Visuals::light());
 
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
             ui.vertical_centered(|ui| {
                 ui.heading("DX7-STYLE DIGITAL FM SYNTHESIZER");
             });
@@ -403,9 +404,8 @@ impl Dx7App {
                             ui.horizontal(|ui| {
                                 ui.label("MASTER VOL:");
                                 let mut volume = self.snapshot.master_volume;
-                                let slider_response = ui.add(
-                                    egui::Slider::new(&mut volume, 0.0..=1.0).show_value(false),
-                                );
+                                let slider_response =
+                                    ui.add(edit_slider(&mut volume, 0.0..=1.0).show_value(false));
                                 if slider_response.changed() {
                                     if let Ok(mut ctrl) = self.lock_controller() {
                                         ctrl.set_master_volume(volume);
@@ -442,9 +442,7 @@ impl Dx7App {
                                 ui.label("MASTER VOL:");
                                 let mut volume = self.snapshot.master_volume;
                                 if ui
-                                    .add(
-                                        egui::Slider::new(&mut volume, 0.0..=1.0).show_value(false),
-                                    )
+                                    .add(edit_slider(&mut volume, 0.0..=1.0).show_value(false))
                                     .changed()
                                 {
                                     if let Ok(mut ctrl) = self.lock_controller() {
@@ -466,7 +464,7 @@ impl Dx7App {
                                 let mut master_tune = self.snapshot.master_tune;
                                 if ui
                                     .add(
-                                        egui::Slider::new(&mut master_tune, -150.0..=150.0)
+                                        edit_slider(&mut master_tune, -150.0..=150.0)
                                             .show_value(false),
                                     )
                                     .changed()
@@ -488,10 +486,7 @@ impl Dx7App {
                                 ui.label("PITCH BEND:");
                                 let mut pb_range = self.snapshot.pitch_bend_range;
                                 if ui
-                                    .add(
-                                        egui::Slider::new(&mut pb_range, 0.0..=12.0)
-                                            .show_value(false),
-                                    )
+                                    .add(edit_slider(&mut pb_range, 0.0..=12.0).show_value(false))
                                     .changed()
                                 {
                                     if let Ok(mut ctrl) = self.lock_controller() {
@@ -560,10 +555,7 @@ impl Dx7App {
                                         ui.label("TIME:");
                                         let mut pt = porta_time;
                                         if ui
-                                            .add(
-                                                egui::Slider::new(&mut pt, 0.0..=99.0)
-                                                    .show_value(false),
-                                            )
+                                            .add(edit_slider(&mut pt, 0.0..=99.0).show_value(false))
                                             .changed()
                                         {
                                             if let Ok(mut ctrl) = self.lock_controller() {
@@ -665,7 +657,7 @@ impl Dx7App {
                     ui.label("TIME:");
                     let mut pt = porta_time;
                     if ui
-                        .add(egui::Slider::new(&mut pt, 0.0..=99.0).show_value(false))
+                        .add(edit_slider(&mut pt, 0.0..=99.0).show_value(false))
                         .changed()
                     {
                         if let Ok(mut ctrl) = self.lock_controller() {
@@ -687,7 +679,7 @@ impl Dx7App {
             ui.label("TUNE:");
             let mut tune = master_tune;
             if ui
-                .add(egui::Slider::new(&mut tune, -150.0..=150.0).show_value(false))
+                .add(edit_slider(&mut tune, -150.0..=150.0).show_value(false))
                 .changed()
             {
                 if let Ok(mut ctrl) = self.lock_controller() {
@@ -708,7 +700,7 @@ impl Dx7App {
             ui.label("BEND:");
             let mut pb = pb_range;
             if ui
-                .add(egui::Slider::new(&mut pb, 0.0..=12.0).show_value(false))
+                .add(edit_slider(&mut pb, 0.0..=12.0).show_value(false))
                 .changed()
             {
                 if let Ok(mut ctrl) = self.lock_controller() {
@@ -937,7 +929,7 @@ impl Dx7App {
             }
 
             egui::ScrollArea::vertical()
-                .max_height(320.0)
+                .max_height(300.0)
                 .show(ui, |ui| {
                     let mut last_coll: Option<String> = None;
                     for &global_idx in &filtered_indices {
@@ -1133,8 +1125,8 @@ impl Dx7App {
 }
 
 impl eframe::App for Dx7App {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.render(ctx);
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.render(ui);
     }
 }
 
@@ -1159,7 +1151,7 @@ impl Dx7App {
                         ui.horizontal(|ui| {
                             ui.label("Rate:");
                             if ui
-                                .add(egui::Slider::new(&mut lfo_rate, 0.0..=99.0).integer())
+                                .add(edit_slider(&mut lfo_rate, 0.0..=99.0).integer())
                                 .changed()
                             {
                                 if let Ok(mut ctrl) = self.lock_controller() {
@@ -1170,7 +1162,7 @@ impl Dx7App {
                         ui.horizontal(|ui| {
                             ui.label("Delay:");
                             if ui
-                                .add(egui::Slider::new(&mut lfo_delay, 0.0..=99.0).integer())
+                                .add(edit_slider(&mut lfo_delay, 0.0..=99.0).integer())
                                 .changed()
                             {
                                 if let Ok(mut ctrl) = self.lock_controller() {
@@ -1190,7 +1182,7 @@ impl Dx7App {
                         ui.horizontal(|ui| {
                             ui.label("Pitch:");
                             if ui
-                                .add(egui::Slider::new(&mut lfo_pitch_depth, 0.0..=99.0).integer())
+                                .add(edit_slider(&mut lfo_pitch_depth, 0.0..=99.0).integer())
                                 .changed()
                             {
                                 if let Ok(mut ctrl) = self.lock_controller() {
@@ -1201,7 +1193,7 @@ impl Dx7App {
                         ui.horizontal(|ui| {
                             ui.label("Amp:");
                             if ui
-                                .add(egui::Slider::new(&mut lfo_amp_depth, 0.0..=99.0).integer())
+                                .add(edit_slider(&mut lfo_amp_depth, 0.0..=99.0).integer())
                                 .changed()
                             {
                                 if let Ok(mut ctrl) = self.lock_controller() {
@@ -1211,7 +1203,7 @@ impl Dx7App {
                         });
                         ui.horizontal(|ui| {
                             ui.label("Wave:");
-                            egui::ComboBox::from_id_source("lfo_waveform")
+                            egui::ComboBox::from_id_salt("lfo_waveform")
                                 .selected_text(lfo_waveform.name())
                                 .show_ui(ui, |ui| {
                                     for (i, &waveform) in
@@ -1257,10 +1249,7 @@ impl Dx7App {
                 ui.columns(3, |columns| {
                     columns[0].horizontal(|ui| {
                         ui.label("PMS:");
-                        if ui
-                            .add(egui::Slider::new(&mut pms, 0.0..=7.0).integer())
-                            .changed()
-                        {
+                        if ui.add(edit_slider(&mut pms, 0.0..=7.0).integer()).changed() {
                             if let Ok(mut ctrl) = self.lock_controller() {
                                 ctrl.set_pitch_mod_sensitivity(pms as u8);
                             }
@@ -1269,7 +1258,7 @@ impl Dx7App {
                     columns[1].horizontal(|ui| {
                         ui.label("EG Bias:");
                         if ui
-                            .add(egui::Slider::new(&mut eg_bias, 0.0..=7.0).integer())
+                            .add(edit_slider(&mut eg_bias, 0.0..=7.0).integer())
                             .changed()
                         {
                             if let Ok(mut ctrl) = self.lock_controller() {
@@ -1280,7 +1269,7 @@ impl Dx7App {
                     columns[2].horizontal(|ui| {
                         ui.label("P-Bias:");
                         if ui
-                            .add(egui::Slider::new(&mut pitch_bias, 0.0..=7.0).integer())
+                            .add(edit_slider(&mut pitch_bias, 0.0..=7.0).integer())
                             .changed()
                         {
                             if let Ok(mut ctrl) = self.lock_controller() {
@@ -1354,10 +1343,7 @@ impl Dx7App {
     fn pitch_eg_slider(&self, ui: &mut egui::Ui, label: &str, value: f32, param: PitchEgParam) {
         ui.label(label);
         let mut v = value;
-        if ui
-            .add(egui::Slider::new(&mut v, 0.0..=99.0).integer())
-            .changed()
-        {
+        if ui.add(edit_slider(&mut v, 0.0..=99.0).integer()).changed() {
             if let Ok(mut ctrl) = self.lock_controller() {
                 ctrl.set_pitch_eg_param(param, v);
             }
@@ -1413,7 +1399,7 @@ impl Dx7App {
                         ui.label("Rate:");
                         if ui
                             .add(
-                                egui::Slider::new(&mut rate, 0.1..=5.0)
+                                edit_slider(&mut rate, 0.1..=5.0)
                                     .suffix(" Hz")
                                     .show_value(true),
                             )
@@ -1432,7 +1418,7 @@ impl Dx7App {
                         ui.label("Depth:");
                         if ui
                             .add(
-                                egui::Slider::new(&mut depth, 0.0..=10.0)
+                                edit_slider(&mut depth, 0.0..=10.0)
                                     .suffix(" ms")
                                     .show_value(true),
                             )
@@ -1450,7 +1436,7 @@ impl Dx7App {
                     ui.horizontal(|ui| {
                         ui.label("Mix:");
                         if ui
-                            .add(egui::Slider::new(&mut mix, 0.0..=1.0).show_value(true))
+                            .add(edit_slider(&mut mix, 0.0..=1.0).show_value(true))
                             .changed()
                         {
                             if let Ok(mut ctrl) = self.lock_controller() {
@@ -1461,7 +1447,7 @@ impl Dx7App {
                     ui.horizontal(|ui| {
                         ui.label("Feedback:");
                         if ui
-                            .add(egui::Slider::new(&mut feedback, 0.0..=0.7).show_value(true))
+                            .add(edit_slider(&mut feedback, 0.0..=0.7).show_value(true))
                             .changed()
                         {
                             if let Ok(mut ctrl) = self.lock_controller() {
@@ -1506,7 +1492,7 @@ impl Dx7App {
                         ui.label("Rate:");
                         if ui
                             .add(
-                                egui::Slider::new(&mut rate_hz, 0.1..=10.0)
+                                edit_slider(&mut rate_hz, 0.1..=10.0)
                                     .suffix(" Hz")
                                     .show_value(true),
                             )
@@ -1524,7 +1510,7 @@ impl Dx7App {
                     ui.horizontal(|ui| {
                         ui.label("Depth:");
                         if ui
-                            .add(egui::Slider::new(&mut depth, 0.0..=1.0).show_value(true))
+                            .add(edit_slider(&mut depth, 0.0..=1.0).show_value(true))
                             .changed()
                         {
                             if let Ok(mut ctrl) = self.lock_controller() {
@@ -1571,7 +1557,7 @@ impl Dx7App {
                         ui.label("Time:");
                         if ui
                             .add(
-                                egui::Slider::new(&mut time_ms, 0.0..=1000.0)
+                                edit_slider(&mut time_ms, 0.0..=1000.0)
                                     .suffix(" ms")
                                     .show_value(true),
                             )
@@ -1589,7 +1575,7 @@ impl Dx7App {
                     ui.horizontal(|ui| {
                         ui.label("Feedback:");
                         if ui
-                            .add(egui::Slider::new(&mut feedback, 0.0..=0.9).show_value(true))
+                            .add(edit_slider(&mut feedback, 0.0..=0.9).show_value(true))
                             .changed()
                         {
                             if let Ok(mut ctrl) = self.lock_controller() {
@@ -1604,7 +1590,7 @@ impl Dx7App {
                     ui.horizontal(|ui| {
                         ui.label("Mix:");
                         if ui
-                            .add(egui::Slider::new(&mut mix, 0.0..=1.0).show_value(true))
+                            .add(edit_slider(&mut mix, 0.0..=1.0).show_value(true))
                             .changed()
                         {
                             if let Ok(mut ctrl) = self.lock_controller() {
@@ -1658,7 +1644,7 @@ impl Dx7App {
                     ui.horizontal(|ui| {
                         ui.label("Room Size:");
                         if ui
-                            .add(egui::Slider::new(&mut room_size, 0.0..=1.0).show_value(true))
+                            .add(edit_slider(&mut room_size, 0.0..=1.0).show_value(true))
                             .changed()
                         {
                             if let Ok(mut ctrl) = self.lock_controller() {
@@ -1673,7 +1659,7 @@ impl Dx7App {
                     ui.horizontal(|ui| {
                         ui.label("Damping:");
                         if ui
-                            .add(egui::Slider::new(&mut damping, 0.0..=1.0).show_value(true))
+                            .add(edit_slider(&mut damping, 0.0..=1.0).show_value(true))
                             .changed()
                         {
                             if let Ok(mut ctrl) = self.lock_controller() {
@@ -1688,7 +1674,7 @@ impl Dx7App {
                     ui.horizontal(|ui| {
                         ui.label("Mix:");
                         if ui
-                            .add(egui::Slider::new(&mut mix, 0.0..=1.0).show_value(true))
+                            .add(edit_slider(&mut mix, 0.0..=1.0).show_value(true))
                             .changed()
                         {
                             if let Ok(mut ctrl) = self.lock_controller() {
@@ -1699,7 +1685,7 @@ impl Dx7App {
                     ui.horizontal(|ui| {
                         ui.label("Width:");
                         if ui
-                            .add(egui::Slider::new(&mut width, 0.0..=1.0).show_value(true))
+                            .add(edit_slider(&mut width, 0.0..=1.0).show_value(true))
                             .changed()
                         {
                             if let Ok(mut ctrl) = self.lock_controller() {
@@ -2079,7 +2065,7 @@ impl Dx7App {
                         egui::Color32::from_rgb(100, 160, 100)
                     };
 
-                    let frame = egui::Frame::none()
+                    let frame = egui::Frame::NONE
                         .fill(if is_selected {
                             egui::Color32::from_rgb(240, 248, 255)
                         } else {
@@ -2093,7 +2079,7 @@ impl Dx7App {
                                 base_color
                             },
                         ))
-                        .rounding(4.0)
+                        .corner_radius(4)
                         .inner_margin(6.0);
 
                     frame.show(cui, |ui| {
@@ -2161,7 +2147,11 @@ impl Dx7App {
         // Read all operator parameters from snapshot (lock-free)
         let op_snap = &self.snapshot.operators[op_idx];
         let mut enabled = op_snap.enabled;
-        let mut freq_ratio = op_snap.frequency_ratio;
+        // DX7 COARSE: 0 is the 0.5x ratio, 1..=31 the integer multipliers.
+        let mut coarse: u8 = match op_snap.frequency_ratio {
+            r if r < 0.75 => 0,
+            r => r.round().clamp(1.0, 31.0) as u8,
+        };
         let mut output_level = op_snap.output_level;
         let mut detune = op_snap.detune;
         let mut feedback = op_snap.feedback;
@@ -2217,28 +2207,20 @@ impl Dx7App {
                             .spacing([8.0, 4.0])
                             .show(ui, |ui| {
                                 ui.label("Ratio:");
+                                let coarse_ratio = |c: f64| if c < 0.5 { 0.5 } else { c };
                                 if ui
                                     .add(
-                                        egui::Slider::new(&mut freq_ratio, 0.5..=31.0)
-                                            .step_by(1.0)
-                                            .custom_formatter(|n, _| {
-                                                format!(
-                                                    "{:.2}",
-                                                    crate::dx7_frequency::quantize_frequency_ratio(
-                                                        n as f32,
-                                                    )
-                                                )
-                                            }),
+                                        edit_slider(&mut coarse, 0..=31).custom_formatter(
+                                            |n, _| format!("{:.2}", coarse_ratio(n)),
+                                        ),
                                     )
                                     .changed()
                                 {
-                                    let q =
-                                        crate::dx7_frequency::quantize_frequency_ratio(freq_ratio);
                                     if let Ok(mut ctrl) = self.lock_controller() {
                                         ctrl.set_operator_param(
                                             op_idx as u8,
                                             OperatorParam::Ratio,
-                                            q,
+                                            coarse_ratio(coarse as f64) as f32,
                                         );
                                     }
                                 }
@@ -2246,7 +2228,7 @@ impl Dx7App {
 
                                 ui.label("Level:");
                                 if ui
-                                    .add(egui::Slider::new(&mut output_level, 0.0..=99.0).integer())
+                                    .add(edit_slider(&mut output_level, 0.0..=99.0).integer())
                                     .changed()
                                 {
                                     if let Ok(mut ctrl) = self.lock_controller() {
@@ -2261,7 +2243,7 @@ impl Dx7App {
 
                                 ui.label("Detune:");
                                 if ui
-                                    .add(egui::Slider::new(&mut detune, -7.0..=7.0).integer())
+                                    .add(edit_slider(&mut detune, -7.0..=7.0).integer())
                                     .changed()
                                 {
                                     if let Ok(mut ctrl) = self.lock_controller() {
@@ -2276,7 +2258,7 @@ impl Dx7App {
 
                                 ui.label("Vel Sens:");
                                 if ui
-                                    .add(egui::Slider::new(&mut vel_sens, 0.0..=7.0).integer())
+                                    .add(edit_slider(&mut vel_sens, 0.0..=7.0).integer())
                                     .changed()
                                 {
                                     if let Ok(mut ctrl) = self.lock_controller() {
@@ -2292,7 +2274,7 @@ impl Dx7App {
                                 if has_feedback {
                                     ui.label("Feedback:");
                                     if ui
-                                        .add(egui::Slider::new(&mut feedback, 0.0..=7.0).integer())
+                                        .add(edit_slider(&mut feedback, 0.0..=7.0).integer())
                                         .changed()
                                     {
                                         if let Ok(mut ctrl) = self.lock_controller() {
@@ -2308,7 +2290,7 @@ impl Dx7App {
 
                                 ui.label("AM Sens:");
                                 if ui
-                                    .add(egui::Slider::new(&mut am_sens, 0.0..=3.0).integer())
+                                    .add(edit_slider(&mut am_sens, 0.0..=3.0).integer())
                                     .changed()
                                 {
                                     if let Ok(mut ctrl) = self.lock_controller() {
@@ -2349,7 +2331,7 @@ impl Dx7App {
                                     ui.label("Fixed Hz:");
                                     if ui
                                         .add(
-                                            egui::Slider::new(
+                                            edit_slider(
                                                 &mut fixed_hz,
                                                 1.0..=crate::dx7_frequency::fixed_frequency_hz(
                                                     3, 99,
@@ -2382,7 +2364,7 @@ impl Dx7App {
                                 ui.label("Breakpoint:");
                                 if ui
                                     .add(
-                                        egui::Slider::new(&mut breakpoint_note, 0.0..=127.0)
+                                        edit_slider(&mut breakpoint_note, 0.0..=127.0)
                                             .integer()
                                             .custom_formatter(|n, _| midi_note_name(n as u8)),
                                     )
@@ -2400,7 +2382,7 @@ impl Dx7App {
 
                                 ui.label("Rate Scl:");
                                 if ui
-                                    .add(egui::Slider::new(&mut key_scale_rt, 0.0..=7.0).integer())
+                                    .add(edit_slider(&mut key_scale_rt, 0.0..=7.0).integer())
                                     .changed()
                                 {
                                     if let Ok(mut ctrl) = self.lock_controller() {
@@ -2415,7 +2397,7 @@ impl Dx7App {
 
                                 ui.label("L Depth:");
                                 if ui
-                                    .add(egui::Slider::new(&mut l_depth, 0.0..=99.0).integer())
+                                    .add(edit_slider(&mut l_depth, 0.0..=99.0).integer())
                                     .changed()
                                 {
                                     if let Ok(mut ctrl) = self.lock_controller() {
@@ -2430,7 +2412,7 @@ impl Dx7App {
 
                                 ui.label("R Depth:");
                                 if ui
-                                    .add(egui::Slider::new(&mut r_depth, 0.0..=99.0).integer())
+                                    .add(edit_slider(&mut r_depth, 0.0..=99.0).integer())
                                     .changed()
                                 {
                                     if let Ok(mut ctrl) = self.lock_controller() {
@@ -2445,7 +2427,7 @@ impl Dx7App {
 
                                 ui.label("L Curve:");
                                 let prev_l_curve = l_curve;
-                                egui::ComboBox::from_id_source(("op_lcurve", op_idx))
+                                egui::ComboBox::from_id_salt(("op_lcurve", op_idx))
                                     .selected_text(key_scale_curve_label(l_curve))
                                     .width(70.0)
                                     .show_ui(ui, |ui| {
@@ -2475,7 +2457,7 @@ impl Dx7App {
 
                                 ui.label("R Curve:");
                                 let prev_r_curve = r_curve;
-                                egui::ComboBox::from_id_source(("op_rcurve", op_idx))
+                                egui::ComboBox::from_id_salt(("op_rcurve", op_idx))
                                     .selected_text(key_scale_curve_label(r_curve))
                                     .width(70.0)
                                     .show_ui(ui, |ui| {
@@ -2513,7 +2495,7 @@ impl Dx7App {
                             .show(ui, |ui| {
                                 ui.label("R1:");
                                 if ui
-                                    .add(egui::Slider::new(&mut rate1, 0.0..=99.0).integer())
+                                    .add(edit_slider(&mut rate1, 0.0..=99.0).integer())
                                     .changed()
                                 {
                                     if let Ok(mut ctrl) = self.lock_controller() {
@@ -2528,7 +2510,7 @@ impl Dx7App {
 
                                 ui.label("L1:");
                                 if ui
-                                    .add(egui::Slider::new(&mut level1, 0.0..=99.0).integer())
+                                    .add(edit_slider(&mut level1, 0.0..=99.0).integer())
                                     .changed()
                                 {
                                     if let Ok(mut ctrl) = self.lock_controller() {
@@ -2543,7 +2525,7 @@ impl Dx7App {
 
                                 ui.label("R2:");
                                 if ui
-                                    .add(egui::Slider::new(&mut rate2, 0.0..=99.0).integer())
+                                    .add(edit_slider(&mut rate2, 0.0..=99.0).integer())
                                     .changed()
                                 {
                                     if let Ok(mut ctrl) = self.lock_controller() {
@@ -2558,7 +2540,7 @@ impl Dx7App {
 
                                 ui.label("L2:");
                                 if ui
-                                    .add(egui::Slider::new(&mut level2, 0.0..=99.0).integer())
+                                    .add(edit_slider(&mut level2, 0.0..=99.0).integer())
                                     .changed()
                                 {
                                     if let Ok(mut ctrl) = self.lock_controller() {
@@ -2573,7 +2555,7 @@ impl Dx7App {
 
                                 ui.label("R3:");
                                 if ui
-                                    .add(egui::Slider::new(&mut rate3, 0.0..=99.0).integer())
+                                    .add(edit_slider(&mut rate3, 0.0..=99.0).integer())
                                     .changed()
                                 {
                                     if let Ok(mut ctrl) = self.lock_controller() {
@@ -2588,7 +2570,7 @@ impl Dx7App {
 
                                 ui.label("L3:");
                                 if ui
-                                    .add(egui::Slider::new(&mut level3, 0.0..=99.0).integer())
+                                    .add(edit_slider(&mut level3, 0.0..=99.0).integer())
                                     .changed()
                                 {
                                     if let Ok(mut ctrl) = self.lock_controller() {
@@ -2603,7 +2585,7 @@ impl Dx7App {
 
                                 ui.label("R4:");
                                 if ui
-                                    .add(egui::Slider::new(&mut rate4, 0.0..=99.0).integer())
+                                    .add(edit_slider(&mut rate4, 0.0..=99.0).integer())
                                     .changed()
                                 {
                                     if let Ok(mut ctrl) = self.lock_controller() {
@@ -2618,7 +2600,7 @@ impl Dx7App {
 
                                 ui.label("L4:");
                                 if ui
-                                    .add(egui::Slider::new(&mut level4, 0.0..=99.0).integer())
+                                    .add(edit_slider(&mut level4, 0.0..=99.0).integer())
                                     .changed()
                                 {
                                     if let Ok(mut ctrl) = self.lock_controller() {
@@ -2673,7 +2655,7 @@ impl Dx7App {
                 None => "OMNI".to_string(),
                 Some(c) => format!("Ch {}", c + 1),
             };
-            egui::ComboBox::from_id_source("midi_channel_combo")
+            egui::ComboBox::from_id_salt("midi_channel_combo")
                 .selected_text(label)
                 .show_ui(ui, |ui| {
                     if ui
@@ -2714,7 +2696,7 @@ impl Dx7App {
                     .and_then(|m| m.connected_port())
                     .unwrap_or("(none)")
                     .to_string();
-                egui::ComboBox::from_id_source("midi_port_combo")
+                egui::ComboBox::from_id_salt("midi_port_combo")
                     .selected_text(&connected)
                     .width(280.0)
                     .show_ui(ui, |ui| {
@@ -2735,7 +2717,7 @@ impl Dx7App {
                     .as_ref()
                     .map_or("(none)", |a| a.device_name())
                     .to_string();
-                egui::ComboBox::from_id_source("audio_output_combo")
+                egui::ComboBox::from_id_salt("audio_output_combo")
                     .selected_text(&current)
                     .width(280.0)
                     .show_ui(ui, |ui| {
@@ -2893,7 +2875,7 @@ impl Dx7App {
             ui.label(label);
             let mut v = value as i32;
             if ui
-                .add(egui::Slider::new(&mut v, 0..=max as i32).show_value(true))
+                .add(edit_slider(&mut v, 0..=max as i32).show_value(true))
                 .changed()
             {
                 if let Ok(mut ctrl) = self.lock_controller() {
@@ -3011,6 +2993,16 @@ impl Dx7App {
     }
 }
 
+/// egui's default clamping snaps a slider's value to its range, step and
+/// decimals on every frame and reports that as a change; every change here
+/// becomes a synth command, so only user edits may write.
+fn edit_slider<'a, Num: egui::emath::Numeric>(
+    value: &'a mut Num,
+    range: std::ops::RangeInclusive<Num>,
+) -> egui::Slider<'a> {
+    egui::Slider::new(value, range).clamping(egui::SliderClamping::Edits)
+}
+
 /// Max fraction of white blended into an active operator's fill (0..=1).
 /// Tunable: lower = subtler highlight, higher = whiter at full envelope.
 const ACTIVITY_BRIGHTEN_MAX: f32 = 0.6;
@@ -3070,10 +3062,21 @@ mod tests {
         }
     }
 
-    /// Run one egui frame against a fresh test context.
-    fn run_one_frame<F: FnOnce(&egui::Context)>(f: F) {
-        let ctx = egui::Context::default();
-        let _ = ctx.run(egui::RawInput::default(), |ctx| f(ctx));
+    thread_local! {
+        // Building egui's font atlas dominates a frame in debug builds; reuse
+        // one context per test thread.
+        static TEST_CTX: egui::Context = egui::Context::default();
+    }
+
+    /// Run one egui frame against this thread's test context.
+    fn run_one_frame<F: FnMut(&mut egui::Ui)>(mut f: F) {
+        TEST_CTX.with(|ctx| {
+            // No renderer consumes the font atlas upload here; egui asserts on
+            // dropping it unhandled.
+            ctx.run_ui(egui::RawInput::default(), |ui| f(ui))
+                .textures_delta
+                .clear();
+        });
     }
 
     // ---------------------------------------------------------------------
@@ -3456,7 +3459,15 @@ mod tests {
 
     #[test]
     fn idle_frames_do_not_mark_the_voice_edited() {
+        // Off-grid values as found in bundled patches (e.g. detune 4.2 in
+        // edu/BASS 1, ratio 1.41 from SysEx coarse+fine).
+        let mut voice = make_preset("FRACTIONAL", 5, "edu");
+        voice.operators[0].frequency_ratio = 1.41;
+        voice.operators[0].detune = 4.2;
+        voice.operators[0].output_level = 75.5;
         let mut app = make_app();
+        app.lock_controller().unwrap().load_voice(voice);
+        app.test_engine().lock().unwrap().process_commands();
         for mode in [
             DisplayMode::Voice,
             DisplayMode::Operator,
@@ -3465,7 +3476,7 @@ mod tests {
             DisplayMode::Midi,
         ] {
             app.display_mode = mode;
-            run_one_frame(|ctx| app.render(ctx));
+            run_one_frame(|ui| app.render(ui));
         }
         let mut eng = app.test_engine().lock().unwrap();
         eng.process_commands();
@@ -3479,35 +3490,35 @@ mod tests {
             make_preset("TWO", 5, "mark"),
         ]);
         app.display_mode = DisplayMode::Voice;
-        run_one_frame(|ctx| app.render(ctx));
+        run_one_frame(|ui| app.render(ui));
     }
 
     #[test]
     fn render_operator_mode_completes_without_panic() {
         let mut app = make_app();
         app.display_mode = DisplayMode::Operator;
-        run_one_frame(|ctx| app.render(ctx));
+        run_one_frame(|ui| app.render(ui));
     }
 
     #[test]
     fn render_lfo_mode_completes_without_panic() {
         let mut app = make_app();
         app.display_mode = DisplayMode::LFO;
-        run_one_frame(|ctx| app.render(ctx));
+        run_one_frame(|ui| app.render(ui));
     }
 
     #[test]
     fn render_effects_mode_completes_without_panic() {
         let mut app = make_app();
         app.display_mode = DisplayMode::Effects;
-        run_one_frame(|ctx| app.render(ctx));
+        run_one_frame(|ui| app.render(ui));
     }
 
     #[test]
     fn render_midi_mode_completes_without_panic() {
         let mut app = make_app();
         app.display_mode = DisplayMode::Midi;
-        run_one_frame(|ctx| app.render(ctx));
+        run_one_frame(|ui| app.render(ui));
     }
 
     #[test]
@@ -3521,7 +3532,7 @@ mod tests {
                 eng.set_algorithm(alg);
                 eng.update_snapshot();
             }
-            run_one_frame(|ctx| app.render(ctx));
+            run_one_frame(|ui| app.render(ui));
         }
     }
 
@@ -3535,7 +3546,7 @@ mod tests {
         let mut app = make_app_with_presets(presets);
         app.selected_collection = Some("edu".to_string());
         app.display_mode = DisplayMode::Voice;
-        run_one_frame(|ctx| app.render(ctx));
+        run_one_frame(|ui| app.render(ui));
     }
 
     #[test]
@@ -3548,7 +3559,7 @@ mod tests {
         let mut app = make_app_with_presets(presets);
         app.preset_search = "piano".to_string();
         app.display_mode = DisplayMode::Voice;
-        run_one_frame(|ctx| app.render(ctx));
+        run_one_frame(|ui| app.render(ui));
     }
 
     #[test]
@@ -3562,7 +3573,7 @@ mod tests {
             eng.update_snapshot();
         }
         app.display_mode = DisplayMode::Operator;
-        run_one_frame(|ctx| app.render(ctx));
+        run_one_frame(|ui| app.render(ui));
     }
 
     #[test]
@@ -3575,7 +3586,7 @@ mod tests {
             eng.update_snapshot();
         }
         app.display_mode = DisplayMode::Effects;
-        run_one_frame(|ctx| app.render(ctx));
+        run_one_frame(|ui| app.render(ui));
     }
 
     #[test]
@@ -3594,7 +3605,7 @@ mod tests {
                 eng.update_snapshot();
             }
             app.update_snapshot();
-            run_one_frame(|ctx| app.render(ctx));
+            run_one_frame(|ui| app.render(ui));
         }
     }
 
@@ -3603,9 +3614,9 @@ mod tests {
         let mut app = make_app();
         app.display_mode = DisplayMode::Midi;
         app.midi_channel_ui = Some(3);
-        run_one_frame(|ctx| app.render(ctx));
+        run_one_frame(|ui| app.render(ui));
         app.midi_channel_ui = None;
-        run_one_frame(|ctx| app.render(ctx));
+        run_one_frame(|ui| app.render(ui));
     }
 
     #[test]
@@ -3617,7 +3628,7 @@ mod tests {
             eng.update_snapshot();
         }
         app.display_mode = DisplayMode::LFO;
-        run_one_frame(|ctx| app.render(ctx));
+        run_one_frame(|ui| app.render(ui));
     }
 
     // ---------------------------------------------------------------------

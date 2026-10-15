@@ -165,8 +165,7 @@ Loader JSON cubre todo el banco `mark/` (formato itsjoesullivan/dx7-patches).
 
 **Otros:**
 
-- [ ] (implementación) Modularizar `gui.rs` (2300+ líneas) — ideal junto al
-      upgrade de `eframe`/`egui`
+- [ ] (implementación) Modularizar `gui.rs` (2300+ líneas)
 - [ ] (genérico) Undo / Redo
 
 ---
@@ -224,10 +223,14 @@ redundantes e inconsistentes. Atacar junto al refactor de `ControllerRoute`.
 
 ## Dependencias
 
-`rand`, `midir`, `cpal` actualizadas. MSRV: Rust 1.80.
+Todas en su última versión (`eframe`/`egui` 0.36, `cpal` 0.18, `rtrb` 0.4).
+MSRV: Rust 1.95 (lo exige `eframe`). `cargo audit` sin vulnerabilidades;
+`ttf-parser`, que llega vía `egui`, figura como unmaintained
+(RUSTSEC-2026-0192).
 
-- [ ] (implementación) **`eframe`/`egui` 0.28 → 0.34** — 6 minors de breaking
-      changes. Branch dedicado, combinar con la modularización de `gui.rs`.
+- [x] (implementación) **`eframe`/`egui` 0.28 → 0.36** — los sliders se crean
+      con `gui.rs:edit_slider` (`SliderClamping::Edits`): con el clamping por
+      defecto egui reescribe el valor en cada frame y lo reporta como cambio.
 
 > **Validación auditiva pendiente** del upgrade reciente: probar con
 > teclado real (notas, pitch bend, MIDI CC, SysEx) y stream de audio en
