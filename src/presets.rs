@@ -227,16 +227,16 @@ impl Dx7Preset {
             synth.pitch_eg_mut().enabled = false;
         }
 
-        // LFO
-        if let Some(lfo) = &self.lfo {
-            let dst = synth.lfo_mut();
-            dst.set_waveform(lfo.waveform);
-            dst.set_rate(lfo.rate);
-            dst.set_delay(lfo.delay);
-            dst.set_pitch_depth(lfo.pitch_mod_depth);
-            dst.set_amp_depth(lfo.amp_mod_depth);
-            dst.set_key_sync(lfo.key_sync);
-        }
+        // Every DX7 voice carries an LFO; a preset without one gets the init
+        // values rather than the previous voice's depth.
+        let lfo = self.lfo.clone().unwrap_or_default();
+        let dst = synth.lfo_mut();
+        dst.set_waveform(lfo.waveform);
+        dst.set_rate(lfo.rate);
+        dst.set_delay(lfo.delay);
+        dst.set_pitch_depth(lfo.pitch_mod_depth);
+        dst.set_amp_depth(lfo.amp_mod_depth);
+        dst.set_key_sync(lfo.key_sync);
 
         for voice in synth.voices_mut() {
             for (i, op) in voice.operators.iter_mut().enumerate() {
@@ -353,6 +353,31 @@ mod tests {
         assert_eq!(preset.collection, "current");
         assert!(preset.lfo.is_some());
         assert!(preset.pitch_eg.is_some());
+    }
+
+    #[test]
+    fn a_preset_without_lfo_does_not_inherit_the_previous_depth() {
+        let mut engine = make_engine();
+        engine.lfo_mut().set_pitch_depth(80.0);
+        engine.lfo_mut().set_amp_depth(60.0);
+        let preset = Dx7Preset {
+            name: "NO LFO".to_string(),
+            collection: "test".to_string(),
+            algorithm: 1,
+            operators: std::array::from_fn(|_| PresetOperator::default()),
+            master_tune: None,
+            pitch_bend_range: None,
+            portamento_enable: None,
+            portamento_time: None,
+            mono_mode: None,
+            transpose_semitones: 0,
+            pitch_mod_sensitivity: 0,
+            pitch_eg: None,
+            lfo: None,
+        };
+        preset.apply_to_synth(&mut engine);
+        assert_eq!(engine.get_lfo_pitch_depth(), 0.0);
+        assert_eq!(engine.get_lfo_amp_depth(), 0.0);
     }
 
     #[test]

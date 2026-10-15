@@ -889,6 +889,7 @@ impl SynthEngine {
         self.foot_eg_bias_sens = 0;
         self.pitch_eg.enabled = false;
         self.pitch_eg.reset();
+        self.lfo = LFO::new(self.sample_rate);
 
         for voice in &mut self.voices {
             for op in voice.operators.iter_mut() {
@@ -1987,6 +1988,17 @@ mod tests {
         assert_eq!(engine.preset_name, "Init Voice");
         let active = engine.voices.iter().filter(|v| v.active).count();
         assert_eq!(active, 0);
+    }
+
+    #[test]
+    fn init_voice_has_no_lfo_depth() {
+        let (mut engine, mut ctrl) = make_engine();
+        assert_eq!(engine.get_lfo_pitch_depth(), 0.0);
+        assert_eq!(engine.get_lfo_amp_depth(), 0.0);
+        engine.lfo_mut().set_pitch_depth(80.0);
+        ctrl.voice_initialize();
+        engine.process_commands();
+        assert_eq!(engine.get_lfo_pitch_depth(), 0.0);
     }
 
     #[test]

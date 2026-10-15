@@ -249,8 +249,10 @@ Los tres sliders bajo "MOD WHEEL ROUTING" deciden cómo el Mod Wheel
 | **P-Bias** (Pitch Bias) | Offset estático de pitch (±2 semitonos al máximo) |
 
 `PMS` usa la tabla DX7 ROM no lineal `[0, 0.082, 0.16, 0.32, 0.5, 0.79, 1.26, 2.0]`.
-A PMS=7 con LFO Pitch Depth=99, el wheel al máximo da ±2 semitonos
-de oscilación — vibrato amplio. PMS=3 = vibrato suave (~½ semitono).
+A PMS=7, el LFO a profundidad 99 da ±2 semitonos de oscilación — vibrato
+amplio. PMS=3 = vibrato suave (~½ semitono). Como en el DX7, el Pitch Depth
+y el Amp Depth del patch suenan siempre (pasado el LFO Delay); el wheel sube
+la profundidad de pitch hasta 99 por encima de la del patch, sin delay.
 
 ### Pitch EG
 
@@ -272,8 +274,8 @@ posición de reposo Y el destino del release.**
 ### Mod Wheel actual
 
 Bajo el separador final, el panel muestra el valor actual del Mod Wheel
-(0 – 100%). Si está en 0, los routings de PMS/EG-Bias/P-Bias no producen
-efecto audible aunque las sensibilidades estén altas.
+(0 – 100%). Con el wheel en 0 solo suena la profundidad LFO del patch; EG
+Bias y P-Bias no tienen efecto aunque sus sensibilidades estén altas.
 
 ---
 
@@ -325,7 +327,7 @@ secciones tipo cuerda con dinámica de pedal.
 |---|---|---|
 | Note On / Off | — | Reproducción con velocity 0 – 127 |
 | Pitch Bend | — | Rango configurable en el panel VOICE |
-| Mod Wheel | CC1 | Profundidad LFO + EG/Pitch Bias |
+| Mod Wheel | CC1 | Vibrato LFO sobre el del patch + EG/Pitch Bias |
 | Sustain Pedal | CC64 | ≥64 mantiene notas sin liberar EG |
 | Expression | CC11 | Atenuador genérico multiplicativo |
 | Bank Select MSB | CC0 | Combinado con CC32 + Program Change |

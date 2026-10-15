@@ -33,7 +33,7 @@ A high-fidelity DX7-style FM synthesizer, built in Rust with real-time FM synthe
 - **Real-time MIDI input** for external controllers
 - **Virtual keyboard** with multi-octave support
 - **Pitch Bend** with configurable range
-- **Mod Wheel (CC1)** controls LFO depth in real-time
+- **Mod Wheel (CC1)** adds LFO vibrato on top of the patch depth in real-time
 - **MIDI Program Change (0xC0)** for preset selection via MIDI
 - **Preset system** for saving and loading sounds
 - **Smooth transitions** in mono mode without clicks or artifacts
@@ -47,7 +47,7 @@ A high-fidelity DX7-style FM synthesizer, built in Rust with real-time FM synthe
 - **Authentic Control**: Rate 0-99 (0.062Hz-20Hz), Delay 0-99 (0-5 seconds)
 - **Depths**: Pitch/Amp Depth 0-99 with authentic musical scaling
 - **Key Sync**: Optional LFO restart on each note
-- **MIDI Integration**: Mod Wheel controls effect intensity (0-100%)
+- **MIDI Integration**: Mod Wheel raises vibrato depth (0-100%); the patch's own depths always apply
 
 ## Installation
 
@@ -96,7 +96,7 @@ cargo run --release
    - **Amp Depth**: Amount of tremolo (0-99)
    - **Waveform**: Select from 6 waveforms
    - **Key Sync**: Restart LFO with each new note
-4. **Real-Time Control**: Move the **Mod Wheel** on your MIDI keyboard to control effect intensity
+4. **Real-Time Control**: Move the **Mod Wheel** on your MIDI keyboard to add vibrato
 
 #### Parameters per Operator
 - **NEW Frequency Ratio**: Authentic discrete DX7 values (0.5, 1.0, 2.0-31.0)

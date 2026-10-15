@@ -100,10 +100,10 @@ pub struct LFO {
 impl LFO {
     pub fn new(sample_rate: f32) -> Self {
         Self {
-            rate: 50.0,        // Medium rate
-            delay: 0.0,        // No delay by default
-            pitch_depth: 25.0, // Moderate pitch modulation for testing
-            amp_depth: 15.0,   // Moderate amplitude modulation for testing
+            rate: 50.0, // Medium rate
+            delay: 0.0, // No delay by default
+            pitch_depth: 0.0,
+            amp_depth: 0.0,
             waveform: LFOWaveform::Triangle,
             key_sync: false,
 
@@ -233,9 +233,6 @@ impl LFO {
     /// Process one sample and return modulation values
     pub fn process(&mut self, mod_wheel: f32) -> (f32, f32) {
         let delay_depth = self.delay_depth();
-        if delay_depth == 0.0 {
-            return (0.0, 0.0);
-        }
 
         // Calculate frequency and phase increment with caching
         let frequency_hz = if (self.rate - self.last_rate).abs() > 0.01 {
@@ -260,15 +257,13 @@ impl LFO {
             self.phase -= 1.0;
         }
 
-        // Calculate modulation amounts
-        // Mod wheel scales the depth (0.0 to 1.0)
-        let depth_scale = mod_wheel * delay_depth;
+        // The patch depths always apply once the delay has passed; the wheel
+        // can push the pitch depth up to full on top, undelayed (Dexed
+        // `Dx7Note::compute` takes the max of patch and controller depth).
+        let pitch_depth = (self.pitch_depth * delay_depth).max(mod_wheel * 99.0) / 99.0;
+        let amp_depth = self.amp_depth * delay_depth / 99.0;
 
-        // Convert DX7 depth (0-99) to modulation percentage
-        let pitch_mod = (self.pitch_depth / 99.0) * lfo_value * depth_scale;
-        let amp_mod = (self.amp_depth / 99.0) * lfo_value * depth_scale;
-
-        (pitch_mod, amp_mod)
+        (pitch_depth * lfo_value, amp_depth * lfo_value)
     }
 
     /// Set LFO parameters with DX7 range validation
@@ -491,8 +486,8 @@ mod tests {
         let mut lfo = LFO::new(SR);
         lfo.delay = 50.0;
         lfo.trigger();
-        // During delay, no modulation
-        let (p, a) = lfo.process(1.0);
+        // During delay the patch depth is silent
+        let (p, a) = lfo.process(0.0);
         assert_eq!(p, 0.0);
         assert_eq!(a, 0.0);
     }
@@ -529,28 +524,44 @@ mod tests {
         assert_eq!(a, 0.0);
     }
 
+    /// Peak (pitch, amp) modulation over `samples` with a fixed wheel position.
+    fn peak_modulation(lfo: &mut LFO, wheel: f32, samples: usize) -> (f32, f32) {
+        (0..samples).fold((0.0_f32, 0.0_f32), |(p, a), _| {
+            let (dp, da) = lfo.process(wheel);
+            (p.max(dp.abs()), a.max(da.abs()))
+        })
+    }
+
     #[test]
-    fn mod_wheel_scales_modulation() {
+    fn patch_depth_applies_with_the_wheel_down() {
         let mut lfo = LFO::new(SR);
         lfo.rate = 50.0;
         lfo.pitch_depth = 99.0;
         lfo.amp_depth = 99.0;
-        // Burn many samples to step through the LFO cycle
-        let mut p_full = 0.0_f32;
-        let mut p_zero = 0.0_f32;
-        for _ in 0..2048 {
-            let (p, _) = lfo.process(1.0);
-            p_full = p_full.max(p.abs());
-        }
-        let mut lfo_off = LFO::new(SR);
-        lfo_off.rate = 50.0;
-        lfo_off.pitch_depth = 99.0;
-        for _ in 0..2048 {
-            let (p, _) = lfo_off.process(0.0);
-            p_zero = p_zero.max(p.abs());
-        }
-        assert!(p_full > p_zero);
-        assert_eq!(p_zero, 0.0);
+        let (pitch, amp) = peak_modulation(&mut lfo, 0.0, 4096);
+        assert!(pitch > 0.95 && amp > 0.95, "pitch {pitch}, amp {amp}");
+    }
+
+    #[test]
+    fn wheel_raises_pitch_depth_but_not_amp_depth() {
+        let mut lfo = LFO::new(SR);
+        lfo.rate = 50.0;
+        lfo.pitch_depth = 0.0;
+        lfo.amp_depth = 0.0;
+        let (pitch, amp) = peak_modulation(&mut lfo, 1.0, 4096);
+        assert!(pitch > 0.95, "pitch {pitch}");
+        assert_eq!(amp, 0.0);
+    }
+
+    #[test]
+    fn wheel_vibrato_ignores_the_patch_delay() {
+        let mut lfo = LFO::new(SR);
+        lfo.rate = 50.0;
+        lfo.pitch_depth = 99.0;
+        lfo.delay = 99.0;
+        lfo.trigger();
+        assert_eq!(peak_modulation(&mut lfo.clone(), 0.0, 4096).0, 0.0);
+        assert!(peak_modulation(&mut lfo, 1.0, 4096).0 > 0.95);
     }
 
     #[test]
