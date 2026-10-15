@@ -3,10 +3,11 @@ use std::sync::atomic::{AtomicU8, Ordering};
 /// Lock-free triple buffer for real-time parameter updates.
 ///
 /// Uses a single atomic byte to track buffer indices, ensuring atomic swaps.
-/// The byte layout is: [unused:2][back:2][read:2][write:2]
+/// The byte layout is: [unused:1][new:1][back:2][read:2][write:2]
 ///
-/// Writer (GUI thread): writes to write buffer, then swaps write<->back
-/// Reader (Audio thread): swaps read<->back, then reads from read buffer
+/// Writer (GUI thread): writes to write buffer, then swaps write<->back and sets `new`
+/// Reader (Audio thread): if `new` is set, swaps read<->back and clears it;
+/// then reads from read buffer
 pub struct TripleBuffer<T: Clone + Send> {
     buffers: [std::cell::UnsafeCell<T>; 3],
     /// Packed indices: bits 0-1 = write, bits 2-3 = read, bits 4-5 = back
@@ -20,6 +21,7 @@ impl<T: Clone + Send> TripleBuffer<T> {
     const WRITE_SHIFT: u8 = 0;
     const READ_SHIFT: u8 = 2;
     const BACK_SHIFT: u8 = 4;
+    const NEW_DATA: u8 = 0b01000000;
 
     pub fn new(initial_value: T) -> Self {
         // Initial state: write=0, read=1, back=2
@@ -56,7 +58,8 @@ impl<T: Clone + Send> TripleBuffer<T> {
             // New state: swap write and back
             let new_indices = (current & Self::READ_MASK) // keep read
                 | (back_idx << Self::WRITE_SHIFT)  // back becomes write
-                | (write_idx << Self::BACK_SHIFT); // write becomes back
+                | (write_idx << Self::BACK_SHIFT)  // write becomes back
+                | Self::NEW_DATA;
 
             match self.indices.compare_exchange_weak(
                 current,
@@ -71,7 +74,7 @@ impl<T: Clone + Send> TripleBuffer<T> {
     }
 
     /// Read current data (Audio thread only).
-    /// Atomically swaps read and back buffers, then returns reference to read buffer.
+    /// Swaps in the latest write if there is one, then returns the read buffer.
     #[allow(dead_code)]
     pub fn read(&self) -> &T {
         // Atomically swap read and back buffers using CAS loop
@@ -80,7 +83,12 @@ impl<T: Clone + Send> TripleBuffer<T> {
             let read_idx = (current & Self::READ_MASK) >> Self::READ_SHIFT;
             let back_idx = (current & Self::BACK_MASK) >> Self::BACK_SHIFT;
 
-            // New state: swap read and back
+            // Without a fresh write, back holds an older value than read.
+            if current & Self::NEW_DATA == 0 {
+                return unsafe { &*self.buffers[read_idx as usize].get() };
+            }
+
+            // New state: swap read and back, consuming the new-data flag
             let new_indices = (current & Self::WRITE_MASK) // keep write
                 | (back_idx << Self::READ_SHIFT)  // back becomes read
                 | (read_idx << Self::BACK_SHIFT); // read becomes back
@@ -127,6 +135,14 @@ mod tests {
     }
 
     #[test]
+    fn read_without_a_new_write_keeps_the_latest_value() {
+        let buffer = TripleBuffer::new(0u32);
+        buffer.write(42);
+        assert_eq!(*buffer.read(), 42);
+        assert_eq!(*buffer.read(), 42);
+    }
+
+    #[test]
     fn test_triple_buffer_multiple_writes() {
         let buffer = TripleBuffer::new(0u32);
 
@@ -151,11 +167,12 @@ mod tests {
         });
 
         let reader = thread::spawn(move || {
+            let mut last = 0;
             for _ in 0..10000 {
                 let value = *b2.read();
-                // Triple buffers don't guarantee monotonic reads, but they guarantee
-                // no data corruption. Value must be in valid range [0, 10000).
                 assert!(value < 10000, "Value {} is out of range", value);
+                assert!(value >= last, "read went back from {} to {}", last, value);
+                last = value;
             }
         });
 
