@@ -52,11 +52,9 @@ el cambio sea verificable.
       ROM `pitchmodsenstab[8] = {0, 10, 20, 33, 55, 92, 153, 255}` reescalada
       `× 2/255` para preservar ~2 semitonos de swing en PMS=7.
 
-- [ ] (DX7) **Detune ±7 cents fijo vs nota-dependiente** — `operator.rs:268`
-      hace `2^(detune/1200)`. Dexed: `0.0209 * exp(-0.396 * logfreq) / 7`
-      (`dx7note.cc:61-62`), que da ~±3 cents en notas medias y mucho más
-      en graves; medido por Pascal Gauthier en su DX7. Diferencia en
-      milicents, prioridad baja.
+- [x] (DX7) **Detune nota-dependiente** — `operator.rs:detune_octaves`
+      porta `0.0209 * exp(-0.396 * logfreq) / 7` de `dx7note.cc` (~±6,8
+      cents en A4, ~±11,6 en A2); en modo fijo sólo detune positivo.
 
 - [ ] (DX7) **Voice scaling 1/√N vs 1/16 fijo** — `optimization.rs:73`
       atenúa por `sqrt` (RMS-preserving); Dexed siempre `>> 4` (1/16,

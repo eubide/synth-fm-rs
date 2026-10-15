@@ -62,6 +62,14 @@ impl LFOWaveform {
     }
 }
 
+/// Dexed's LFO delay counter spans `2^32`: a silent wait up to half, then a
+/// linear fade-in of the depth.
+const DELAY_HALF: f64 = (1u64 << 31) as f64;
+const DELAY_FULL: f64 = (1u64 << 32) as f64;
+/// Numerator of Dexed `Lfo::unit_`; divided by the sample rate it is the
+/// per-sample step that `delay_increments` multiplies.
+const DELAY_UNIT: f64 = 25_190_424.0;
+
 #[derive(Debug, Clone)]
 #[allow(clippy::upper_case_acronyms)]
 pub struct LFO {
@@ -74,12 +82,15 @@ pub struct LFO {
     pub key_sync: bool, // Restart LFO on key press
 
     // Internal state
-    phase: f32,         // Current phase (0.0 to 1.0)
-    delay_counter: f32, // Delay countdown in seconds
+    phase: f32, // Current phase (0.0 to 1.0)
+    /// Dexed delay counter: waits from 0 to `DELAY_HALF`, then fades the
+    /// depth in until `DELAY_FULL`.
+    delay_state: f64,
+    delay_wait_inc: f64,
+    delay_fade_inc: f64,
     sample_rate: f32,
     last_sample_hold: f32, // For sample & hold waveform
     sh_phase_trigger: f32, // Trigger point for S&H
-    is_delayed: bool,      // Whether LFO is still in delay phase
 
     // Cached values for performance
     cached_rate_hz: f32,
@@ -97,11 +108,12 @@ impl LFO {
             key_sync: false,
 
             phase: 0.0,
-            delay_counter: 0.0,
+            delay_state: DELAY_FULL,
+            delay_wait_inc: 0.0,
+            delay_fade_inc: 0.0,
             sample_rate,
             last_sample_hold: 0.0,
             sh_phase_trigger: 0.0,
-            is_delayed: false,
             cached_rate_hz: 0.0,
             last_rate: -1.0, // Initialize to -1 to force first calculation
         }
@@ -123,13 +135,36 @@ impl LFO {
         lo + (hi - lo) * frac
     }
 
-    /// Convert DX7 delay (0-99) to seconds
-    fn dx7_delay_to_seconds(delay: f32) -> f32 {
-        if delay <= 0.0 {
+    /// Per-sample increments of the wait and fade-in phases for a DX7 delay
+    /// (0-99), as in Dexed `Lfo::reset`. `None` means no delay.
+    fn delay_increments(delay: f32, sample_rate: f32) -> Option<(f64, f64)> {
+        let a = 99 - delay.round().clamp(0.0, 99.0) as i32;
+        if a == 99 {
+            return None;
+        }
+        let unit = DELAY_UNIT / sample_rate as f64;
+        let wait = (16 + (a & 15)) << (1 + (a >> 4));
+        let fade = (wait & 0xff80).max(0x80);
+        Some((unit * wait as f64, unit * fade as f64))
+    }
+
+    /// Depth multiplier (0..1) for the patch LFO; advances one sample.
+    fn delay_depth(&mut self) -> f32 {
+        if self.delay_state >= DELAY_FULL {
+            return 1.0;
+        }
+        self.delay_state += if self.delay_state < DELAY_HALF {
+            self.delay_wait_inc
+        } else {
+            self.delay_fade_inc
+        };
+        if self.delay_state >= DELAY_FULL {
+            self.delay_state = DELAY_FULL;
+            1.0
+        } else if self.delay_state < DELAY_HALF {
             0.0
         } else {
-            // Linear mapping: 0 to approximately 5 seconds
-            delay / 99.0 * 5.0
+            ((self.delay_state - DELAY_HALF) / DELAY_HALF) as f32
         }
     }
 
@@ -140,11 +175,13 @@ impl LFO {
             self.sh_phase_trigger = 0.0;
         }
 
-        if self.delay > 0.0 {
-            self.delay_counter = Self::dx7_delay_to_seconds(self.delay);
-            self.is_delayed = true;
-        } else {
-            self.is_delayed = false;
+        match Self::delay_increments(self.delay, self.sample_rate) {
+            Some((wait, fade)) => {
+                self.delay_state = 0.0;
+                self.delay_wait_inc = wait;
+                self.delay_fade_inc = fade;
+            }
+            None => self.delay_state = DELAY_FULL,
         }
     }
 
@@ -195,14 +232,9 @@ impl LFO {
 
     /// Process one sample and return modulation values
     pub fn process(&mut self, mod_wheel: f32) -> (f32, f32) {
-        // Handle delay phase
-        if self.is_delayed {
-            self.delay_counter -= 1.0 / self.sample_rate;
-            if self.delay_counter <= 0.0 {
-                self.is_delayed = false;
-            } else {
-                return (0.0, 0.0); // No modulation during delay
-            }
+        let delay_depth = self.delay_depth();
+        if delay_depth == 0.0 {
+            return (0.0, 0.0);
         }
 
         // Calculate frequency and phase increment with caching
@@ -230,7 +262,7 @@ impl LFO {
 
         // Calculate modulation amounts
         // Mod wheel scales the depth (0.0 to 1.0)
-        let depth_scale = mod_wheel;
+        let depth_scale = mod_wheel * delay_depth;
 
         // Convert DX7 depth (0-99) to modulation percentage
         let pitch_mod = (self.pitch_depth / 99.0) * lfo_value * depth_scale;
@@ -275,8 +307,14 @@ impl LFO {
     }
 
     /// Get current delay time in seconds (for display purposes)
+    /// Time from note-on until the LFO reaches full depth.
     pub fn get_delay_seconds(&self) -> f32 {
-        Self::dx7_delay_to_seconds(self.delay)
+        match Self::delay_increments(self.delay, self.sample_rate) {
+            Some((wait, fade)) => {
+                ((DELAY_HALF / wait + DELAY_HALF / fade) / self.sample_rate as f64) as f32
+            }
+            None => 0.0,
+        }
     }
 }
 
@@ -400,12 +438,34 @@ mod tests {
         assert_eq!(lfo.get_delay_seconds(), 0.0);
     }
 
+    /// Delay depth after `blocks` of 64 samples. Expected block indices come
+    /// from Dexed `Lfo::getdelay` run standalone at 44.1 kHz.
+    fn delay_depth_after(delay: f32, blocks: usize) -> f32 {
+        let mut lfo = LFO::new(SR);
+        lfo.delay = delay;
+        lfo.trigger();
+        let mut depth = 0.0;
+        for _ in 0..blocks * 64 {
+            depth = lfo.delay_depth();
+        }
+        depth
+    }
+
     #[test]
-    fn delay_99_is_around_five_seconds() {
+    fn delay_waits_then_fades_in_like_dexed() {
+        assert_eq!(delay_depth_after(99.0, 1834), 0.0);
+        assert!(delay_depth_after(99.0, 1837) > 0.0);
+        assert!(delay_depth_after(99.0, 2293) < 1.0);
+        assert_eq!(delay_depth_after(99.0, 2296), 1.0);
+        assert!((delay_depth_after(50.0, 301) - 6217766.0 / 16777216.0).abs() < 0.01);
+        assert_eq!(delay_depth_after(0.0, 1), 1.0);
+    }
+
+    #[test]
+    fn delay_seconds_reports_time_to_full_depth() {
         let mut lfo = LFO::new(SR);
         lfo.delay = 99.0;
-        let secs = lfo.get_delay_seconds();
-        assert!((secs - 5.0).abs() < 0.1);
+        assert!((lfo.get_delay_seconds() - 2294.0 * 64.0 / SR).abs() < 0.01);
     }
 
     // -----------------------------------------------------------------------
